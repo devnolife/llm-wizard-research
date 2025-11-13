@@ -1,0 +1,41 @@
+# Docker Compose - Versi Sederhana
+# Hanya menjalankan API dan Neo4j (optional)
+# Menggunakan Ollama yang sudah terinstall di server
+
+version: '3.8'
+
+services:
+  # RAG-LLM API Service
+  api:
+    build: .
+    container_name: rag-llm-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./chroma_db:/app/chroma_db
+      - ./configs:/app/configs
+    environment:
+      - OLLAMA_BASE_URL=http://localhost:11434
+      - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
+      - LOG_LEVEL=INFO
+    network_mode: "host"
+    restart: unless-stopped
+
+  # Neo4j Knowledge Graph (Optional - jalankan jika diperlukan)
+  # Uncomment jika ingin menggunakan Neo4j
+  # neo4j:
+  #   image: neo4j:5.14
+  #   container_name: neo4j-graph
+  #   ports:
+  #     - "7474:7474"  # HTTP
+  #     - "7687:7687"  # Bolt
+  #   environment:
+  #     - NEO4J_AUTH=neo4j/research123
+  #   volumes:
+  #     - neo4j_data:/data
+  #   restart: unless-stopped
+
+# volumes:
+#   neo4j_data:

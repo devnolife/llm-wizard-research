@@ -6,7 +6,7 @@ Manages document embeddings, storage, and semantic search using ChromaDB.
 
 import os
 import uuid
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any, Tuple, Union
 from dataclasses import dataclass
 import numpy as np
 
@@ -129,7 +129,7 @@ class VectorStore:
     
     def add_document(
         self,
-        content: str,
+        content: Union[str, 'Document'],
         metadata: Optional[Dict[str, Any]] = None,
         doc_id: Optional[str] = None
     ) -> str:
@@ -137,20 +137,41 @@ class VectorStore:
         Add a single document to the vector store
         
         Args:
-            content: Document content
-            metadata: Optional metadata dictionary
+            content: Document content (string) or Document object
+            metadata: Optional metadata dictionary (ignored if Document object provided)
             doc_id: Optional document ID (auto-generated if not provided)
             
         Returns:
             Document ID
         """
-        doc_id = doc_id or str(uuid.uuid4())
-        metadata = metadata or {}
+        # Handle Document object
+        if isinstance(content, Document):
+            doc_id = content.id or str(uuid.uuid4())
+            content_str = content.content
+            metadata = content.metadata or {}
+        else:
+            doc_id = doc_id or str(uuid.uuid4())
+            content_str = content
+            metadata = metadata or {}
+        
+        # Ensure metadata values are simple types (ChromaDB requirement)
+        clean_metadata = {}
+        for key, value in metadata.items():
+            if isinstance(value, (list, tuple)):
+                # Convert lists to comma-separated strings
+                clean_metadata[key] = ", ".join(str(v) for v in value)
+            elif isinstance(value, dict):
+                # Convert dicts to JSON string
+                clean_metadata[key] = str(value)
+            elif isinstance(value, (str, int, float, bool)) or value is None:
+                clean_metadata[key] = value
+            else:
+                clean_metadata[key] = str(value)
         
         # Add document to collection
         self.collection.add(
-            documents=[content],
-            metadatas=[metadata],
+            documents=[content_str],
+            metadatas=[clean_metadata],
             ids=[doc_id]
         )
         

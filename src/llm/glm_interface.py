@@ -7,6 +7,7 @@ through Ollama, including prompt management, streaming support, and error handli
 
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional, Generator, Union
 from dataclasses import dataclass
 import time
@@ -21,9 +22,9 @@ from loguru import logger
 
 @dataclass
 class ModelConfig:
-    """Configuration for GLM-4.6 model"""
-    model_name: str = "glm-4.6:cloud"
-    base_url: str = "http://localhost:11434"
+    """Configuration for Ollama model"""
+    model_name: str = os.getenv("OLLAMA_MODEL", "llama3.2:latest")
+    base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     temperature: float = 0.7
     top_p: float = 0.9
     max_tokens: int = 2048
@@ -133,27 +134,56 @@ class GLMInterface:
         logger.info(f"Initialized GLM Interface with model: {self.config.model_name}")
         logger.info(f"Ollama base URL: {self.config.base_url}")
     
-    def health_check(self) -> bool:
+    async def health_check(self) -> Dict[str, Any]:
         """
         Check if Ollama server and model are available
         
         Returns:
-            True if healthy, False otherwise
+            Dict with status and available models
         """
         try:
             # List available models
-            models = self.client.list()
-            model_names = [m['name'] for m in models.get('models', [])]
+            models_response = self.client.list()
+            
+            # Handle ollama.ListResponse object
+            if hasattr(models_response, 'models'):
+                models_list = models_response.models
+            elif isinstance(models_response, dict):
+                models_list = models_response.get('models', [])
+            else:
+                models_list = []
+            
+            # Extract model names safely
+            model_names = []
+            for m in models_list:
+                if hasattr(m, 'model'):
+                    model_names.append(m.model)
+                elif isinstance(m, dict):
+                    model_names.append(m.get('name', m.get('model', '')))
+                elif isinstance(m, str):
+                    model_names.append(m)
             
             if self.config.model_name not in model_names:
                 logger.warning(f"Model {self.config.model_name} not found. Available models: {model_names}")
-                return False
+                return {
+                    "status": "unhealthy",
+                    "error": f"Model {self.config.model_name} not found",
+                    "available_models": model_names
+                }
             
             logger.info(f"Health check passed. Model {self.config.model_name} is available.")
-            return True
+            return {
+                "status": "healthy",
+                "model": self.config.model_name,
+                "available_models": model_names
+            }
         except Exception as e:
             logger.error(f"Health check failed: {e}")
-            return False
+            return {
+                "status": "error",
+                "error": str(e),
+                "available_models": []
+            }
     
     def generate(
         self,
