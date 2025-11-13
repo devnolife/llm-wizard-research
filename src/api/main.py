@@ -6,7 +6,8 @@ Provides REST API endpoints for all system functionality.
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import os
@@ -28,6 +29,7 @@ from ..gap_detection.analyzer import GapAnalyzer
 from ..recommendation.engine import RecommendationEngine
 from ..utils.document_processor import DocumentProcessor
 from ..utils.config_loader import get_config
+from ..external.paper_apis import AggregatedPaperAPI, PaperMetadata
 
 
 # Pydantic models for request/response
@@ -65,6 +67,22 @@ class HealthResponse(BaseModel):
     status: str
     components: Dict[str, bool]
     version: str
+
+
+class PaperSearchRequest(BaseModel):
+    query: str = Field(..., description="Search query for papers")
+    max_results: Optional[int] = Field(10, description="Maximum results per source")
+    sources: Optional[List[str]] = Field(None, description="API sources to search (arxiv, semantic_scholar, crossref, pubmed, core)")
+    deduplicate: Optional[bool] = Field(True, description="Remove duplicate papers")
+    year_from: Optional[int] = Field(None, description="Filter papers from this year onwards")
+    year_to: Optional[int] = Field(None, description="Filter papers up to this year")
+
+
+class PaperSearchResponse(BaseModel):
+    query: str
+    total_results: int
+    papers: List[Dict[str, Any]]
+    sources_searched: List[str]
 
 
 # Initialize FastAPI app
@@ -136,6 +154,15 @@ def get_component(name: str):
             gap_analyzer=get_component("gap_analyzer")
         )
     
+    elif name == "paper_api":
+        _components["paper_api"] = AggregatedPaperAPI(
+            semantic_scholar_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY"),
+            pubmed_key=os.getenv("PUBMED_API_KEY"),
+            crossref_email=os.getenv("CROSSREF_EMAIL"),
+            pubmed_email=os.getenv("PUBMED_EMAIL"),
+            core_key=os.getenv("CORE_API_KEY")
+        )
+    
     elif name == "coordinator":
         research_analyzer = ResearchAnalyzerAgent(
             llm_interface=get_component("glm"),
@@ -166,13 +193,36 @@ def get_component(name: str):
     return _components.get(name)
 
 
-@app.get("/", response_model=Dict[str, str])
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint"""
+    """Serve frontend HTML"""
+    static_dir = Path(__file__).parent.parent.parent / "static"
+    index_file = static_dir / "index.html"
+    
+    if index_file.exists():
+        return FileResponse(index_file)
+    else:
+        return HTMLResponse("""
+        <html>
+            <head><title>Wizard Research</title></head>
+            <body>
+                <h1>RAG-LLM Research Recommendation System</h1>
+                <p>Version: 0.1.0</p>
+                <p><a href="/docs">API Documentation</a></p>
+            </body>
+        </html>
+        """)
+
+
+@app.get("/api/sources/status")
+async def get_api_sources_status():
+    """Check which API sources have valid keys configured"""
     return {
-        "message": "RAG-LLM Research Recommendation System",
-        "version": "0.1.0",
-        "docs": "/docs"
+        "core": bool(os.getenv("CORE_API_KEY")),
+        "semantic_scholar": bool(os.getenv("SEMANTIC_SCHOLAR_API_KEY")),
+        "pubmed": bool(os.getenv("PUBMED_API_KEY")),
+        "crossref": bool(os.getenv("CROSSREF_EMAIL")),
+        "arxiv": True  # arXiv doesn't require an API key
     }
 
 
@@ -439,6 +489,229 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down RAG-LLM Research Recommendation System")
+
+
+# ====================================================================================
+# External Paper API Endpoints
+# ====================================================================================
+
+@app.post("/api/papers/search", response_model=PaperSearchResponse)
+async def search_external_papers(request: PaperSearchRequest):
+    """
+    Search for research papers across multiple external APIs
+    
+    Supported sources:
+    - arxiv: arXiv papers (no API key needed)
+    - semantic_scholar: Semantic Scholar (optional API key for higher limits)
+    - crossref: CrossRef database (optional email for faster responses)
+    - pubmed: PubMed/NCBI (optional API key for higher limits)
+    - core: CORE open access (API key recommended, 10K requests/day free)
+    
+    Example:
+    ```
+    POST /api/papers/search
+    {
+        "query": "transformer neural networks",
+        "max_results": 10,
+        "sources": ["arxiv", "semantic_scholar", "core"],
+        "deduplicate": true
+    }
+    ```
+    """
+    try:
+        paper_api = get_component("paper_api")
+        
+        # Search across specified sources
+        sources = request.sources or ["arxiv", "core", "crossref"]
+        logger.info(f"Searching papers: '{request.query}' across {sources}")
+        
+        results = await paper_api.search_all(
+            query=request.query,
+            max_results_per_source=request.max_results,
+            sources=sources,
+            year_from=request.year_from,
+            year_to=request.year_to
+        )
+        
+        # Deduplicate if requested
+        if request.deduplicate:
+            papers = paper_api.deduplicate_papers(results)
+            logger.info(f"Deduplicated to {len(papers)} unique papers")
+        else:
+            # Flatten all results
+            papers = []
+            for source_papers in results.values():
+                papers.extend(source_papers)
+        
+        # Convert to dict format
+        papers_dict = [paper.to_dict() for paper in papers]
+        
+        return PaperSearchResponse(
+            query=request.query,
+            total_results=len(papers_dict),
+            papers=papers_dict,
+            sources_searched=sources
+        )
+    
+    except Exception as e:
+        logger.error(f"Paper search failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Paper search failed: {str(e)}")
+
+
+@app.post("/api/papers/ingest-external")
+async def ingest_external_paper(
+    paper_id: str,
+    source: str = "semantic_scholar",
+    background_tasks: BackgroundTasks = None
+):
+    """
+    Fetch and ingest a specific paper from external API into the vector store
+    
+    Args:
+        paper_id: Paper ID (e.g., DOI, arXiv ID, PubMed ID)
+        source: Source API (semantic_scholar, arxiv, etc.)
+    
+    Example:
+    ```
+    POST /api/papers/ingest-external?paper_id=2010.11929&source=arxiv
+    ```
+    """
+    try:
+        paper_api = get_component("paper_api")
+        vector_store = get_component("vector_store")
+        
+        logger.info(f"Fetching paper {paper_id} from {source}")
+        
+        # Fetch paper details based on source
+        paper = None
+        if source == "semantic_scholar":
+            paper = await paper_api.semantic_scholar.get_paper_details(paper_id)
+        elif source == "arxiv":
+            # arXiv search by ID
+            results = await paper_api.arxiv.search(f"id:{paper_id}", max_results=1)
+            paper = results[0] if results else None
+        else:
+            raise HTTPException(status_code=400, detail=f"Source {source} not supported for direct fetch")
+        
+        if not paper:
+            raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
+        
+        # Create document from paper metadata
+        doc = Document(
+            id=paper.paper_id,
+            content=f"{paper.title}\n\n{paper.abstract}",
+            metadata={
+                "title": paper.title,
+                "authors": ", ".join(paper.authors),
+                "year": paper.year,
+                "journal": paper.journal,
+                "doi": paper.doi,
+                "url": paper.url,
+                "source_api": paper.source_api,
+                "keywords": ", ".join(paper.keywords or [])
+            }
+        )
+        
+        # Add to vector store
+        doc_id = vector_store.add_document(doc)
+        logger.info(f"Added paper {paper_id} to vector store as {doc_id}")
+        
+        return {
+            "success": True,
+            "doc_id": doc_id,
+            "paper_id": paper_id,
+            "title": paper.title,
+            "message": f"Successfully ingested paper from {source}"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to ingest external paper: {e}")
+        raise HTTPException(status_code=500, detail=f"Ingest failed: {str(e)}")
+
+
+@app.post("/api/papers/batch-ingest")
+async def batch_ingest_papers(
+    query: str,
+    max_results: int = 20,
+    sources: List[str] = None,
+    background_tasks: BackgroundTasks = None
+):
+    """
+    Search for papers and automatically ingest them into the vector store
+    
+    Example:
+    ```
+    POST /api/papers/batch-ingest
+    {
+        "query": "attention mechanisms in NLP",
+        "max_results": 20,
+        "sources": ["arxiv", "semantic_scholar"]
+    }
+    ```
+    """
+    try:
+        paper_api = get_component("paper_api")
+        vector_store = get_component("vector_store")
+        
+        # Search for papers
+        sources = sources or ["arxiv", "semantic_scholar"]
+        logger.info(f"Batch ingest: Searching for '{query}' across {sources}")
+        
+        results = await paper_api.search_all(
+            query=query,
+            max_results_per_source=max_results // len(sources),
+            sources=sources
+        )
+        
+        # Deduplicate
+        papers = paper_api.deduplicate_papers(results)
+        logger.info(f"Found {len(papers)} unique papers to ingest")
+        
+        # Ingest all papers
+        ingested_count = 0
+        failed_count = 0
+        ingested_ids = []
+        
+        for paper in papers[:max_results]:
+            try:
+                doc = Document(
+                    id=paper.paper_id,
+                    content=f"{paper.title}\n\n{paper.abstract}",
+                    metadata={
+                        "title": paper.title,
+                        "authors": ", ".join(paper.authors),
+                        "year": paper.year,
+                        "journal": paper.journal,
+                        "doi": paper.doi,
+                        "url": paper.url,
+                        "source_api": paper.source_api,
+                        "keywords": ", ".join(paper.keywords or [])
+                    }
+                )
+                
+                doc_id = vector_store.add_document(doc)
+                ingested_ids.append(doc_id)
+                ingested_count += 1
+                
+            except Exception as e:
+                logger.warning(f"Failed to ingest paper {paper.paper_id}: {e}")
+                failed_count += 1
+        
+        return {
+            "success": True,
+            "query": query,
+            "papers_found": len(papers),
+            "papers_ingested": ingested_count,
+            "papers_failed": failed_count,
+            "ingested_ids": ingested_ids,
+            "message": f"Successfully ingested {ingested_count} papers"
+        }
+    
+    except Exception as e:
+        logger.error(f"Batch ingest failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Batch ingest failed: {str(e)}")
 
 
 if __name__ == "__main__":

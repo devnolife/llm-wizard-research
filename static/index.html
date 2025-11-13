@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wizard Research - Academic Paper Discovery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --dark: #1e293b;
+            --darker: #0f172a;
+            --light: #f1f5f9;
+            --lighter: #f8fafc;
+            --border: #e2e8f0;
+            --text: #334155;
+            --text-light: #64748b;
+            --shadow: rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, var(--lighter) 0%, var(--light) 100%);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: white;
+            box-shadow: 0 2px 10px var(--shadow);
+            padding: 20px 0;
+            margin-bottom: 30px;
+            border-radius: 12px;
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: var(--primary);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .wizard-icon {
+            font-size: 2.5rem;
+        }
+
+        .search-section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px var(--shadow);
+            margin-bottom: 30px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            min-width: 300px;
+            padding: 14px 18px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+        }
+
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:disabled {
+            background: var(--text-light);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .year-filter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .year-filter label {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        input[type="number"] {
+            width: 100px;
+            padding: 8px 12px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+
+        .api-toggles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .api-toggles label {
+            font-weight: 600;
+            color: var(--text);
+            margin-right: 8px;
+        }
+
+        .toggle-btn {
+            padding: 8px 16px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toggle-btn.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .toggle-btn.core.active {
+            background: var(--secondary);
+            border-color: var(--secondary);
+        }
+
+        .toggle-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px var(--shadow);
+        }
+
+        .results-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .results-count {
+            font-size: 1.1rem;
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .spinner {
+            border: 4px solid var(--border);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .papers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 25px;
+        }
+
+        .paper-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 10px var(--shadow);
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .paper-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            border-color: var(--primary);
+        }
+
+        .paper-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 12px;
+            gap: 10px;
+        }
+
+        .paper-source {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .source-core {
+            background: linear-gradient(135deg, var(--secondary) 0%, var(--primary) 100%);
+            color: white;
+        }
+
+        .source-arxiv {
+            background: #b91c1c;
+            color: white;
+        }
+
+        .source-semantic_scholar {
+            background: #0284c7;
+            color: white;
+        }
+
+        .source-crossref {
+            background: #059669;
+            color: white;
+        }
+
+        .source-pubmed {
+            background: #7c3aed;
+            color: white;
+        }
+
+        .paper-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--dark);
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+
+        .paper-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 12px;
+            font-size: 0.9rem;
+            color: var(--text-light);
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .paper-authors {
+            color: var(--text);
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+        }
+
+        .paper-abstract {
+            color: var(--text-light);
+            margin-bottom: 15px;
+            line-height: 1.6;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .paper-keywords {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 15px;
+        }
+
+        .keyword {
+            padding: 3px 10px;
+            background: var(--light);
+            border-radius: 15px;
+            font-size: 0.8rem;
+            color: var(--text);
+        }
+
+        .paper-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 0.85rem;
+            border-radius: 6px;
+        }
+
+        .btn-outline {
+            background: white;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+
+        .btn-outline:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-text {
+            font-size: 1.3rem;
+            color: var(--text-light);
+            margin-bottom: 10px;
+        }
+
+        .error {
+            background: #fee2e2;
+            border: 2px solid var(--danger);
+            color: #991b1b;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .papers-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .search-box {
+                flex-direction: column;
+            }
+
+            input[type="text"] {
+                min-width: 100%;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        .citation-badge {
+            background: var(--warning);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <h1>
+                    <span class="wizard-icon">🧙‍♂️</span>
+                    Wizard Research
+                </h1>
+                <div style="text-align: right;">
+                    <div style="font-size: 0.9rem; color: var(--text-light);">
+                        Academic Paper Discovery System
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="search-section">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Search for academic papers (e.g., machine learning, quantum computing)..."
+                    onkeypress="if(event.key === 'Enter') searchPapers()"
+                >
+                <button class="btn btn-primary" onclick="searchPapers()" id="searchBtn">
+                    🔍 Search Papers
+                </button>
+            </div>
+
+            <div class="filters">
+                <div class="year-filter">
+                    <label>📅 Year Range:</label>
+                    <input type="number" id="yearFrom" placeholder="From" min="1900" max="2100">
+                    <span>to</span>
+                    <input type="number" id="yearTo" placeholder="To" min="1900" max="2100">
+                </div>
+
+                <div class="api-toggles">
+                    <label>📚 Data Sources:</label>
+                    <button class="toggle-btn core active" data-source="core" onclick="toggleSource('core')">
+                        ⭐ CORE (Primary)
+                    </button>
+                    <button class="toggle-btn" data-source="arxiv" onclick="toggleSource('arxiv')">
+                        arXiv
+                    </button>
+                    <button class="toggle-btn" data-source="semantic_scholar" onclick="toggleSource('semantic_scholar')">
+                        Semantic Scholar
+                    </button>
+                    <button class="toggle-btn" data-source="crossref" onclick="toggleSource('crossref')">
+                        CrossRef
+                    </button>
+                    <button class="toggle-btn" data-source="pubmed" onclick="toggleSource('pubmed')">
+                        PubMed
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorMessage"></div>
+
+        <div id="resultsSection" style="display: none;">
+            <div class="results-info">
+                <div class="results-count" id="resultsCount"></div>
+            </div>
+        </div>
+
+        <div id="loadingSection" style="display: none;">
+            <div class="loading">
+                <div class="spinner"></div>
+                <div style="color: var(--text-light); font-size: 1.1rem;">Searching academic databases...</div>
+            </div>
+        </div>
+
+        <div id="papersContainer" class="papers-grid"></div>
+
+        <div id="emptyState" class="empty-state">
+            <div class="empty-icon">🔬</div>
+            <div class="empty-text">Search for academic papers to get started</div>
+            <div style="color: var(--text-light); font-size: 0.95rem;">
+                Use CORE as the primary source with 10+ million open access papers
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const activeSources = new Set(['core']); // CORE active by default
+
+        function toggleSource(source) {
+            const btn = document.querySelector(`[data-source="${source}"]`);
+            if (activeSources.has(source)) {
+                activeSources.delete(source);
+                btn.classList.remove('active');
+            } else {
+                activeSources.add(source);
+                btn.classList.add('active');
+            }
+        }
+
+        async function searchPapers() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) {
+                showError('Please enter a search query');
+                return;
+            }
+
+            if (activeSources.size === 0) {
+                showError('Please select at least one data source');
+                return;
+            }
+
+            const yearFrom = document.getElementById('yearFrom').value;
+            const yearTo = document.getElementById('yearTo').value;
+
+            // Show loading
+            document.getElementById('loadingSection').style.display = 'block';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('papersContainer').innerHTML = '';
+            document.getElementById('errorMessage').innerHTML = '';
+            document.getElementById('searchBtn').disabled = true;
+
+            try {
+                const payload = {
+                    query: query,
+                    max_results: 10,
+                    sources: Array.from(activeSources),
+                    deduplicate: true
+                };
+
+                if (yearFrom) payload.year_from = parseInt(yearFrom);
+                if (yearTo) payload.year_to = parseInt(yearTo);
+
+                const response = await fetch('/api/papers/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                showError(`Search failed: ${error.message}`);
+                document.getElementById('emptyState').style.display = 'block';
+            } finally {
+                document.getElementById('loadingSection').style.display = 'none';
+                document.getElementById('searchBtn').disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            const container = document.getElementById('papersContainer');
+            const papers = data.papers || [];
+
+            if (papers.length === 0) {
+                document.getElementById('emptyState').style.display = 'block';
+                document.querySelector('.empty-text').textContent = 'No papers found';
+                return;
+            }
+
+            document.getElementById('resultsSection').style.display = 'block';
+            document.getElementById('resultsCount').textContent = 
+                `Found ${papers.length} paper${papers.length !== 1 ? 's' : ''}`;
+
+            container.innerHTML = papers.map(paper => createPaperCard(paper)).join('');
+        }
+
+        function createPaperCard(paper) {
+            const authors = paper.authors?.slice(0, 3).join(', ') || 'Unknown authors';
+            const authorsText = paper.authors?.length > 3 ? `${authors}, et al.` : authors;
+            const abstract = paper.abstract || 'No abstract available';
+            const keywords = paper.keywords?.slice(0, 5) || [];
+            const year = paper.year || 'N/A';
+            const citations = paper.citation_count || 0;
+
+            return `
+                <div class="paper-card">
+                    <div class="paper-header">
+                        <span class="paper-source source-${paper.source_api}">
+                            ${paper.source_api}
+                        </span>
+                        ${citations > 0 ? `<span class="citation-badge">📊 ${citations} citations</span>` : ''}
+                    </div>
+                    
+                    <div class="paper-title">${escapeHtml(paper.title)}</div>
+                    
+                    <div class="paper-meta">
+                        <div class="meta-item">
+                            <span>📅</span>
+                            <span>${year}</span>
+                        </div>
+                        ${paper.journal ? `
+                        <div class="meta-item">
+                            <span>📰</span>
+                            <span>${escapeHtml(paper.journal)}</span>
+                        </div>
+                        ` : ''}
+                        ${paper.doi ? `
+                        <div class="meta-item">
+                            <span>🔗</span>
+                            <span>DOI: ${escapeHtml(paper.doi)}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="paper-authors">
+                        <strong>Authors:</strong> ${escapeHtml(authorsText)}
+                    </div>
+                    
+                    <div class="paper-abstract">
+                        ${escapeHtml(abstract.substring(0, 300))}${abstract.length > 300 ? '...' : ''}
+                    </div>
+                    
+                    ${keywords.length > 0 ? `
+                    <div class="paper-keywords">
+                        ${keywords.map(k => `<span class="keyword">${escapeHtml(k)}</span>`).join('')}
+                    </div>
+                    ` : ''}
+                    
+                    <div class="paper-actions">
+                        ${paper.url ? `
+                        <button class="btn btn-small btn-outline" onclick="window.open('${escapeHtml(paper.url)}', '_blank')">
+                            📄 Read Paper
+                        </button>
+                        ` : ''}
+                        ${paper.pdf_url ? `
+                        <button class="btn btn-small btn-outline" onclick="window.open('${escapeHtml(paper.pdf_url)}', '_blank')">
+                            📥 Download PDF
+                        </button>
+                        ` : ''}
+                        <button class="btn btn-small btn-success" onclick="ingestPaper('${escapeHtml(paper.paper_id)}', '${paper.source_api}')">
+                            ➕ Add to Collection
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function ingestPaper(paperId, source) {
+            try {
+                const response = await fetch('/api/papers/ingest-external', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        paper_id: paperId,
+                        source: source
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                alert('✅ Paper added to your collection successfully!');
+            } catch (error) {
+                alert(`❌ Failed to add paper: ${error.message}`);
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.innerHTML = `<div class="error">⚠️ ${escapeHtml(message)}</div>`;
+            setTimeout(() => {
+                errorDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
