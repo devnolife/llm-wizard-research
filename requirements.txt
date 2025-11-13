@@ -1,0 +1,53 @@
+# Core Dependencies
+ollama>=0.3.0
+chromadb>=0.4.22
+langchain>=0.1.0
+langchain-community>=0.0.10
+sentence-transformers>=2.2.2
+
+# LLM & Embeddings
+transformers>=4.36.0
+torch>=2.1.0
+
+# Knowledge Graph (Optional)
+neo4j>=5.14.0
+networkx>=3.2.1
+
+# API Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Document Processing
+pypdf>=3.17.0
+python-docx>=1.1.0
+python-magic>=0.4.27
+pillow>=10.1.0
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.1.0
+scikit-learn>=1.3.0
+
+# Utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+requests>=2.31.0
+aiohttp>=3.9.0
+tqdm>=4.66.0
+
+# Logging & Monitoring
+loguru>=0.7.2
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+httpx>=0.26.0
+
+# Development
+black>=23.12.0
+isort>=5.13.0
+flake8>=7.0.0
+mypy>=1.8.0
