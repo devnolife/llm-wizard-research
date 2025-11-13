@@ -693,15 +693,11 @@
 
         async function ingestPaper(paperId, source) {
             try {
-                const response = await fetch('/api/papers/ingest-external', {
+                const response = await fetch(`/api/papers/ingest-external?paper_id=${encodeURIComponent(paperId)}&source=${encodeURIComponent(source)}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        paper_id: paperId,
-                        source: source
-                    })
+                    }
                 });
 
                 if (!response.ok) {

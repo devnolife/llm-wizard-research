@@ -579,11 +579,21 @@ class CoreAPI:
                 if response.status_code == 401:
                     logger.warning("CORE API: Invalid or missing API key")
                     return []
+                elif response.status_code == 500:
+                    # CORE API sometimes returns 500 but with partial results
+                    logger.warning(f"CORE API returned 500, attempting to parse partial results")
+                    try:
+                        data = response.json()
+                        # Continue processing if we got any results despite the error
+                    except Exception as e:
+                        logger.error(f"CORE API 500 error with no parseable data: {e}")
+                        return []
                 elif response.status_code != 200:
                     logger.error(f"CORE API error: {response.status_code} - {response.text[:200]}")
                     return []
+                else:
+                    data = response.json()
                 
-                data = response.json()
                 papers = []
                 
                 for item in data.get("results", []):
