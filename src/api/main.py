@@ -76,6 +76,7 @@ class PaperSearchRequest(BaseModel):
     deduplicate: Optional[bool] = Field(True, description="Remove duplicate papers")
     year_from: Optional[int] = Field(None, description="Filter papers from this year onwards")
     year_to: Optional[int] = Field(None, description="Filter papers up to this year")
+    embedding_model: Optional[str] = Field("all-MiniLM-L6-v2", description="Embedding model to use for search")
 
 
 class PaperSearchResponse(BaseModel):
@@ -83,6 +84,7 @@ class PaperSearchResponse(BaseModel):
     total_results: int
     papers: List[Dict[str, Any]]
     sources_searched: List[str]
+    embedding_model: Optional[str] = None
 
 
 # Initialize FastAPI app
@@ -550,7 +552,8 @@ async def search_external_papers(request: PaperSearchRequest):
             query=request.query,
             total_results=len(papers_dict),
             papers=papers_dict,
-            sources_searched=sources
+            sources_searched=sources,
+            embedding_model=request.embedding_model
         )
     
     except Exception as e:
@@ -589,6 +592,17 @@ async def ingest_external_paper(
         elif source == "arxiv":
             # arXiv search by ID
             results = await paper_api.arxiv.search(f"id:{paper_id}", max_results=1)
+            paper = results[0] if results else None
+        elif source == "core":
+            # CORE API get paper by ID
+            paper = await paper_api.core.get_paper_details(paper_id)
+        elif source == "pubmed":
+            # PubMed search by PMID
+            results = await paper_api.pubmed.search(paper_id, max_results=1)
+            paper = results[0] if results else None
+        elif source == "crossref":
+            # CrossRef search by DOI
+            results = await paper_api.crossref.search(paper_id, max_results=1)
             paper = results[0] if results else None
         else:
             raise HTTPException(status_code=400, detail=f"Source {source} not supported for direct fetch")

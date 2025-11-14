@@ -485,6 +485,17 @@
                     <input type="number" id="yearTo" placeholder="To" min="1900" max="2100">
                 </div>
 
+                <div class="year-filter">
+                    <label>🤖 Embedding Model:</label>
+                    <select id="embeddingModel" style="padding: 8px 12px; border: 2px solid var(--border); border-radius: 6px; font-size: 0.95rem; min-width: 200px;">
+                        <option value="nomic-embed-text">Ollama: nomic-embed-text (Recommended)</option>
+                        <option value="mxbai-embed-large">Ollama: mxbai-embed-large</option>
+                        <option value="all-MiniLM-L6-v2" selected>SentenceTransformer: MiniLM-L6 (Fast)</option>
+                        <option value="all-mpnet-base-v2">SentenceTransformer: MPNet (Accurate)</option>
+                        <option value="all-MiniLM-L12-v2">SentenceTransformer: MiniLM-L12 (Balance)</option>
+                    </select>
+                </div>
+
                 <div class="api-toggles">
                     <label>📚 Data Sources:</label>
                     <button class="toggle-btn core active" data-source="core" onclick="toggleSource('core')">
@@ -511,6 +522,10 @@
         <div id="resultsSection" style="display: none;">
             <div class="results-info">
                 <div class="results-count" id="resultsCount"></div>
+                <div id="modelInfo" style="font-size: 0.9rem; color: var(--text-light); display: flex; align-items: center; gap: 8px;">
+                    <span>🤖</span>
+                    <span id="modelName"></span>
+                </div>
             </div>
         </div>
 
@@ -570,11 +585,14 @@
             document.getElementById('searchBtn').disabled = true;
 
             try {
+                const embeddingModel = document.getElementById('embeddingModel').value;
+                
                 const payload = {
                     query: query,
                     max_results: 10,
                     sources: Array.from(activeSources),
-                    deduplicate: true
+                    deduplicate: true,
+                    embedding_model: embeddingModel
                 };
 
                 if (yearFrom) payload.year_from = parseInt(yearFrom);
@@ -616,6 +634,13 @@
             document.getElementById('resultsSection').style.display = 'block';
             document.getElementById('resultsCount').textContent = 
                 `Found ${papers.length} paper${papers.length !== 1 ? 's' : ''}`;
+            
+            // Display embedding model used from backend response
+            const embeddingModel = data.embedding_model || document.getElementById('embeddingModel').value;
+            const modelDisplay = embeddingModel.includes('nomic') || embeddingModel.includes('mxbai') 
+                ? `Ollama: ${embeddingModel}` 
+                : `SentenceTransformer: ${embeddingModel}`;
+            document.getElementById('modelName').textContent = `Model: ${modelDisplay}`;
 
             container.innerHTML = papers.map(paper => createPaperCard(paper)).join('');
         }

@@ -584,6 +584,7 @@ class CoreAPI:
                     logger.warning(f"CORE API returned 500, attempting to parse partial results")
                     try:
                         data = response.json()
+                        logger.debug(f"CORE 500 response keys: {list(data.keys())}")
                         # Continue processing if we got any results despite the error
                     except Exception as e:
                         logger.error(f"CORE API 500 error with no parseable data: {e}")
@@ -595,8 +596,10 @@ class CoreAPI:
                     data = response.json()
                 
                 papers = []
+                results = data.get("results", [])
+                logger.debug(f"CORE API returned {len(results)} results")
                 
-                for item in data.get("results", []):
+                for item in results:
                     # Extract authors
                     authors = []
                     for author in item.get("authors", []):
@@ -630,6 +633,57 @@ class CoreAPI:
         except Exception as e:
             logger.error(f"CORE API error: {e}")
             return []
+    
+    async def get_paper_details(self, paper_id: str) -> Optional[PaperMetadata]:
+        """Get detailed information about a specific paper from CORE by ID"""
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                response = await client.get(
+                    f"{self.base_url}/works/{paper_id}",
+                    headers=self.headers
+                )
+                
+                if response.status_code == 404:
+                    logger.warning(f"CORE API: Paper {paper_id} not found")
+                    return None
+                elif response.status_code != 200:
+                    logger.error(f"CORE API error: {response.status_code}")
+                    return None
+                
+                item = response.json()
+                
+                # Extract authors
+                authors = []
+                for author in item.get("authors", []):
+                    if isinstance(author, dict):
+                        authors.append(author.get("name", "Unknown"))
+                    elif isinstance(author, str):
+                        authors.append(author)
+                
+                download_url = item.get("downloadUrl")
+                source_urls = item.get("sourceFulltextUrls", [])
+                
+                paper = PaperMetadata(
+                    paper_id=str(item.get("id", paper_id)),
+                    title=item.get("title", ""),
+                    authors=authors[:5],
+                    abstract=item.get("abstract", "")[:2000] if item.get("abstract") else "",
+                    year=item.get("yearPublished"),
+                    doi=item.get("doi"),
+                    url=source_urls[0] if source_urls else f"https://core.ac.uk/reader/{item.get('id')}",
+                    pdf_url=download_url,
+                    citation_count=item.get("citationCount", 0),
+                    journal=item.get("publisher"),
+                    source_api="core",
+                    keywords=item.get("subjects", [])[:10] if item.get("subjects") else []
+                )
+                
+                logger.info(f"CORE API: Retrieved paper {paper_id}")
+                return paper
+                
+        except Exception as e:
+            logger.error(f"CORE API get_paper_details error: {e}")
+            return None
 
 
 class AggregatedPaperAPI:
