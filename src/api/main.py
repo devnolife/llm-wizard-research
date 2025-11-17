@@ -195,6 +195,31 @@ def get_component(name: str):
     return _components.get(name)
 
 
+def clean_paper_metadata(paper) -> Dict[str, Any]:
+    """Clean paper metadata by removing None values for ChromaDB compatibility"""
+    metadata = {
+        "title": paper.title or "Unknown",
+        "authors": ", ".join(paper.authors) if paper.authors else "Unknown",
+        "source_api": paper.source_api or "unknown",
+    }
+    
+    # Add optional fields only if they have values
+    if paper.year is not None:
+        metadata["year"] = int(paper.year)  # Ensure it's an int
+    if paper.journal:
+        metadata["journal"] = str(paper.journal)
+    if paper.doi:
+        metadata["doi"] = str(paper.doi)
+    if paper.url:
+        metadata["url"] = str(paper.url)
+    if paper.keywords:
+        metadata["keywords"] = ", ".join(paper.keywords)
+    if paper.citation_count is not None:
+        metadata["citation_count"] = int(paper.citation_count)
+    
+    return metadata
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
     """Serve frontend HTML"""
@@ -235,7 +260,8 @@ async def health_check():
     
     try:
         glm = get_component("glm")
-        components_status["glm"] = glm.health_check()
+        glm_health = await glm.health_check()
+        components_status["glm"] = glm_health.get("status") == "healthy"
     except Exception as e:
         logger.error(f"GLM health check failed: {e}")
         components_status["glm"] = False
@@ -401,20 +427,33 @@ async def ingest_document(
         if title:
             processed_doc.metadata["title"] = title
         if authors:
-            processed_doc.metadata["authors"] = [a.strip() for a in authors.split(",")]
+            # Convert authors list to comma-separated string for ChromaDB compatibility
+            processed_doc.metadata["authors"] = authors  # Keep as string
         if year:
-            processed_doc.metadata["year"] = year
+            processed_doc.metadata["year"] = int(year)
         
         # Add to vector store
         vector_store = get_component("vector_store")
         
-        # Convert chunks to documents
+        # Convert chunks to documents with ChromaDB-compatible metadata
         docs_to_add = []
         for chunk in processed_doc.chunks:
+            # Clean metadata to ensure ChromaDB compatibility
+            clean_metadata = {}
+            for key, value in chunk.metadata.items():
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    clean_metadata[key] = value
+                elif isinstance(value, list):
+                    # Convert lists to comma-separated strings
+                    clean_metadata[key] = ", ".join(str(v) for v in value)
+                else:
+                    # Convert other types to string
+                    clean_metadata[key] = str(value)
+            
             docs_to_add.append(Document(
                 id=chunk.chunk_id,
                 content=chunk.content,
-                metadata=chunk.metadata
+                metadata=clean_metadata
             ))
         
         doc_ids = vector_store.add_documents(docs_to_add)
@@ -611,19 +650,13 @@ async def ingest_external_paper(
             raise HTTPException(status_code=404, detail=f"Paper {paper_id} not found")
         
         # Create document from paper metadata
+        # Clean metadata to remove None values (ChromaDB doesn't accept them)
+        metadata = clean_paper_metadata(paper)
+        
         doc = Document(
             id=paper.paper_id,
-            content=f"{paper.title}\n\n{paper.abstract}",
-            metadata={
-                "title": paper.title,
-                "authors": ", ".join(paper.authors),
-                "year": paper.year,
-                "journal": paper.journal,
-                "doi": paper.doi,
-                "url": paper.url,
-                "source_api": paper.source_api,
-                "keywords": ", ".join(paper.keywords or [])
-            }
+            content=f"{paper.title or 'Untitled'}\n\n{paper.abstract or 'No abstract available'}",
+            metadata=metadata
         )
         
         # Add to vector store
@@ -690,19 +723,13 @@ async def batch_ingest_papers(
         
         for paper in papers[:max_results]:
             try:
+                # Clean metadata to remove None values
+                metadata = clean_paper_metadata(paper)
+                
                 doc = Document(
                     id=paper.paper_id,
-                    content=f"{paper.title}\n\n{paper.abstract}",
-                    metadata={
-                        "title": paper.title,
-                        "authors": ", ".join(paper.authors),
-                        "year": paper.year,
-                        "journal": paper.journal,
-                        "doi": paper.doi,
-                        "url": paper.url,
-                        "source_api": paper.source_api,
-                        "keywords": ", ".join(paper.keywords or [])
-                    }
+                    content=f"{paper.title or 'Untitled'}\n\n{paper.abstract or 'No abstract available'}",
+                    metadata=metadata
                 )
                 
                 doc_id = vector_store.add_document(doc)
