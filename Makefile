@@ -26,7 +26,7 @@ dev: ## Run both backend and frontend in development mode
 	make -j2 backend frontend
 
 backend: ## Run backend server
-	cd backend && python -m app.main
+	./run_backend.sh
 
 frontend: ## Run frontend development server
 	cd frontend && npm run dev

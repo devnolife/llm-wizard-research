@@ -14,8 +14,10 @@ export const analysisService = {
   },
 
   // Get analysis status
-  async getAnalysisStatus(jobId) {
-    const response = await api.get(`/api/analysis-status/${jobId}`)
+  async getAnalysisStatus(jobId, lang = 'en') {
+    const response = await api.get(`/api/analysis-status/${jobId}`, {
+      params: { lang }
+    })
     return response.data
   },
 

@@ -76,8 +76,25 @@ ollama pull glm-4-flash  # or your preferred model
 ```
 
 5. **Run development servers**
+
+**Option A: Using Makefile (Recommended)**
 ```bash
-make dev
+# Terminal 1 - Backend
+make backend
+
+# Terminal 2 - Frontend  
+make frontend
+```
+
+**Option B: Manual**
+```bash
+# Terminal 1 - Backend
+./run_backend.sh
+# or
+cd backend && uvicorn app.main:app --reload
+
+# Terminal 2 - Frontend
+cd frontend && npm run dev
 ```
 
 This will start:

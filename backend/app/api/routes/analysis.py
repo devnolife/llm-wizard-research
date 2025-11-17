@@ -31,6 +31,34 @@ router = APIRouter()
 _analysis_jobs = {}
 
 
+def translate_to_indonesian(glm, text):
+    """Translate text to Indonesian using LLM"""
+    if not text:
+        return text
+    
+    if isinstance(text, list):
+        # Translate list items
+        translated = []
+        for item in text:
+            prompt = f"""Translate the following text to Indonesian. Keep technical terms if they don't have good Indonesian equivalents.
+
+Text: {item}
+
+Indonesian translation:"""
+            result = glm.generate(prompt, max_tokens=500)
+            translated.append(result.strip())
+        return translated
+    else:
+        # Translate single text
+        prompt = f"""Translate the following text to Indonesian. Keep technical terms if they don't have good Indonesian equivalents.
+
+Text: {text}
+
+Indonesian translation:"""
+        result = glm.generate(prompt, max_tokens=1000)
+        return result.strip()
+
+
 @router.post("/recommend")
 async def recommend(request: RecommendationRequest):
     """Get research recommendations"""
@@ -170,12 +198,42 @@ async def upload_and_analyze(
 
 
 @router.get("/analysis-status/{job_id}")
-async def get_analysis_status(job_id: str):
-    """Get the status of an analysis job"""
+async def get_analysis_status(job_id: str, lang: str = "en"):
+    """Get the status of an analysis job
+    
+    Args:
+        job_id: The job ID
+        lang: Language for results (en/id). Default: en
+    """
     if job_id not in _analysis_jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    return _analysis_jobs[job_id]
+    job = _analysis_jobs[job_id]
+    
+    # Translate if requested and job is completed
+    if lang == "id" and job["status"] == "completed" and "results" in job:
+        if "results_id" not in job:
+            # Translate results to Indonesian
+            glm = get_glm_interface()
+            results = job["results"]
+            
+            job["results_id"] = {
+                "topics": translate_to_indonesian(glm, results.get("topics", [])),
+                "summary": translate_to_indonesian(glm, results.get("summary", "")),
+                "gaps": translate_to_indonesian(glm, results.get("gaps", [])),
+                "recommendations": translate_to_indonesian(glm, results.get("recommendations", "")),
+                "roadmap": translate_to_indonesian(glm, results.get("roadmap", "")),
+                "total_chunks": results.get("total_chunks"),
+                "files_processed": results.get("files_processed")
+            }
+        
+        # Return translated version
+        return {
+            **job,
+            "results": job["results_id"]
+        }
+    
+    return job
 
 
 async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
@@ -204,9 +262,9 @@ async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
                 metadata = {
                     "source": pdf_path.name,
                     "title": processed_doc.title or pdf_path.name,
-                    "chunk_index": chunk["index"]
+                    "chunk_index": chunk.chunk_index
                 }
-                vector_store.add_document(chunk["content"], metadata)
+                vector_store.add_document(chunk.content, metadata)
                 total_chunks += 1
             
             # Clean up temp file

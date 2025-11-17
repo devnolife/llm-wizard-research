@@ -9,6 +9,7 @@ const AnalysisResults = ({ darkMode }) => {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [language, setLanguage] = useState('en')
   const [expandedSections, setExpandedSections] = useState({
     topics: true,
     summary: true,
@@ -20,7 +21,9 @@ const AnalysisResults = ({ darkMode }) => {
   useEffect(() => {
     const fetchResults = async () => {
       try {
-        const response = await axios.get(`http://localhost:8000/api/analysis-status/${jobId}`)
+        const response = await axios.get(`http://localhost:8000/api/analysis-status/${jobId}`, {
+          params: { lang: language }
+        })
 
         if (response.data.status === 'completed') {
           setData(response.data.results)
@@ -39,7 +42,7 @@ const AnalysisResults = ({ darkMode }) => {
     }
 
     fetchResults()
-  }, [jobId])
+  }, [jobId, language])
 
   const toggleSection = (section) => {
     setExpandedSections(prev => ({
@@ -82,11 +85,10 @@ const AnalysisResults = ({ darkMode }) => {
           transition={{ delay: 0.3 }}
           className="text-center"
         >
-          <h3 className={`text-2xl font-bold mb-2 bg-gradient-to-r ${
-            darkMode
+          <h3 className={`text-2xl font-bold mb-2 bg-gradient-to-r ${darkMode
               ? 'from-blue-400 via-purple-400 to-pink-400'
               : 'from-blue-600 via-purple-600 to-pink-600'
-          } bg-clip-text text-transparent`}>
+            } bg-clip-text text-transparent`}>
             Analyzing Your Research
           </h3>
           <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -121,11 +123,10 @@ const AnalysisResults = ({ darkMode }) => {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => window.location.href = '/'}
-            className={`mt-8 px-8 py-4 rounded-2xl font-semibold ${
-              darkMode
+            className={`mt-8 px-8 py-4 rounded-2xl font-semibold ${darkMode
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600'
                 : 'bg-gradient-to-r from-blue-500 to-purple-500'
-            } text-white shadow-xl`}
+              } text-white shadow-xl`}
           >
             Try Again
           </motion.button>
@@ -139,11 +140,10 @@ const AnalysisResults = ({ darkMode }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       whileHover={{ y: -4 }}
-      className={`group rounded-3xl overflow-hidden backdrop-blur-xl border transition-all duration-300 ${
-        darkMode
+      className={`group rounded-3xl overflow-hidden backdrop-blur-xl border transition-all duration-300 ${darkMode
           ? 'bg-gray-800/80 border-gray-700/50 hover:bg-gray-700/80'
           : 'bg-white/80 border-gray-200/50 hover:bg-white/90'
-      } shadow-xl hover:shadow-2xl`}
+        } shadow-xl hover:shadow-2xl`}
     >
       <button
         onClick={() => toggleSection(section)}
@@ -153,11 +153,10 @@ const AnalysisResults = ({ darkMode }) => {
           <motion.div
             whileHover={{ rotate: 360 }}
             transition={{ duration: 0.5 }}
-            className={`p-3 rounded-2xl ${
-              darkMode
+            className={`p-3 rounded-2xl ${darkMode
                 ? 'bg-gradient-to-br from-blue-500/20 to-purple-500/20'
                 : 'bg-gradient-to-br from-blue-500/10 to-purple-500/10'
-            }`}
+              }`}
           >
             <Icon className={`w-6 h-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
           </motion.div>
@@ -217,11 +216,10 @@ const AnalysisResults = ({ darkMode }) => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className={`text-5xl md:text-6xl font-extrabold mb-4 bg-gradient-to-r ${
-            darkMode
+          className={`text-5xl md:text-6xl font-extrabold mb-4 bg-gradient-to-r ${darkMode
               ? 'from-green-400 via-emerald-400 to-teal-400'
               : 'from-green-600 via-emerald-600 to-teal-600'
-          } bg-clip-text text-transparent`}
+            } bg-clip-text text-transparent`}
         >
           Analysis Complete!
         </motion.h1>
@@ -235,6 +233,41 @@ const AnalysisResults = ({ darkMode }) => {
           Here are your AI-generated insights
         </motion.p>
 
+        {/* Language Toggle */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="flex gap-3 justify-center mb-8"
+        >
+          <button
+            onClick={() => setLanguage('en')}
+            className={`px-6 py-2 rounded-xl font-semibold transition-all ${language === 'en'
+                ? darkMode
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : 'bg-blue-500 text-white shadow-lg'
+                : darkMode
+                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            English
+          </button>
+          <button
+            onClick={() => setLanguage('id')}
+            className={`px-6 py-2 rounded-xl font-semibold transition-all ${language === 'id'
+                ? darkMode
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : 'bg-blue-500 text-white shadow-lg'
+                : darkMode
+                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            Bahasa Indonesia
+          </button>
+        </motion.div>
+
         <motion.button
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -242,11 +275,10 @@ const AnalysisResults = ({ darkMode }) => {
           whileHover={{ scale: 1.05, y: -2 }}
           whileTap={{ scale: 0.95 }}
           onClick={downloadResults}
-          className={`relative group px-8 py-4 rounded-2xl flex items-center gap-3 mx-auto font-semibold overflow-hidden ${
-            darkMode
+          className={`relative group px-8 py-4 rounded-2xl flex items-center gap-3 mx-auto font-semibold overflow-hidden ${darkMode
               ? 'bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white'
               : 'bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 text-gray-900'
-          } shadow-xl`}
+            } shadow-xl`}
         >
           <Download className="w-5 h-5 relative z-10" />
           <span className="relative z-10">Download Results</span>
@@ -271,17 +303,15 @@ const AnalysisResults = ({ darkMode }) => {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: idx * 0.05 }}
                   whileHover={{ scale: 1.03, x: 4 }}
-                  className={`group relative p-5 rounded-2xl border transition-all duration-300 ${
-                    darkMode
+                  className={`group relative p-5 rounded-2xl border transition-all duration-300 ${darkMode
                       ? 'bg-gradient-to-br from-blue-500/10 to-purple-500/10 border-blue-500/20 hover:border-blue-500/40'
                       : 'bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200/50 hover:border-blue-400/50'
-                  } shadow-md hover:shadow-lg`}
+                    } shadow-md hover:shadow-lg`}
                 >
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">🎯</span>
-                    <span className={`font-semibold flex-1 ${
-                      darkMode ? 'text-white' : 'text-gray-900'
-                    }`}>
+                    <span className={`font-semibold flex-1 ${darkMode ? 'text-white' : 'text-gray-900'
+                      }`}>
                       {topic}
                     </span>
                   </div>
@@ -316,33 +346,29 @@ const AnalysisResults = ({ darkMode }) => {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.08 }}
                   whileHover={{ x: 4, scale: 1.01 }}
-                  className={`group relative p-6 rounded-2xl border-l-4 backdrop-blur-sm transition-all duration-300 ${
-                    darkMode
+                  className={`group relative p-6 rounded-2xl border-l-4 backdrop-blur-sm transition-all duration-300 ${darkMode
                       ? 'bg-gradient-to-r from-yellow-500/10 to-orange-500/5 border-yellow-500 hover:bg-yellow-500/15'
                       : 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-500 hover:bg-yellow-100'
-                  } shadow-md hover:shadow-lg`}
+                    } shadow-md hover:shadow-lg`}
                 >
                   <div className="flex items-start gap-4">
                     <motion.div
                       whileHover={{ rotate: [0, -10, 10, 0] }}
                       transition={{ duration: 0.5 }}
-                      className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
-                        darkMode
+                      className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-bold ${darkMode
                           ? 'bg-yellow-500/20 text-yellow-400'
                           : 'bg-yellow-200 text-yellow-700'
-                      }`}
+                        }`}
                     >
                       {idx + 1}
                     </motion.div>
                     <div className="flex-1">
-                      <h4 className={`font-bold text-lg mb-2 ${
-                        darkMode ? 'text-yellow-400' : 'text-yellow-700'
-                      }`}>
+                      <h4 className={`font-bold text-lg mb-2 ${darkMode ? 'text-yellow-400' : 'text-yellow-700'
+                        }`}>
                         Research Gap #{idx + 1}
                       </h4>
-                      <p className={`text-sm leading-relaxed ${
-                        darkMode ? 'text-gray-300' : 'text-gray-700'
-                      }`}>
+                      <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}>
                         {gap}
                       </p>
                     </div>
