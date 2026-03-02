@@ -2,6 +2,11 @@
 Knowledge Graph Builder for Research Papers
 
 Builds and manages knowledge graphs of research papers, citations, and relationships.
+Now integrated with FactTable (SPO triples) for structured fact-based reasoning.
+
+References:
+    - Ji, S., et al. (2021). A Survey on Knowledge Graphs
+    - revisi.md Section 9: Skema Fakta Knowledge Graph (Tabel SPO)
 """
 
 from typing import Dict, Any, List, Optional, Tuple, Set
@@ -10,6 +15,16 @@ import networkx as nx
 from collections import defaultdict
 
 from loguru import logger
+
+# Import FactTable types for integration
+try:
+    from ..knowledge.fact_table import FactTable, Entity, Fact, EntityType, PredicateType
+except ImportError:
+    FactTable = None
+    Entity = None
+    Fact = None
+    EntityType = None
+    PredicateType = None
 
 
 @dataclass
@@ -33,10 +48,16 @@ class CitationEdge:
 
 class KnowledgeGraphBuilder:
     """
-    Builds and manages knowledge graphs of research papers
+    Builds and manages knowledge graphs of research papers.
+    
+    Now supports two modes:
+    1. Legacy: Paper-citation graph (PaperNode + CitationEdge)
+    2. SPO-based: Built from FactTable triples (Entity nodes + Predicate edges)
     
     Features:
     - Paper relationship modeling
+    - SPO triple graph construction (from FactTable)
+    - Fact querying for Rule Engine
     - Citation network analysis
     - Topic clustering
     - Influence propagation
@@ -55,6 +76,7 @@ class KnowledgeGraphBuilder:
         """
         self.use_neo4j = use_neo4j
         self.graph = nx.DiGraph()  # Directed graph for citations
+        self._fact_table: Optional[FactTable] = None  # Reference to FactTable
         
         if use_neo4j and neo4j_config:
             self._init_neo4j(neo4j_config)
@@ -356,6 +378,247 @@ class KnowledgeGraphBuilder:
                 for u, v, data in self.graph.edges(data=True)
             ]
         }
+    
+    # -----------------------------------------------------------------------
+    # FactTable integration (revisi.md Section 9)
+    # -----------------------------------------------------------------------
+
+    def build_from_fact_table(self, fact_table: FactTable) -> Dict[str, Any]:
+        """
+        Build/populate the NetworkX graph from a FactTable's SPO triples.
+        
+        Each Entity becomes a node, each Fact becomes a directed edge.
+        This transforms the flat SPO table into a traversable graph
+        that the Rule Engine and Gap Detectors can query.
+        
+        Args:
+            fact_table: FactTable instance containing entities and facts
+            
+        Returns:
+            Dict with build statistics
+        """
+        self._fact_table = fact_table
+        
+        nodes_added = 0
+        edges_added = 0
+        
+        # Add all entities as nodes
+        for entity in fact_table.find_entities():
+            if entity.entity_id not in self.graph:
+                self.graph.add_node(
+                    entity.entity_id,
+                    name=entity.name,
+                    entity_type=entity.entity_type.value if entity.entity_type else "UNKNOWN",
+                    node_type="entity",
+                    source_paper=entity.source_paper,
+                    **entity.properties,
+                )
+                nodes_added += 1
+        
+        # Add all facts as edges
+        all_facts = fact_table.query()
+        for fact in all_facts:
+            # Ensure both endpoints exist as nodes
+            if fact.subject_id not in self.graph:
+                self.graph.add_node(fact.subject_id, node_type="entity")
+            if fact.object_id not in self.graph:
+                self.graph.add_node(fact.object_id, node_type="entity")
+            
+            self.graph.add_edge(
+                fact.subject_id,
+                fact.object_id,
+                edge_type=fact.predicate.value if fact.predicate else "UNKNOWN",
+                predicate=fact.predicate.value if fact.predicate else "UNKNOWN",
+                confidence=fact.confidence,
+                source=fact.source,
+                source_paper=fact.source_paper,
+                fact_id=fact.fact_id,
+                is_inferred=fact.is_inferred,
+            )
+            edges_added += 1
+        
+        stats = {
+            "nodes_added": nodes_added,
+            "edges_added": edges_added,
+            "total_nodes": self.graph.number_of_nodes(),
+            "total_edges": self.graph.number_of_edges(),
+        }
+        
+        logger.info(
+            f"Built graph from FactTable: {nodes_added} nodes, "
+            f"{edges_added} edges added"
+        )
+        return stats
+
+    def query_facts(
+        self,
+        subject_id: Optional[str] = None,
+        predicate: Optional[str] = None,
+        object_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Query facts from the graph by SPO pattern.
+        
+        Can query from FactTable (if available) or directly from graph edges.
+        This is the main interface used by the Rule Engine to check facts.
+        
+        Args:
+            subject_id: Filter by subject entity ID
+            predicate: Filter by predicate type string (e.g., "REQUIRES_RESOURCE")
+            object_id: Filter by object entity ID
+            
+        Returns:
+            List of matching fact dicts
+        """
+        # Prefer FactTable if available (more efficient indexing)
+        if self._fact_table is not None:
+            pred_enum = None
+            if predicate:
+                try:
+                    pred_enum = PredicateType(predicate)
+                except (ValueError, TypeError):
+                    pass
+            
+            facts = self._fact_table.query(
+                subject_id=subject_id,
+                predicate=pred_enum,
+                object_id=object_id,
+            )
+            return [f.to_dict() for f in facts]
+        
+        # Fallback: query from graph edges directly
+        results = []
+        for u, v, data in self.graph.edges(data=True):
+            match = True
+            if subject_id and u != subject_id:
+                match = False
+            if predicate and data.get("predicate") != predicate:
+                match = False
+            if object_id and v != object_id:
+                match = False
+            
+            if match:
+                results.append({
+                    "subject_id": u,
+                    "predicate": data.get("predicate", "UNKNOWN"),
+                    "object_id": v,
+                    "confidence": data.get("confidence", 1.0),
+                    "source": data.get("source", ""),
+                    "source_paper": data.get("source_paper", ""),
+                    "fact_id": data.get("fact_id", ""),
+                    "is_inferred": data.get("is_inferred", False),
+                })
+        
+        return results
+
+    def get_entity_neighborhood(
+        self,
+        entity_id: str,
+        max_depth: int = 2,
+    ) -> Dict[str, Any]:
+        """
+        Get the neighborhood of an entity in the graph.
+        Useful for understanding context around a specific entity.
+        
+        Args:
+            entity_id: The entity to explore
+            max_depth: How many hops to traverse
+            
+        Returns:
+            Dict with neighbors, edges, and subgraph info
+        """
+        if entity_id not in self.graph:
+            return {"entity_id": entity_id, "found": False, "neighbors": [], "edges": []}
+        
+        # BFS to find neighborhood
+        visited = {entity_id}
+        frontier = [entity_id]
+        neighbors = []
+        edges = []
+        
+        for depth in range(max_depth):
+            next_frontier = []
+            for node in frontier:
+                # Outgoing edges
+                for _, target, data in self.graph.out_edges(node, data=True):
+                    edges.append({
+                        "source": node,
+                        "target": target,
+                        "predicate": data.get("predicate", "UNKNOWN"),
+                        "confidence": data.get("confidence", 1.0),
+                    })
+                    if target not in visited:
+                        visited.add(target)
+                        next_frontier.append(target)
+                        neighbors.append({
+                            "id": target,
+                            "depth": depth + 1,
+                            **dict(self.graph.nodes[target]),
+                        })
+                
+                # Incoming edges
+                for source, _, data in self.graph.in_edges(node, data=True):
+                    edges.append({
+                        "source": source,
+                        "target": node,
+                        "predicate": data.get("predicate", "UNKNOWN"),
+                        "confidence": data.get("confidence", 1.0),
+                    })
+                    if source not in visited:
+                        visited.add(source)
+                        next_frontier.append(source)
+                        neighbors.append({
+                            "id": source,
+                            "depth": depth + 1,
+                            **dict(self.graph.nodes[source]),
+                        })
+            
+            frontier = next_frontier
+        
+        return {
+            "entity_id": entity_id,
+            "found": True,
+            "entity_data": dict(self.graph.nodes[entity_id]),
+            "neighbors": neighbors,
+            "edges": edges,
+        }
+
+    def find_paths_between_entities(
+        self,
+        source_id: str,
+        target_id: str,
+        max_paths: int = 3,
+    ) -> List[List[Dict[str, Any]]]:
+        """
+        Find paths between two entities in the fact graph.
+        Used by Rule Engine for transitiviy checks (K3).
+        
+        Returns list of paths, each path is a list of edge dicts.
+        """
+        if source_id not in self.graph or target_id not in self.graph:
+            return []
+        
+        paths = []
+        try:
+            for path_nodes in nx.all_simple_paths(
+                self.graph, source_id, target_id, cutoff=4
+            ):
+                path_edges = []
+                for i in range(len(path_nodes) - 1):
+                    edge_data = self.graph.get_edge_data(path_nodes[i], path_nodes[i + 1])
+                    if edge_data:
+                        path_edges.append({
+                            "from": path_nodes[i],
+                            "to": path_nodes[i + 1],
+                            "predicate": edge_data.get("predicate", "UNKNOWN"),
+                        })
+                paths.append(path_edges)
+                if len(paths) >= max_paths:
+                    break
+        except nx.NetworkXError:
+            pass
+        
+        return paths
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get graph statistics"""

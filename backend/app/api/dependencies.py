@@ -1,5 +1,11 @@
 """
 Shared dependencies for API routes
+
+Singleton DI pattern for all components including:
+- FactTable, FactExtractor (knowledge layer)
+- RuleEngine, RelationClassifier (validation layer)
+- Agent tools (RAG, PaperAnalyzer, NLI, KG, SelfCritic)
+- CoordinatorAgent (LangGraph orchestrator)
 """
 
 from functools import lru_cache
@@ -19,6 +25,19 @@ from ..core.agents.recommender import RecommenderAgent
 from ..services.paper_apis import AggregatedPaperAPI
 from ..utils.document_processor import DocumentProcessor
 from ..utils.config_loader import get_config
+
+# New imports — knowledge & validation layers
+from ..core.knowledge.fact_table import FactTable
+from ..core.knowledge.fact_extractor import FactExtractor
+from ..core.validation.rule_engine import RuleEngine
+from ..core.validation.relation_classifier import RelationClassifier
+
+# New imports — agent tools
+from ..core.agents.tools.rag_tool import RAGTool
+from ..core.agents.tools.paper_analyzer_tool import PaperAnalyzerTool
+from ..core.agents.tools.nli_checker_tool import NLICheckerTool
+from ..core.agents.tools.kg_querier_tool import KGQuerierTool
+from ..core.agents.tools.self_critic_tool import SelfCriticTool
 
 config = get_config()
 
@@ -75,14 +94,55 @@ def get_knowledge_graph() -> KnowledgeGraphBuilder:
 
 @lru_cache()
 def get_gap_analyzer() -> GapAnalyzer:
-    """Get or create gap analyzer instance"""
+    """Get or create gap analyzer instance (with new components)"""
     if "gap_analyzer" not in _components:
         _components["gap_analyzer"] = GapAnalyzer(
             vector_store=get_vector_store(),
             knowledge_graph=get_knowledge_graph(),
-            llm_interface=get_glm_interface()
+            llm_interface=get_glm_interface(),
+            fact_table=get_fact_table(),
+            relation_classifier=get_relation_classifier(),
+            rule_engine=get_rule_engine(),
         )
     return _components["gap_analyzer"]
+
+
+@lru_cache()
+def get_fact_table() -> FactTable:
+    """Get or create FactTable instance"""
+    if "fact_table" not in _components:
+        _components["fact_table"] = FactTable()
+    return _components["fact_table"]
+
+
+@lru_cache()
+def get_fact_extractor() -> FactExtractor:
+    """Get or create FactExtractor instance"""
+    if "fact_extractor" not in _components:
+        _components["fact_extractor"] = FactExtractor(
+            llm_interface=get_glm_interface()
+        )
+    return _components["fact_extractor"]
+
+
+@lru_cache()
+def get_rule_engine() -> RuleEngine:
+    """Get or create Rule Engine instance"""
+    if "rule_engine" not in _components:
+        _components["rule_engine"] = RuleEngine(
+            fact_table=get_fact_table()
+        )
+    return _components["rule_engine"]
+
+
+@lru_cache()
+def get_relation_classifier() -> RelationClassifier:
+    """Get or create RelationClassifier instance"""
+    if "relation_classifier" not in _components:
+        _components["relation_classifier"] = RelationClassifier(
+            llm_interface=get_glm_interface()
+        )
+    return _components["relation_classifier"]
 
 
 @lru_cache()
@@ -113,8 +173,9 @@ def get_paper_api() -> AggregatedPaperAPI:
 
 @lru_cache()
 def get_coordinator() -> CoordinatorAgent:
-    """Get or create coordinator agent instance"""
+    """Get or create coordinator agent instance (LangGraph-based)"""
     if "coordinator" not in _components:
+        # Legacy agents
         research_analyzer = ResearchAnalyzerAgent(
             llm_interface=get_glm_interface(),
             retriever=get_retriever()
@@ -122,17 +183,56 @@ def get_coordinator() -> CoordinatorAgent:
         gap_detector = GapDetectorAgent(
             llm_interface=get_glm_interface(),
             retriever=get_retriever(),
-            knowledge_graph=get_knowledge_graph()
+            knowledge_graph=get_knowledge_graph(),
+            fact_table=get_fact_table(),
+            fact_extractor=get_fact_extractor(),
+            gap_analyzer=get_gap_analyzer(),
+            relation_classifier=get_relation_classifier(),
+            rule_engine=get_rule_engine(),
         )
         recommender = RecommenderAgent(
             llm_interface=get_glm_interface(),
             retriever=get_retriever(),
             knowledge_graph=get_knowledge_graph()
         )
+        
+        # Agent tools
+        rag_tool = RAGTool(retriever=get_retriever())
+        paper_analyzer_tool = PaperAnalyzerTool(
+            llm_interface=get_glm_interface(),
+            fact_extractor=get_fact_extractor(),
+            fact_table=get_fact_table(),
+        )
+        nli_checker_tool = NLICheckerTool(
+            relation_classifier=get_relation_classifier(),
+            llm_interface=get_glm_interface(),
+        )
+        kg_querier_tool = KGQuerierTool(
+            graph_builder=get_knowledge_graph(),
+            fact_table=get_fact_table(),
+        )
+        self_critic_tool = SelfCriticTool(
+            rule_engine=get_rule_engine(),
+            llm_interface=get_glm_interface(),
+            fact_table=get_fact_table(),
+        )
+        
         _components["coordinator"] = CoordinatorAgent(
             research_analyzer=research_analyzer,
             gap_detector=gap_detector,
-            recommender=recommender
+            recommender=recommender,
+            # New agentic components
+            rag_tool=rag_tool,
+            paper_analyzer_tool=paper_analyzer_tool,
+            nli_checker_tool=nli_checker_tool,
+            kg_querier_tool=kg_querier_tool,
+            self_critic_tool=self_critic_tool,
+            fact_extractor=get_fact_extractor(),
+            fact_table=get_fact_table(),
+            rule_engine=get_rule_engine(),
+            relation_classifier=get_relation_classifier(),
+            graph_builder=get_knowledge_graph(),
+            llm_interface=get_glm_interface(),
         )
     return _components["coordinator"]
 

@@ -1,5 +1,11 @@
 """
 Analysis and recommendation endpoints
+
+Updated to support:
+- Gap indicators (Fragmentation / Inconsistency / Incompleteness)
+- Rule Engine validation verdicts
+- Fact Table statistics
+- Agent reasoning trace
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
@@ -15,13 +21,21 @@ from ...models.requests import (
     GapDetectionRequest,
     ChatRequest
 )
+from ...models.responses import (
+    AnalysisResponseModel,
+    GapIndicatorModel,
+    RuleEngineReportModel,
+    FactTableStatsModel,
+)
 from ..dependencies import (
     get_coordinator,
     get_gap_analyzer,
     get_retriever,
     get_glm_interface,
     get_vector_store,
-    get_document_processor
+    get_document_processor,
+    get_fact_table,
+    get_rule_engine,
 )
 from ...utils.document_processor import DocumentProcessor
 
@@ -61,7 +75,7 @@ Indonesian translation:"""
 
 @router.post("/recommend")
 async def recommend(request: RecommendationRequest):
-    """Get research recommendations"""
+    """Get research recommendations via the agentic pipeline"""
     try:
         coordinator = get_coordinator()
         
@@ -71,12 +85,38 @@ async def recommend(request: RecommendationRequest):
             context=request.user_context or {}
         )
         
+        # Build structured gap indicators
+        raw_indicators = results.get("gap_indicators", [])
+        gap_indicators = []
+        for gi in raw_indicators:
+            try:
+                gap_indicators.append({
+                    "indicator_type": gi.get("type", gi.get("indicator_type", "FRAGMENTATION")),
+                    "title": gi.get("title", ""),
+                    "description": gi.get("description", ""),
+                    "confidence": gi.get("confidence", 0.0),
+                    "adjusted_confidence": gi.get("adjusted_confidence"),
+                    "rule_engine_verdict": gi.get("rule_engine_verdict"),
+                    "requires_human_validation": gi.get("requires_human_validation", True),
+                    "evidence": gi.get("evidence", []),
+                    "supporting_papers": gi.get("supporting_papers", []),
+                    "suggested_directions": gi.get("suggested_directions", []),
+                })
+            except Exception:
+                pass  # Skip malformed indicators
+        
         return {
             "query": request.query,
+            "execution_mode": results.get("execution_mode", "sequential"),
+            "gap_indicators": gap_indicators,
+            "total_indicators": len(gap_indicators),
+            "rule_engine_report": results.get("rule_engine_report", {}),
+            "fact_table_stats": results.get("fact_table_stats", {}),
             "recommendations": results.get("recommendations", []),
+            "reasoning_trace": results.get("reasoning_trace", []),
+            "self_critique": results.get("self_critique", {}),
             "analysis": results.get("analysis", {}),
-            "gaps": results.get("gaps", {}),
-            "metadata": results.get("metadata", {})
+            "metadata": results.get("metadata", {}),
         }
     except Exception as e:
         logger.error(f"Recommendation failed: {e}")
@@ -85,7 +125,7 @@ async def recommend(request: RecommendationRequest):
 
 @router.post("/gaps")
 async def detect_gaps(request: GapDetectionRequest):
-    """Detect research gaps"""
+    """Detect synthesis gaps using the 3-indicator model"""
     try:
         gap_analyzer = get_gap_analyzer()
         retriever = get_retriever()
@@ -107,18 +147,75 @@ async def detect_gaps(request: GapDetectionRequest):
             depth=request.depth
         )
         
+        # Build response with indicator structure
+        gap_indicators = []
+        for gap in gaps:
+            indicator = {
+                "indicator_type": getattr(gap, "indicator_type", 
+                                   getattr(gap, "gap_type", "FRAGMENTATION")),
+                "description": getattr(gap, "description", str(gap)),
+                "confidence": getattr(gap, "confidence", 0.0),
+                "rule_engine_verdict": getattr(gap, "rule_engine_verdict", None),
+                "requires_human_validation": getattr(
+                    gap, "requires_human_validation", True
+                ),
+                "suggested_directions": getattr(gap, "suggested_directions", []),
+                "evidence": getattr(gap, "evidence", []),
+            }
+            gap_indicators.append(indicator)
+        
+        # Get rule engine stats if available
+        rule_report = {}
+        try:
+            rule_engine = get_rule_engine()
+            if rule_engine:
+                pass_count = sum(
+                    1 for g in gap_indicators
+                    if g.get("rule_engine_verdict") == "PASS"
+                )
+                flag_count = sum(
+                    1 for g in gap_indicators
+                    if g.get("rule_engine_verdict") == "FLAG"
+                )
+                reject_count = sum(
+                    1 for g in gap_indicators
+                    if g.get("rule_engine_verdict") == "REJECT"
+                )
+                rule_report = {
+                    "total": len(gap_indicators),
+                    "passed": pass_count,
+                    "flagged": flag_count,
+                    "rejected": reject_count,
+                }
+        except Exception:
+            pass
+        
+        # Get fact table stats
+        ft_stats = {}
+        try:
+            fact_table = get_fact_table()
+            if fact_table:
+                ft_stats = fact_table.get_statistics()
+        except Exception:
+            pass
+        
         return {
             "topic": request.topic,
-            "total_gaps": len(gaps),
+            "total_indicators": len(gap_indicators),
+            "gap_indicators": gap_indicators,
+            "rule_engine_report": rule_report,
+            "fact_table_stats": ft_stats,
+            # Legacy field (backward compat)
+            "total_gaps": len(gap_indicators),
             "gaps": [
                 {
-                    "type": gap.gap_type,
-                    "description": gap.description,
-                    "confidence": gap.confidence,
-                    "suggested_directions": gap.suggested_directions
+                    "type": g.get("indicator_type", "UNKNOWN"),
+                    "description": g.get("description", ""),
+                    "confidence": g.get("confidence", 0.0),
+                    "suggested_directions": g.get("suggested_directions", []),
                 }
-                for gap in gaps
-            ]
+                for g in gap_indicators
+            ],
         }
     except Exception as e:
         logger.error(f"Gap detection failed: {e}")
@@ -209,6 +306,27 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
         raise HTTPException(status_code=404, detail="Job not found")
     
     job = _analysis_jobs[job_id]
+    
+    # Enrich completed results with rule_engine / fact_table info
+    if job["status"] == "completed" and job.get("results"):
+        results = job["results"]
+        
+        # Add rule_engine_report if not present
+        if "rule_engine_report" not in results:
+            results["rule_engine_report"] = {}
+        
+        # Add fact_table_stats if not present
+        if "fact_table_stats" not in results:
+            try:
+                ft = get_fact_table()
+                if ft:
+                    results["fact_table_stats"] = ft.get_statistics()
+            except Exception:
+                results["fact_table_stats"] = {}
+        
+        # Add reasoning_trace placeholder
+        if "reasoning_trace" not in results:
+            results["reasoning_trace"] = []
     
     # Translate if requested and job is completed
     if lang == "id" and job["status"] == "completed" and "results" in job:
