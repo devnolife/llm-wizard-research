@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, FileText, X, Sparkles } from 'lucide-react'
+import { Upload, FileText, X, Loader } from 'lucide-react'
 import { analysisService } from '../../services/analysisService'
 import { useDarkMode } from '../../contexts/DarkModeContext'
 import { useToast } from '../../contexts/ToastContext'
@@ -29,7 +28,6 @@ const UploadPage = () => {
   const handleDrop = useCallback((e) => {
     e.preventDefault()
     setIsDragging(false)
-
     const droppedFiles = Array.from(e.dataTransfer.files).filter(
       file => file.type === 'application/pdf'
     )
@@ -49,7 +47,6 @@ const UploadPage = () => {
 
   const handleUploadAndAnalyze = async () => {
     if (files.length === 0) return
-
     setUploading(true)
     setError(null)
     setProgress(0)
@@ -64,8 +61,6 @@ const UploadPage = () => {
           setProgress(percentCompleted)
         }
       )
-
-      // Navigate to results page
       navigate(`/results/${response.job_id}`)
     } catch (err) {
       setError(err.userMessage || 'Upload failed. Please try again.')
@@ -75,474 +70,142 @@ const UploadPage = () => {
   }
 
   return (
-    <div className="container mx-auto px-6 py-12">
-      {/* Hero Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, type: "spring" }}
-        className="text-center mb-16"
-      >
-        <motion.div
-          animate={{
-            rotate: [0, 10, -10, 0],
-            scale: [1, 1.1, 1]
-          }}
-          transition={{ duration: 3, repeat: Infinity, repeatDelay: 2 }}
-          className="inline-block mb-6 relative"
-        >
-          <Sparkles className={`w-20 h-20 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`} />
-          <motion.div
-            className="absolute inset-0 blur-2xl"
-            animate={{ opacity: [0.3, 0.6, 0.3] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            <Sparkles className={`w-20 h-20 ${darkMode ? 'text-purple-400' : 'text-purple-600'}`} />
-          </motion.div>
-        </motion.div>
+    <div className="container mx-auto max-w-3xl px-6 py-12">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Auto-Analyze Research</h1>
+        <p className="text-muted-foreground">
+          Upload PDF papers. AI extracts topics, detects research gaps, and generates recommendations.
+        </p>
+      </div>
 
-        <motion.h2
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className={`text-5xl md:text-6xl font-extrabold leading-tight mb-6 bg-gradient-to-r ${
-            darkMode
-              ? 'from-blue-400 via-purple-400 to-pink-400'
-              : 'from-blue-600 via-purple-600 to-pink-600'
-          } bg-clip-text text-transparent`}
-        >
-          Auto-Analyze Your Research
-        </motion.h2>
-
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className={`text-lg md:text-xl max-w-3xl mx-auto leading-relaxed ${
-            darkMode ? 'text-gray-300' : 'text-slate-600'
-          }`}
-        >
-          Upload PDF papers once. Our AI extracts core topics, detects meaningful research gaps,
-          and synthesizes recommendations automatically.
-        </motion.p>
-
-        <div className="relative mt-10 grid gap-5 md:grid-cols-3 max-w-4xl mx-auto">
-          {[{
-            label: 'Documents Processed', value: '1.4K+', accent: 'from-blue-500 to-cyan-400', icon: '📚'
-          }, {
-            label: 'Topics Identified', value: '320+', accent: 'from-purple-500 to-pink-500', icon: '🎯'
-          }, {
-            label: 'Avg. Analysis Time', value: '~2 min', accent: 'from-amber-500 to-orange-500', icon: '⚡'
-          }].map((stat, idx) => (
-            <motion.div
-              key={idx}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 + idx * 0.1 }}
-              whileHover={{ y: -8, scale: 1.05 }}
-              className={`relative group rounded-3xl border p-6 backdrop-blur-lg transition-all duration-300 ${
-                darkMode
-                  ? 'border-white/10 bg-white/5 hover:bg-white/10 shadow-xl'
-                  : 'border-white/50 bg-white/50 hover:bg-white/70 shadow-2xl'
-              }`}
-            >
-              <div className="text-3xl mb-3">{stat.icon}</div>
-              <p className={`text-xs uppercase tracking-wider font-semibold mb-2 ${
-                darkMode ? 'text-gray-400' : 'text-gray-600'
-              }`}>
-                {stat.label}
-              </p>
-              <p className={`text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r ${stat.accent}`}>
-                {stat.value}
-              </p>
-
-              {/* Glow effect on hover */}
-              <motion.div
-                className={`absolute inset-0 rounded-3xl blur-xl bg-gradient-to-r ${stat.accent} opacity-0 group-hover:opacity-20 transition-opacity duration-300`}
-              />
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        {[
+          { label: 'Documents Processed', value: '1.4K+' },
+          { label: 'Topics Identified', value: '320+' },
+          { label: 'Avg. Analysis Time', value: '~2 min' },
+        ].map((stat, idx) => (
+          <div key={idx} className="rounded-lg border bg-card p-4">
+            <p className="text-sm text-muted-foreground">{stat.label}</p>
+            <p className="text-2xl font-bold">{stat.value}</p>
+          </div>
+        ))}
+      </div>
 
       {/* Upload Area */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.5, type: "spring", stiffness: 100 }}
-        className="max-w-4xl mx-auto"
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`relative rounded-lg border-2 border-dashed p-12 text-center transition-colors ${
+          isDragging
+            ? 'border-foreground/50 bg-secondary'
+            : 'border-border hover:border-foreground/30 hover:bg-secondary/50'
+        }`}
       >
-        <motion.div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          animate={isDragging ? { scale: 1.02 } : { scale: 1 }}
-          className={`relative rounded-[32px] border-2 border-dashed p-16 transition-all duration-300 backdrop-blur-xl ${
-            isDragging
-              ? 'border-blue-500/70 bg-gradient-to-br from-blue-500/20 via-purple-500/20 to-pink-500/20 shadow-2xl shadow-blue-500/20'
-              : darkMode
-                ? 'border-white/20 bg-gradient-to-br from-white/5 to-white/10 hover:bg-white/15 shadow-xl'
-                : 'border-gray-300/60 bg-gradient-to-br from-white/80 to-white/60 hover:bg-white/90 shadow-2xl'
-          }`}
-        >
-          <input
-            type="file"
-            multiple
-            accept=".pdf"
-            onChange={handleFileInput}
-            className="hidden"
-            id="file-input"
-            disabled={uploading}
-          />
+        <input
+          type="file"
+          multiple
+          accept=".pdf"
+          onChange={handleFileInput}
+          className="hidden"
+          id="file-input"
+          disabled={uploading}
+        />
+        <label htmlFor="file-input" className="cursor-pointer block">
+          <Upload className="w-10 h-10 mx-auto mb-4 text-muted-foreground" />
+          <p className="text-lg font-medium mb-1">Drop PDF files here</p>
+          <p className="text-sm text-muted-foreground">or click to browse from your device</p>
+          <p className="text-xs text-muted-foreground mt-2">Supports: PDF files up to 50MB</p>
+        </label>
+      </div>
 
-          <label
-            htmlFor="file-input"
-            className="cursor-pointer block text-center"
-          >
-            <motion.div
-              animate={{ y: [0, -15, 0] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-              className="relative mx-auto mb-8"
+      {/* File List */}
+      {files.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {files.map((file, index) => (
+            <div
+              key={index}
+              className="flex items-center justify-between p-3 rounded-lg border bg-card"
             >
-              <div className={`flex h-24 w-24 items-center justify-center rounded-3xl border-2 ${
-                darkMode
-                  ? 'border-white/30 bg-gradient-to-br from-blue-500/20 to-purple-500/20'
-                  : 'border-gray-300/50 bg-gradient-to-br from-blue-50 to-purple-50'
-              } shadow-lg mx-auto`}>
-                <Upload className={`w-12 h-12 ${
-                  darkMode ? 'text-blue-400' : 'text-blue-600'
-                }`} />
-              </div>
-
-              {/* Animated rings */}
-              <motion.div
-                className="absolute inset-0 rounded-3xl border-2 border-blue-500/30"
-                animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              />
-              <motion.div
-                className="absolute inset-0 rounded-3xl border-2 border-purple-500/30"
-                animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
-              />
-            </motion.div>
-
-            <h3 className={`text-3xl font-bold mb-3 ${
-              darkMode ? 'text-white' : 'text-gray-900'
-            }`}>
-              Drop PDF files here
-            </h3>
-
-            <p className={`text-base ${
-              darkMode ? 'text-gray-400' : 'text-gray-600'
-            }`}>
-              or click to browse from your device
-            </p>
-
-            <p className={`text-sm mt-3 ${
-              darkMode ? 'text-gray-500' : 'text-gray-500'
-            }`}>
-              Supports: PDF files up to 50MB
-            </p>
-          </label>
-
-          {/* Decorative gradient blobs */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-pink-500/10 to-orange-500/10 rounded-full blur-3xl" />
-        </motion.div>
-
-        {/* File List */}
-        <AnimatePresence>
-          {files.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-              className="mt-8 space-y-3"
-            >
-              {files.map((file, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  transition={{ delay: index * 0.05 }}
-                  whileHover={{ x: 4 }}
-                  className={`relative group flex items-center justify-between p-5 rounded-2xl backdrop-blur-lg border ${
-                    darkMode
-                      ? 'bg-gray-800/80 border-gray-700/50 hover:bg-gray-700/80'
-                      : 'bg-white/80 border-gray-200/50 hover:bg-white/90'
-                  } shadow-lg transition-all duration-300`}
-                >
-                  <div className="flex items-center space-x-4 flex-1">
-                    <div className={`p-2.5 rounded-xl ${
-                      darkMode
-                        ? 'bg-blue-500/20'
-                        : 'bg-blue-500/10'
-                    }`}>
-                      <FileText className={`w-5 h-5 ${
-                        darkMode ? 'text-blue-400' : 'text-blue-600'
-                      }`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-semibold truncate ${
-                        darkMode ? 'text-white' : 'text-gray-900'
-                      }`}>
-                        {file.name}
-                      </p>
-                      <p className={`text-xs ${
-                        darkMode ? 'text-gray-500' : 'text-gray-500'
-                      }`}>
-                        {(file.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                  </div>
-
-                  {!uploading && (
-                    <motion.button
-                      whileHover={{ scale: 1.15, rotate: 90 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => removeFile(index)}
-                      className={`p-2 rounded-xl transition-colors ${
-                        darkMode
-                          ? 'hover:bg-red-500/20 text-red-400'
-                          : 'hover:bg-red-100 text-red-600'
-                      }`}
-                    >
-                      <X className="w-5 h-5" />
-                    </motion.button>
-                  )}
-
-                  {/* Border gradient effect */}
-                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-500/0 via-purple-500/0 to-pink-500/0 group-hover:from-blue-500/10 group-hover:via-purple-500/10 group-hover:to-pink-500/10 transition-all duration-300" />
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Upload Button */}
-        {files.length > 0 && !uploading && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="mt-10 text-center"
-          >
-            <motion.button
-              whileHover={{ scale: 1.05, y: -2 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleUploadAndAnalyze}
-              className="relative group px-10 py-5 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white font-bold text-lg rounded-2xl shadow-2xl overflow-hidden"
-            >
-              {/* Animated gradient overlay */}
-              <motion.div
-                className="absolute inset-0 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-              />
-
-              {/* Button content */}
-              <span className="relative z-10 flex items-center gap-2">
-                <motion.span
-                  animate={{ rotate: [0, 15, 0] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                >
-                  🚀
-                </motion.span>
-                Upload & Auto-Analyze ({files.length} file{files.length > 1 ? 's' : ''})
-              </span>
-
-              {/* Glow effect */}
-              <motion.div
-                className="absolute inset-0 blur-xl bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 opacity-50"
-                animate={{ opacity: [0.3, 0.6, 0.3] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              />
-            </motion.button>
-          </motion.div>
-        )}
-
-        {/* Progress Bar */}
-        {uploading && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-8"
-          >
-            <div className={`relative p-8 rounded-3xl backdrop-blur-xl border ${
-              darkMode
-                ? 'bg-gray-800/80 border-gray-700/50'
-                : 'bg-white/80 border-gray-200/50'
-            } shadow-2xl overflow-hidden`}>
-              <div className="flex items-center justify-between mb-4">
-                <span className={`text-base font-bold ${
-                  darkMode ? 'text-white' : 'text-gray-900'
-                }`}>
-                  {progress < 100 ? '⬆️ Uploading...' : '🔄 Processing & Analyzing...'}
-                </span>
-                <motion.span
-                  animate={{ scale: [1, 1.1, 1] }}
-                  transition={{ duration: 1, repeat: Infinity }}
-                  className={`text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent`}
-                >
-                  {progress}%
-                </motion.span>
-              </div>
-
-              <div className={`relative h-3 rounded-full overflow-hidden ${
-                darkMode ? 'bg-gray-700' : 'bg-gray-200'
-              }`}>
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                  className="h-full bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 relative"
-                >
-                  {/* Shimmer effect */}
-                  <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-                    animate={{ x: ['-100%', '200%'] }}
-                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                  />
-                </motion.div>
-              </div>
-
-              {progress === 100 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-6 flex items-center justify-center gap-2"
-                >
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                  >
-                    <Sparkles className={`w-5 h-5 ${
-                      darkMode ? 'text-purple-400' : 'text-purple-600'
-                    }`} />
-                  </motion.div>
-                  <p className={`text-sm font-medium ${
-                    darkMode ? 'text-gray-300' : 'text-gray-700'
-                  }`}>
-                    Extracting topics and generating insights... This may take a minute.
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{file.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(file.size / 1024 / 1024).toFixed(2)} MB
                   </p>
-                </motion.div>
-              )}
-
-              {/* Animated background particles */}
-              <div className="absolute top-0 left-0 w-20 h-20 bg-blue-500/10 rounded-full blur-2xl animate-pulse" />
-              <div className="absolute bottom-0 right-0 w-20 h-20 bg-purple-500/10 rounded-full blur-2xl animate-pulse" style={{ animationDelay: '1s' }} />
-            </div>
-          </motion.div>
-        )}
-
-        {/* Error Message */}
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`mt-6 p-5 rounded-2xl border backdrop-blur-lg ${
-              darkMode
-                ? 'bg-red-500/10 border-red-500/50'
-                : 'bg-red-50/80 border-red-500/30'
-            } shadow-lg`}
-          >
-            <div className="flex items-start space-x-3">
-              <span className="text-2xl">⚠️</span>
-              <div>
-                <p className={`font-semibold mb-1 ${
-                  darkMode ? 'text-red-400' : 'text-red-700'
-                }`}>
-                  Upload Failed
-                </p>
-                <span className={`text-sm ${
-                  darkMode ? 'text-red-300' : 'text-red-600'
-                }`}>
-                  {error}
-                </span>
+                </div>
               </div>
+              {!uploading && (
+                <button
+                  onClick={() => removeFile(index)}
+                  className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
-          </motion.div>
-        )}
-      </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Upload Button */}
+      {files.length > 0 && !uploading && (
+        <button
+          onClick={handleUploadAndAnalyze}
+          className="mt-6 w-full py-3 px-4 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+        >
+          Upload & Auto-Analyze ({files.length} file{files.length > 1 ? 's' : ''})
+        </button>
+      )}
+
+      {/* Progress */}
+      {uploading && (
+        <div className="mt-6 rounded-lg border bg-card p-6">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium flex items-center gap-2">
+              <Loader className="w-4 h-4 animate-spin" />
+              {progress < 100 ? 'Uploading...' : 'Processing & Analyzing...'}
+            </span>
+            <span className="text-sm font-mono">{progress}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-secondary overflow-hidden">
+            <div
+              className="h-full bg-foreground rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          {progress === 100 && (
+            <p className="text-xs text-muted-foreground mt-3">
+              Extracting topics and generating insights... This may take a minute.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mt-4 p-4 rounded-lg border border-destructive/50 bg-destructive/10 text-sm">
+          <p className="font-medium text-destructive">Upload Failed</p>
+          <p className="text-destructive/80 mt-1">{error}</p>
+        </div>
+      )}
 
       {/* Features */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.6 }}
-        className="mt-20 grid gap-8 md:grid-cols-3 max-w-6xl mx-auto"
-      >
+      <div className="mt-12 grid gap-4 md:grid-cols-3">
         {[
-          {
-            icon: '🎯',
-            title: 'Auto Topic Extraction',
-            desc: 'AI identifies dominant research directions per paper automatically.',
-            gradient: 'from-blue-500 to-cyan-500'
-          },
-          {
-            icon: '🔍',
-            title: 'Gap Detection',
-            desc: 'Surface understudied angles and unanswered questions from combined context.',
-            gradient: 'from-purple-500 to-pink-500'
-          },
-          {
-            icon: '💡',
-            title: 'Smart Recommendations',
-            desc: 'Turn insights into clear next steps, backed by the uploaded evidence.',
-            gradient: 'from-amber-500 to-orange-500'
-          }
+          { title: 'Topic Extraction', desc: 'AI identifies research directions per paper automatically.' },
+          { title: 'Gap Detection', desc: 'Surface understudied angles and unanswered questions.' },
+          { title: 'Recommendations', desc: 'Turn insights into clear next steps with evidence.' },
         ].map((feature, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7 + idx * 0.1 }}
-            whileHover={{ y: -12, scale: 1.02 }}
-            className={`group relative rounded-3xl border p-8 text-center backdrop-blur-xl transition-all duration-300 ${
-              darkMode
-                ? 'border-white/10 bg-gradient-to-br from-white/5 to-white/10 hover:bg-white/15'
-                : 'border-white/50 bg-gradient-to-br from-white/70 to-white/50 hover:bg-white/90'
-            } shadow-xl hover:shadow-2xl overflow-hidden`}
-          >
-            {/* Gradient background on hover */}
-            <motion.div
-              className={`absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity duration-300 bg-gradient-to-br ${feature.gradient}`}
-            />
-
-            {/* Icon with animated ring */}
-            <motion.div
-              className="relative inline-block mb-6"
-              whileHover={{ rotate: [0, -10, 10, 0] }}
-              transition={{ duration: 0.5 }}
-            >
-              <div className={`text-5xl relative z-10`}>{feature.icon}</div>
-              <motion.div
-                className={`absolute inset-0 -m-2 rounded-full bg-gradient-to-r ${feature.gradient} opacity-20 blur-xl`}
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 2, repeat: Infinity }}
-              />
-            </motion.div>
-
-            <h4 className={`text-xl font-bold mb-3 relative z-10 ${
-              darkMode ? 'text-white' : 'text-gray-900'
-            }`}>
-              {feature.title}
-            </h4>
-
-            <p className={`text-sm leading-relaxed relative z-10 ${
-              darkMode ? 'text-gray-400' : 'text-gray-600'
-            }`}>
-              {feature.desc}
-            </p>
-
-            {/* Bottom gradient bar */}
-            <motion.div
-              className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${feature.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`}
-            />
-          </motion.div>
+          <div key={idx} className="rounded-lg border bg-card p-5">
+            <h4 className="font-medium mb-1">{feature.title}</h4>
+            <p className="text-sm text-muted-foreground">{feature.desc}</p>
+          </div>
         ))}
-      </motion.div>
+      </div>
     </div>
   )
 }

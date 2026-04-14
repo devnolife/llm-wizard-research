@@ -1,45 +1,22 @@
-import { motion } from 'framer-motion'
-import { useDarkMode } from '../../contexts/DarkModeContext'
-
 const EmptyState = ({ icon: Icon, title, description, action, actionLabel }) => {
-  const { darkMode } = useDarkMode()
-
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center py-16 px-4 text-center"
-    >
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
       {Icon && (
-        <motion.div
-          animate={{ y: [0, -8, 0] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-          className={`p-6 rounded-3xl mb-6 ${
-            darkMode
-              ? 'bg-gradient-to-br from-gray-700/50 to-gray-800/50'
-              : 'bg-gradient-to-br from-gray-100 to-gray-200'
-          }`}
-        >
-          <Icon className={`w-12 h-12 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-        </motion.div>
+        <div className="p-4 rounded-lg bg-secondary mb-4">
+          <Icon className="w-8 h-8 text-muted-foreground" />
+        </div>
       )}
-      <h3 className={`text-xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-        {title}
-      </h3>
-      <p className={`text-sm max-w-sm mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-        {description}
-      </p>
+      <h3 className="text-lg font-semibold mb-1">{title}</h3>
+      <p className="text-sm text-muted-foreground max-w-sm mb-4">{description}</p>
       {action && (
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+        <button
           onClick={action}
-          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg"
+          className="px-5 py-2.5 bg-primary text-primary-foreground font-medium rounded-lg hover:bg-primary/90 transition-colors"
         >
           {actionLabel || 'Get Started'}
-        </motion.button>
+        </button>
       )}
-    </motion.div>
+    </div>
   )
 }
 

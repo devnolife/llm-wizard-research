@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle, AlertTriangle, Lightbulb, Map, ChevronDown, Download, Loader } from 'lucide-react'
 import { useDarkMode } from '../../contexts/DarkModeContext'
 import { useToast } from '../../contexts/ToastContext'
@@ -29,7 +28,6 @@ const AnalysisResults = () => {
     const fetchResults = async () => {
       try {
         const response = await analysisService.getAnalysisStatus(jobId, language)
-
         if (cancelled) return
 
         if (response.status === 'completed') {
@@ -54,10 +52,7 @@ const AnalysisResults = () => {
   }, [jobId, language])
 
   const toggleSection = (section) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }))
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
 
   const downloadResults = () => {
@@ -71,347 +66,135 @@ const AnalysisResults = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-6">
-        <motion.div className="relative">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-          >
-            <Loader className={`w-20 h-20 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-          </motion.div>
-          <motion.div
-            className="absolute inset-0 blur-2xl"
-            animate={{ opacity: [0.3, 0.6, 0.3], scale: [1, 1.2, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            <Loader className={`w-20 h-20 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-          </motion.div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-          className="text-center"
-        >
-          <h3 className={`text-2xl font-bold mb-2 bg-gradient-to-r ${darkMode
-              ? 'from-blue-400 via-purple-400 to-pink-400'
-              : 'from-blue-600 via-purple-600 to-pink-600'
-            } bg-clip-text text-transparent`}>
-            Analyzing Your Research
-          </h3>
-          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            Please wait while we process your documents...
-          </p>
-        </motion.div>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+        <Loader className="w-8 h-8 animate-spin text-muted-foreground" />
+        <div className="text-center">
+          <h3 className="text-xl font-semibold mb-1">Analyzing Your Research</h3>
+          <p className="text-sm text-muted-foreground">Please wait while we process your documents...</p>
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="container mx-auto px-6 py-12">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-2xl mx-auto text-center"
+      <div className="container mx-auto max-w-2xl px-6 py-12 text-center">
+        <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
+        <h2 className="text-2xl font-bold mb-2">Analysis Failed</h2>
+        <p className="text-muted-foreground mb-6">{error}</p>
+        <button
+          onClick={() => navigate('/')}
+          className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
         >
-          <motion.div
-            animate={{ scale: [1, 1.1, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="inline-block mb-6"
-          >
-            <AlertTriangle className="w-20 h-20 text-red-500 mx-auto" />
-          </motion.div>
-          <h2 className={`text-3xl font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            Analysis Failed
-          </h2>
-          <p className={`text-lg ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{error}</p>
-
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => navigate('/')}
-            className={`mt-8 px-8 py-4 rounded-2xl font-semibold ${darkMode
-                ? 'bg-gradient-to-r from-blue-600 to-purple-600'
-                : 'bg-gradient-to-r from-blue-500 to-purple-500'
-              } text-white shadow-xl`}
-          >
-            Try Again
-          </motion.button>
-        </motion.div>
+          Try Again
+        </button>
       </div>
     )
   }
 
   const SectionCard = ({ title, icon: Icon, children, section }) => (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -4 }}
-      className={`group rounded-3xl overflow-hidden backdrop-blur-xl border transition-all duration-300 ${darkMode
-          ? 'bg-gray-800/80 border-gray-700/50 hover:bg-gray-700/80'
-          : 'bg-white/80 border-gray-200/50 hover:bg-white/90'
-        } shadow-xl hover:shadow-2xl`}
-    >
+    <div className="rounded-lg border bg-card overflow-hidden">
       <button
         onClick={() => toggleSection(section)}
-        className={`w-full p-7 flex items-center justify-between transition-colors`}
+        className="w-full px-6 py-4 flex items-center justify-between hover:bg-secondary/50 transition-colors"
       >
-        <div className="flex items-center space-x-4">
-          <motion.div
-            whileHover={{ rotate: 360 }}
-            transition={{ duration: 0.5 }}
-            className={`p-3 rounded-2xl ${darkMode
-                ? 'bg-gradient-to-br from-blue-500/20 to-purple-500/20'
-                : 'bg-gradient-to-br from-blue-500/10 to-purple-500/10'
-              }`}
-          >
-            <Icon className={`w-6 h-6 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`} />
-          </motion.div>
-          <h3 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {title}
-          </h3>
+        <div className="flex items-center gap-3">
+          <Icon className="w-5 h-5 text-muted-foreground" />
+          <h3 className="text-lg font-semibold">{title}</h3>
         </div>
-        <motion.div
-          animate={{ rotate: expandedSections[section] ? 180 : 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <ChevronDown className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`} />
-        </motion.div>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${expandedSections[section] ? 'rotate-180' : ''}`} />
       </button>
-
-      <AnimatePresence>
-        {expandedSections[section] && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className={`px-7 pb-7 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
-          >
-            {children}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+      {expandedSections[section] && (
+        <div className="px-6 pb-6 text-sm leading-relaxed">{children}</div>
+      )}
+    </div>
   )
 
   return (
-    <div className="container mx-auto px-6 py-12">
+    <div className="container mx-auto max-w-4xl px-6 py-12">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 100 }}
-        className="text-center mb-16"
-      >
-        <motion.div
-          animate={{ scale: [1, 1.15, 1] }}
-          transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-          className="inline-block mb-6 relative"
-        >
-          <CheckCircle className="w-20 h-20 text-green-500" />
-          <motion.div
-            className="absolute inset-0 blur-2xl"
-            animate={{ opacity: [0.3, 0.6, 0.3] }}
-            transition={{ duration: 2, repeat: Infinity }}
-          >
-            <CheckCircle className="w-20 h-20 text-green-500" />
-          </motion.div>
-        </motion.div>
+      <div className="mb-10">
+        <div className="flex items-center gap-3 mb-2">
+          <CheckCircle className="w-6 h-6 text-green-500" />
+          <h1 className="text-3xl font-bold tracking-tight">Analysis Complete</h1>
+        </div>
+        <p className="text-muted-foreground">Here are your AI-generated insights</p>
 
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className={`text-5xl md:text-6xl font-extrabold mb-4 bg-gradient-to-r ${darkMode
-              ? 'from-green-400 via-emerald-400 to-teal-400'
-              : 'from-green-600 via-emerald-600 to-teal-600'
-            } bg-clip-text text-transparent`}
-        >
-          Analysis Complete!
-        </motion.h1>
-
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className={`text-xl mb-8 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
-        >
-          Here are your AI-generated insights
-        </motion.p>
-
-        {/* Language Toggle */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="flex gap-3 justify-center mb-8"
-        >
-          <button
-            onClick={() => setLanguage('en')}
-            className={`px-6 py-2 rounded-xl font-semibold transition-all ${language === 'en'
-                ? darkMode
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : 'bg-blue-500 text-white shadow-lg'
-                : darkMode
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+        {/* Language Toggle + Download */}
+        <div className="flex items-center gap-3 mt-6 flex-wrap">
+          <div className="flex rounded-lg border overflow-hidden">
+            <button
+              onClick={() => setLanguage('en')}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                language === 'en' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50'
               }`}
-          >
-            English
-          </button>
-          <button
-            onClick={() => setLanguage('id')}
-            className={`px-6 py-2 rounded-xl font-semibold transition-all ${language === 'id'
-                ? darkMode
-                  ? 'bg-blue-600 text-white shadow-lg'
-                  : 'bg-blue-500 text-white shadow-lg'
-                : darkMode
-                  ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            >
+              English
+            </button>
+            <button
+              onClick={() => setLanguage('id')}
+              className={`px-4 py-2 text-sm font-medium transition-colors border-l ${
+                language === 'id' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50'
               }`}
+            >
+              Bahasa Indonesia
+            </button>
+          </div>
+          <button
+            onClick={downloadResults}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium hover:bg-secondary transition-colors"
           >
-            Bahasa Indonesia
+            <Download className="w-4 h-4" />
+            Download JSON
           </button>
-        </motion.div>
-
-        <motion.button
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          whileHover={{ scale: 1.05, y: -2 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={downloadResults}
-          className={`relative group px-8 py-4 rounded-2xl flex items-center gap-3 mx-auto font-semibold overflow-hidden ${darkMode
-              ? 'bg-gradient-to-r from-gray-700 to-gray-600 hover:from-gray-600 hover:to-gray-500 text-white'
-              : 'bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 text-gray-900'
-            } shadow-xl`}
-        >
-          <Download className="w-5 h-5 relative z-10" />
-          <span className="relative z-10">Download Results</span>
-
-          {/* Hover effect */}
-          <motion.div
-            className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-          />
-        </motion.button>
-      </motion.div>
+        </div>
+      </div>
 
       {/* Results */}
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Topics */}
+      <div className="space-y-4">
         {data?.topics && (
           <SectionCard title="Extracted Topics" icon={CheckCircle} section="topics">
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-2 md:grid-cols-2">
               {data.topics.map((topic, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: idx * 0.05 }}
-                  whileHover={{ scale: 1.03, x: 4 }}
-                  className={`group relative p-5 rounded-2xl border transition-all duration-300 ${darkMode
-                      ? 'bg-gradient-to-br from-blue-500/10 to-purple-500/10 border-blue-500/20 hover:border-blue-500/40'
-                      : 'bg-gradient-to-br from-blue-50 to-purple-50 border-blue-200/50 hover:border-blue-400/50'
-                    } shadow-md hover:shadow-lg`}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">🎯</span>
-                    <span className={`font-semibold flex-1 ${darkMode ? 'text-white' : 'text-gray-900'
-                      }`}>
-                      {topic}
-                    </span>
-                  </div>
-
-                  {/* Gradient accent */}
-                  <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-b-2xl" />
-                </motion.div>
+                <div key={idx} className="flex items-start gap-2 p-3 rounded-md bg-secondary/50">
+                  <span className="text-muted-foreground text-xs font-mono mt-0.5">{idx + 1}.</span>
+                  <span className="font-medium text-sm">{topic}</span>
+                </div>
               ))}
             </div>
           </SectionCard>
         )}
 
-        {/* Summary */}
         {data?.summary && (
           <SectionCard title="Research Summary" icon={CheckCircle} section="summary">
-            <div className="prose max-w-none">
-              <p className={`whitespace-pre-wrap ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                {data.summary}
-              </p>
-            </div>
+            <p className="whitespace-pre-wrap text-muted-foreground">{data.summary}</p>
           </SectionCard>
         )}
 
-        {/* Gaps */}
         {data?.gaps && data.gaps.length > 0 && (
           <SectionCard title="Research Gaps" icon={AlertTriangle} section="gaps">
-            <div className="space-y-4">
+            <div className="space-y-3">
               {data.gaps.map((gap, idx) => (
-                <motion.div
-                  key={idx}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.08 }}
-                  whileHover={{ x: 4, scale: 1.01 }}
-                  className={`group relative p-6 rounded-2xl border-l-4 backdrop-blur-sm transition-all duration-300 ${darkMode
-                      ? 'bg-gradient-to-r from-yellow-500/10 to-orange-500/5 border-yellow-500 hover:bg-yellow-500/15'
-                      : 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-500 hover:bg-yellow-100'
-                    } shadow-md hover:shadow-lg`}
-                >
-                  <div className="flex items-start gap-4">
-                    <motion.div
-                      whileHover={{ rotate: [0, -10, 10, 0] }}
-                      transition={{ duration: 0.5 }}
-                      className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-bold ${darkMode
-                          ? 'bg-yellow-500/20 text-yellow-400'
-                          : 'bg-yellow-200 text-yellow-700'
-                        }`}
-                    >
-                      {idx + 1}
-                    </motion.div>
-                    <div className="flex-1">
-                      <h4 className={`font-bold text-lg mb-2 ${darkMode ? 'text-yellow-400' : 'text-yellow-700'
-                        }`}>
-                        Research Gap #{idx + 1}
-                      </h4>
-                      <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-700'
-                        }`}>
-                        {gap}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Warning icon decoration */}
-                  <div className={`absolute top-4 right-4 opacity-10 group-hover:opacity-20 transition-opacity`}>
-                    <AlertTriangle className="w-8 h-8" />
-                  </div>
-                </motion.div>
+                <div key={idx} className="flex gap-3 p-4 rounded-md border-l-2 border-yellow-500 bg-secondary/30">
+                  <span className="flex-shrink-0 w-6 h-6 rounded text-xs font-bold flex items-center justify-center bg-yellow-500/10 text-yellow-600 dark:text-yellow-400">
+                    {idx + 1}
+                  </span>
+                  <p className="text-sm text-muted-foreground">{gap}</p>
+                </div>
               ))}
             </div>
           </SectionCard>
         )}
 
-        {/* Recommendations */}
         {data?.recommendations && (
           <SectionCard title="Recommendations" icon={Lightbulb} section="recommendations">
-            <div className="prose max-w-none">
-              <p className={`whitespace-pre-wrap ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                {data.recommendations}
-              </p>
-            </div>
+            <p className="whitespace-pre-wrap text-muted-foreground">{data.recommendations}</p>
           </SectionCard>
         )}
 
-        {/* Roadmap */}
         {data?.roadmap && (
           <SectionCard title="Research Roadmap" icon={Map} section="roadmap">
-            <div className="prose max-w-none">
-              <p className={`whitespace-pre-wrap ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                {data.roadmap}
-              </p>
-            </div>
+            <p className="whitespace-pre-wrap text-muted-foreground">{data.roadmap}</p>
           </SectionCard>
         )}
       </div>
