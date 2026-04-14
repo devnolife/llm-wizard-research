@@ -1,4 +1,0 @@
-/* Minimal global styles - shadcn inspired */
-::selection {
-  background: hsl(var(--primary) / 0.15);
-}

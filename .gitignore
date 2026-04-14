@@ -93,11 +93,19 @@ temp/
 chroma_db_experiment/
 data/backups/
 
+# Redundant configs (use backend/config.yaml)
+configs/
+
 # Frontend build & deps
 frontend/dist/
 frontend/node_modules/
 package-lock.json
 package.json
+frontend/public/vite.svg
+frontend/src/assets/react.svg
+frontend/src/App.css
+frontend/postcss.config.cjs
+frontend/README.md
 
 # Research papers (sample data)
 research_papers/
