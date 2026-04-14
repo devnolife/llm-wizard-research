@@ -442,7 +442,7 @@ const RevisionSummaryPage = () => {
                 <MessageSquare className="w-5 h-5 text-primary" />
                 Catatan Revisi Proposal
               </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">Komentar Penguji \u2192 Aksi yang Dilakukan</p>
+              <p className="text-sm text-muted-foreground mt-0.5">Komentar Penguji → Aksi yang Dilakukan</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5 text-sm">
@@ -460,8 +460,8 @@ const RevisionSummaryPage = () => {
         {/* Print header */}
         <div className="hidden print:block px-6 py-3 mb-1 text-center">
           <h1 className="text-base font-bold">CATATAN REVISI PROPOSAL TESIS</h1>
-          <p className="text-xs">Andi Agung Dwi Arya B (D082251054) \u2014 Magister Teknik Informatika \u2014 UNHAS</p>
-          <p className="text-xs text-gray-500">Seminar: 24\u201325 Des 2025 \u00b7 Penguji: Prof. Dr. Adnan, ST., MT.</p>
+          <p className="text-xs">Andi Agung Dwi Arya B (D082251054) — Magister Teknik Informatika — UNHAS</p>
+          <p className="text-xs text-gray-500">Seminar: 24–25 Des 2025 · Penguji: Prof. Dr. Adnan, ST., MT.</p>
         </div>
 
         <div className="max-w-5xl mx-auto px-6 lg:px-10 py-6">
@@ -476,7 +476,7 @@ const RevisionSummaryPage = () => {
             </div>
             <div className="flex gap-2 no-print">
               <button onClick={expandAll} className="text-xs text-primary hover:underline">Buka semua</button>
-              <span className="text-muted-foreground">\u00b7</span>
+              <span className="text-muted-foreground">·</span>
               <button onClick={collapseAll} className="text-xs text-primary hover:underline">Tutup semua</button>
             </div>
           </div>
