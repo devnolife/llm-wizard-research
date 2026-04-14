@@ -369,6 +369,21 @@ async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
         document_processor = DocumentProcessor()
         glm = get_glm_interface()
 
+        # ── Step 0: Clear stale data so results reflect uploaded papers only ──
+        vector_store.clear_collection()
+        try:
+            ft = get_fact_table()
+            if ft:
+                ft.clear()
+        except Exception:
+            pass
+        try:
+            kg = get_knowledge_graph()
+            if kg and hasattr(kg, 'graph'):
+                kg.graph.clear()
+        except Exception:
+            pass
+
         # ── Step 1: Ingest PDFs into vector store ──────────────
         total_chunks = 0
         paper_contents = []
