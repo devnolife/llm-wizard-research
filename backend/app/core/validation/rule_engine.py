@@ -395,7 +395,7 @@ class RuleEngine:
         domain_id = claim.get("domain")
         
         if not method_id or not self.fact_table:
-            return self._default_pass(rule)
+            return self._default_pass(rule, "No method entity for resource check")
         
         # Check if method requires high resources
         resource_facts = self.fact_table.query(
@@ -411,7 +411,7 @@ class RuleEngine:
         )
         
         if not high_resource:
-            return self._default_pass(rule)
+            return self._default_pass(rule, "Method does not require high resources")
         
         # Check if domain has low-resource constraint
         if domain_id:
@@ -792,13 +792,15 @@ class RuleEngine:
     # Utility methods
     # -----------------------------------------------------------------------
 
-    def _default_pass(self, rule: Rule) -> RuleResult:
+    def _default_pass(self, rule: Rule, reason: str = None) -> RuleResult:
         """Return a default PASS result for a rule."""
+        msg = reason or f"Rule {rule.rule_id} ({rule.name}): No violations detected."
+        logger.debug(f"Default PASS for {rule.rule_id}: {msg}")
         return RuleResult(
             rule=rule,
             passed=True,
             verdict="PASS",
-            reason=f"Rule {rule.rule_id} ({rule.name}): No violations detected.",
+            reason=msg,
             evidence=[],
             confidence_adjustment=0.0,
         )

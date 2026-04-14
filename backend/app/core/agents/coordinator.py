@@ -371,7 +371,8 @@ class CoordinatorAgent:
                 reject_count = 0
                 
                 for indicator in gap_indicators:
-                    claim = indicator.get("description", indicator.get("title", ""))
+                    # Build a rich claim dict for the Rule Engine
+                    claim = self._enrich_claim_for_validation(indicator)
                     ind_context = {
                         "indicator_type": indicator.get("type", 
                                            indicator.get("indicator_type", "")),
@@ -527,6 +528,51 @@ class CoordinatorAgent:
         }
     
     # ── Routing ─────────────────────────────────────────────────
+    
+    def _enrich_claim_for_validation(self, indicator: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Enrich a gap indicator with method/domain/findings from FactTable
+        so the Rule Engine can actually validate it.
+        """
+        claim = {
+            "type": "gap_indicator",
+            "description": indicator.get("description", indicator.get("title", "")),
+            "confidence": indicator.get("confidence", 0.5),
+            "evidence": indicator.get("evidence", []),
+            "method": indicator.get("method"),
+            "domain": indicator.get("domain"),
+            "findings": indicator.get("findings", []),
+        }
+        
+        # Try to extract method/domain from FactTable if not already present
+        if self.fact_table and (not claim["method"] or not claim["domain"]):
+            from ..knowledge.fact_table import EntityType
+            
+            desc_lower = claim["description"].lower()
+            
+            # Find METHOD entities mentioned in the description
+            if not claim["method"]:
+                for entity in self.fact_table.find_entities(entity_type=EntityType.METHOD):
+                    if entity.name.lower() in desc_lower:
+                        claim["method"] = entity.entity_id
+                        break
+            
+            # Find DOMAIN entities mentioned in the description
+            if not claim["domain"]:
+                for entity in self.fact_table.find_entities(entity_type=EntityType.DOMAIN):
+                    if entity.name.lower() in desc_lower:
+                        claim["domain"] = entity.entity_id
+                        break
+            
+            # Find FINDING entities mentioned in the description
+            if not claim["findings"]:
+                findings = []
+                for entity in self.fact_table.find_entities(entity_type=EntityType.FINDING):
+                    if entity.name.lower() in desc_lower:
+                        findings.append(entity.entity_id)
+                claim["findings"] = findings[:5]
+        
+        return claim
     
     def _should_continue(self, state: AgentState) -> Literal["revise", "complete"]:
         """Decide whether to loop back for revision or finish."""

@@ -35,6 +35,7 @@ from ..dependencies import (
     get_vector_store,
     get_document_processor,
     get_fact_table,
+    get_fact_extractor,
     get_rule_engine,
 )
 from ...utils.document_processor import DocumentProcessor
@@ -355,109 +356,194 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
 
 
 async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
-    """Background task to process PDFs and run auto-analysis"""
+    """Background task to process PDFs and run full neuro-symbolic analysis."""
     try:
-        # Update status
-        _analysis_jobs[job_id]["progress"] = 10
+        _analysis_jobs[job_id]["progress"] = 5
         _analysis_jobs[job_id]["message"] = "Processing PDFs..."
-        
-        # Get components
+
         vector_store = get_vector_store()
         document_processor = DocumentProcessor()
         glm = get_glm_interface()
-        
-        # Process each PDF
+
+        # ── Step 1: Ingest PDFs into vector store ──────────────
         total_chunks = 0
+        paper_contents = []
         for i, pdf_path in enumerate(pdf_paths):
             _analysis_jobs[job_id]["message"] = f"Processing {pdf_path.name}..."
-            _analysis_jobs[job_id]["progress"] = 10 + (i / len(pdf_paths)) * 30
-            
-            # Process PDF
+            _analysis_jobs[job_id]["progress"] = 5 + (i / len(pdf_paths)) * 15
+
             processed_doc = document_processor.process_pdf(str(pdf_path))
-            
-            # Add to vector store
+
             for chunk in processed_doc.chunks:
                 metadata = {
                     "source": pdf_path.name,
                     "title": processed_doc.title or pdf_path.name,
-                    "chunk_index": chunk.chunk_index
+                    "chunk_index": chunk.chunk_index,
                 }
                 vector_store.add_document(chunk.content, metadata)
                 total_chunks += 1
-            
-            # Clean up temp file
+
+            paper_contents.append({
+                "source": pdf_path.name,
+                "title": processed_doc.title or pdf_path.name,
+                "content": " ".join(c.content for c in processed_doc.chunks[:10]),
+            })
             pdf_path.unlink()
-        
-        _analysis_jobs[job_id]["progress"] = 40
+
+        _analysis_jobs[job_id]["progress"] = 20
         _analysis_jobs[job_id]["message"] = "Extracting topics..."
-        
-        # Extract topics
+
+        # ── Step 2: Extract topics (lightweight LLM call) ──────
         sample_docs = vector_store.collection.get(limit=50)
-        sample_text = " ".join([doc for doc in sample_docs['documents'][:10]])
-        
+        sample_text = " ".join([doc for doc in sample_docs["documents"][:10]])
+
         topic_prompt = f"""Analyze this research content and extract 5 main research topics.
 Return ONLY a numbered list, one topic per line.
 
 Content: {sample_text[:2000]}
 
 Topics:"""
-        
+
         topics_text = glm.generate(topic_prompt, max_tokens=200)
-        topics = [line.strip() for line in topics_text.strip().split('\n') if line.strip() and line.strip()[0].isdigit()]
-        
-        _analysis_jobs[job_id]["progress"] = 60
+        topics = [
+            line.strip()
+            for line in topics_text.strip().split("\n")
+            if line.strip() and line.strip()[0].isdigit()
+        ]
+
+        # ── Step 3: Run Coordinator (full neuro-symbolic pipeline) ──
+        _analysis_jobs[job_id]["progress"] = 30
+        _analysis_jobs[job_id]["message"] = "Running neuro-symbolic analysis (Observe \u2192 Think \u2192 Act \u2192 Evaluate)..."
+
+        coordinator_result = None
+        execution_mode = "llm_fallback"
+        reasoning_trace = []
+        gap_indicators = []
+        rule_engine_report = {}
+        fact_table_stats = {}
+
+        try:
+            coordinator = get_coordinator()
+            main_topic = topics[0] if topics else "research analysis"
+
+            coordinator_result = coordinator.process_research_query(
+                query=main_topic,
+                context={
+                    "topics": topics,
+                    "paper_contents": paper_contents,
+                    "total_chunks": total_chunks,
+                },
+            )
+
+            execution_mode = coordinator_result.get("execution_mode", "sequential")
+            reasoning_trace = coordinator_result.get("reasoning_trace", [])
+            gap_indicators = coordinator_result.get("gap_indicators", [])
+            rule_engine_report = coordinator_result.get("rule_engine_report", {})
+            fact_table_stats = coordinator_result.get("fact_table_stats", {})
+
+            _analysis_jobs[job_id]["progress"] = 70
+            _analysis_jobs[job_id]["message"] = f"Coordinator complete ({execution_mode}). Generating summary..."
+
+            logger.info(
+                f"Coordinator finished: mode={execution_mode}, "
+                f"gaps={len(gap_indicators)}, "
+                f"facts={fact_table_stats.get('total_facts', 0)}"
+            )
+
+        except Exception as e:
+            logger.warning(f"Coordinator pipeline failed, falling back to LLM: {e}")
+            _analysis_jobs[job_id]["message"] = "Coordinator unavailable, using LLM fallback..."
+            reasoning_trace.append({
+                "phase": "coordinator_fallback",
+                "error": str(e),
+            })
+
+        # ── Step 4: Generate summary (always via LLM) ──────────
+        _analysis_jobs[job_id]["progress"] = 75
         _analysis_jobs[job_id]["message"] = "Generating research summary..."
-        
-        # Generate summary for main topic
+
         if topics:
             search_results = vector_store.search(topics[0], top_k=15)
-            context = "\n\n".join([f"Document {i+1}: {r.document.content}" 
-                                  for i, r in enumerate(search_results)])
-            
+            context = "\n\n".join(
+                [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
+            )
+
             summary_prompt = f"""Provide a comprehensive research summary for: {topics[0]}
 
 Context from papers:
 {context[:3000]}
 
 Summary:"""
-            
             summary = glm.generate(summary_prompt, max_tokens=500)
         else:
             summary = "No topics extracted."
-        
-        _analysis_jobs[job_id]["progress"] = 75
-        _analysis_jobs[job_id]["message"] = "Detecting research gaps..."
-        
-        # Detect gaps
-        gaps = []
-        for topic in topics[:3]:
-            search_results = vector_store.search(topic, top_k=10)
-            context = "\n\n".join([f"Document {i+1}: {r.document.content}" 
-                                  for i, r in enumerate(search_results)])
-            
-            gap_prompt = f"""Based on the research papers below, identify ONE specific synthesis research gap for the topic: {topic}
 
-A synthesis gap is a research opportunity that emerges from comparing multiple papers — not just a limitation stated in one paper.
+        # ── Step 5: Gap detection (use coordinator result or LLM fallback) ──
+        _analysis_jobs[job_id]["progress"] = 80
+        _analysis_jobs[job_id]["message"] = "Finalizing gap analysis..."
+
+        gaps = []
+        if gap_indicators:
+            for gi in gap_indicators:
+                gap_type = gi.get("type", gi.get("indicator_type", "UNKNOWN"))
+                title = gi.get("title", "")
+                desc = gi.get("description", "")
+                verdict = gi.get("rule_engine_verdict", "N/A")
+                confidence = gi.get("confidence", 0.0)
+                gaps.append(
+                    f"TITLE: {title}\n"
+                    f"DESCRIPTION: {desc}\n"
+                    f"TYPE: {gap_type}\n"
+                    f"CONFIDENCE: {confidence:.2f}\n"
+                    f"RULE_VERDICT: {verdict}"
+                )
+        else:
+            for topic in topics[:3]:
+                search_results = vector_store.search(topic, top_k=10)
+                context = "\n\n".join(
+                    [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
+                )
+
+                gap_prompt = f"""Based on the research papers below, identify ONE specific synthesis research gap for the topic: {topic}
+
+A synthesis gap is a research opportunity that emerges from comparing multiple papers.
 
 Context from papers:
 {context[:2000]}
 
 Provide the gap in this format:
 TITLE: [Short gap title]
-DESCRIPTION: [2-3 sentences describing the gap, why it exists, and what is missing]
-TYPE: [One of: FRAGMENTATION (papers study same topic from different angles without integration), INCONSISTENCY (contradicting findings), INCOMPLETENESS (critical aspects not covered)]
+DESCRIPTION: [2-3 sentences describing the gap]
+TYPE: [FRAGMENTATION / INCONSISTENCY / INCOMPLETENESS]
 
 Research Gap:"""
-            
-            gap = glm.generate(gap_prompt, max_tokens=300)
-            gaps.append(gap.strip())
-        
+                gap = glm.generate(gap_prompt, max_tokens=300)
+                gaps.append(gap.strip())
+
+        # ── Step 6: Recommendations (coordinator result or LLM fallback) ──
         _analysis_jobs[job_id]["progress"] = 85
         _analysis_jobs[job_id]["message"] = "Generating recommendations..."
-        
-        # Generate recommendations
-        gaps_context = "\n".join([f"Gap {i+1}: {g}" for i, g in enumerate(gaps)])
-        rec_prompt = f"""You are a research advisor. Based on these research topics and identified gaps, provide 5 actionable research recommendations.
+
+        if coordinator_result and coordinator_result.get("recommendations"):
+            raw_recs = coordinator_result["recommendations"]
+            if isinstance(raw_recs, list):
+                rec_parts = []
+                for i, r in enumerate(raw_recs):
+                    if isinstance(r, dict):
+                        part = f"{i+1}. {r.get('title', '')}"
+                        if r.get("reason"):
+                            part += f"\n   WHY: {r['reason']}"
+                        if r.get("methodology"):
+                            part += f"\n   HOW: {r['methodology']}"
+                        rec_parts.append(part)
+                    else:
+                        rec_parts.append(f"{i+1}. {r}")
+                recommendations = "\n\n".join(rec_parts)
+            else:
+                recommendations = str(raw_recs)
+        else:
+            gaps_context = "\n".join([f"Gap {i+1}: {g}" for i, g in enumerate(gaps)])
+            rec_prompt = f"""You are a research advisor. Based on these research topics and identified gaps, provide 5 actionable research recommendations.
 
 Topics: {', '.join(topics[:3])}
 
@@ -466,18 +552,18 @@ Identified Gaps:
 
 For EACH recommendation, use this format:
 1. [TITLE]: [What to research]
-   WHY: [Why this is important and how it connects to the gaps]
-   HOW: [Suggested methodology or approach]
+   WHY: [Why this is important]
+   HOW: [Suggested methodology]
 
 Research Recommendations:"""
-        
-        recommendations = glm.generate(rec_prompt, max_tokens=600)
-        
+            recommendations = glm.generate(rec_prompt, max_tokens=600)
+
+        # ── Step 7: Roadmap (always via LLM) ────────────────────
         _analysis_jobs[job_id]["progress"] = 95
         _analysis_jobs[job_id]["message"] = "Creating roadmap..."
-        
-        # Generate roadmap
-        roadmap_prompt = f"""Create a structured research roadmap for: {topics[0]}
+
+        roadmap_topic = topics[0] if topics else "research"
+        roadmap_prompt = f"""Create a structured research roadmap for: {roadmap_topic}
 
 Organize into three phases:
 
@@ -493,10 +579,17 @@ LONG-TERM (6-12 months):
 For each phase, list 2-3 specific actionable goals.
 
 Research Roadmap:"""
-        
         roadmap = glm.generate(roadmap_prompt, max_tokens=500)
-        
-        # Complete
+
+        # ── Assemble final results ──────────────────────────────
+        if not fact_table_stats:
+            try:
+                ft = get_fact_table()
+                if ft:
+                    fact_table_stats = ft.get_statistics()
+            except Exception:
+                pass
+
         _analysis_jobs[job_id].update({
             "status": "completed",
             "progress": 100,
@@ -508,14 +601,19 @@ Research Roadmap:"""
                 "recommendations": recommendations,
                 "roadmap": roadmap,
                 "total_chunks": total_chunks,
-                "files_processed": len(pdf_paths)
-            }
+                "files_processed": len(pdf_paths),
+                "execution_mode": execution_mode,
+                "gap_indicators": gap_indicators,
+                "rule_engine_report": rule_engine_report,
+                "fact_table_stats": fact_table_stats,
+                "reasoning_trace": reasoning_trace,
+            },
         })
-        
+
     except Exception as e:
         logger.error(f"Auto-analysis failed for job {job_id}: {e}")
         _analysis_jobs[job_id].update({
             "status": "failed",
             "error": str(e),
-            "message": f"Analysis failed: {str(e)}"
+            "message": f"Analysis failed: {str(e)}",
         })
