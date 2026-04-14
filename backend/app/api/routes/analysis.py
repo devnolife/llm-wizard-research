@@ -435,34 +435,66 @@ Summary:"""
             context = "\n\n".join([f"Document {i+1}: {r.document.content}" 
                                   for i, r in enumerate(search_results)])
             
-            gap_prompt = f"""Identify ONE specific research gap for: {topic}
+            gap_prompt = f"""Based on the research papers below, identify ONE specific synthesis research gap for the topic: {topic}
 
-Context: {context[:2000]}
+A synthesis gap is a research opportunity that emerges from comparing multiple papers — not just a limitation stated in one paper.
+
+Context from papers:
+{context[:2000]}
+
+Provide the gap in this format:
+TITLE: [Short gap title]
+DESCRIPTION: [2-3 sentences describing the gap, why it exists, and what is missing]
+TYPE: [One of: FRAGMENTATION (papers study same topic from different angles without integration), INCONSISTENCY (contradicting findings), INCOMPLETENESS (critical aspects not covered)]
 
 Research Gap:"""
             
-            gap = glm.generate(gap_prompt, max_tokens=200)
+            gap = glm.generate(gap_prompt, max_tokens=300)
             gaps.append(gap.strip())
         
         _analysis_jobs[job_id]["progress"] = 85
         _analysis_jobs[job_id]["message"] = "Generating recommendations..."
         
         # Generate recommendations
-        rec_prompt = f"""Based on these topics: {', '.join(topics[:3])}
+        gaps_context = "\n".join([f"Gap {i+1}: {g}" for i, g in enumerate(gaps)])
+        rec_prompt = f"""You are a research advisor. Based on these research topics and identified gaps, provide 5 actionable research recommendations.
 
-Provide 5 specific research recommendations:"""
+Topics: {', '.join(topics[:3])}
+
+Identified Gaps:
+{gaps_context}
+
+For EACH recommendation, use this format:
+1. [TITLE]: [What to research]
+   WHY: [Why this is important and how it connects to the gaps]
+   HOW: [Suggested methodology or approach]
+
+Research Recommendations:"""
         
-        recommendations = glm.generate(rec_prompt, max_tokens=300)
+        recommendations = glm.generate(rec_prompt, max_tokens=600)
         
         _analysis_jobs[job_id]["progress"] = 95
         _analysis_jobs[job_id]["message"] = "Creating roadmap..."
         
         # Generate roadmap
-        roadmap_prompt = f"""Create a research roadmap for: {topics[0]}
+        roadmap_prompt = f"""Create a structured research roadmap for: {topics[0]}
 
-Include short-term, medium-term, and long-term goals:"""
+Organize into three phases:
+
+SHORT-TERM (1-3 months):
+- Literature review and baseline setup tasks
+
+MEDIUM-TERM (3-6 months):
+- Core research and experimentation tasks
+
+LONG-TERM (6-12 months):
+- Validation, publication, and extension tasks
+
+For each phase, list 2-3 specific actionable goals.
+
+Research Roadmap:"""
         
-        roadmap = glm.generate(roadmap_prompt, max_tokens=400)
+        roadmap = glm.generate(roadmap_prompt, max_tokens=500)
         
         # Complete
         _analysis_jobs[job_id].update({
