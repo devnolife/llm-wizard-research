@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Moon, Sun, Upload, Search, MessageSquare, Database } from 'lucide-react'
+import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText } from 'lucide-react'
 import { useDarkMode } from '../../contexts/DarkModeContext'
 
 const NAV_LINKS = [
@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { to: '/search', label: 'Search', icon: Search },
   { to: '/chat', label: 'Chat', icon: MessageSquare },
   { to: '/documents', label: 'Documents', icon: Database },
+  { to: '/revisi', label: 'Revisi', icon: FileText },
 ]
 
 const Navbar = () => {

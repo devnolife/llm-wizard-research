@@ -9,6 +9,7 @@ import SearchPage from './components/pages/SearchPage'
 import ChatPage from './components/pages/ChatPage'
 import DocumentsPage from './components/pages/DocumentsPage'
 import NotFoundPage from './components/pages/NotFoundPage'
+import RevisionSummaryPage from './components/pages/RevisionSummaryPage'
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
                   <Route path="/search" element={<SearchPage />} />
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/documents" element={<DocumentsPage />} />
+                  <Route path="/revisi" element={<RevisionSummaryPage />} />
                   <Route path="*" element={<NotFoundPage />} />
                 </Routes>
               </main>
