@@ -436,7 +436,7 @@ const RevisionSummaryPage = () => {
       <div className="main-scroll min-h-[calc(100vh-3.5rem)] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 z-10 bg-background/95 backdrop-blur border-b px-6 lg:px-10 py-4 no-print">
-          <div className="flex items-center justify-between max-w-5xl mx-auto">
+          <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-primary" />
@@ -464,7 +464,7 @@ const RevisionSummaryPage = () => {
           <p className="text-xs text-gray-500">Seminar: 24–25 Des 2025 · Penguji: Prof. Dr. Adnan, ST., MT.</p>
         </div>
 
-        <div className="max-w-5xl mx-auto px-6 lg:px-10 py-6">
+        <div className="w-full px-6 lg:px-10 py-6">
           {/* Info + controls */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
