@@ -67,6 +67,25 @@ class DataConfig:
 
 
 @dataclass
+class RuleConfig:
+    """Rule Engine configuration"""
+    enabled: bool = True
+    claim_confidence: float = 0.5
+    min_confidence_threshold: float = 0.3
+    rules: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class FactExtractionConfig:
+    """Fact Extraction configuration"""
+    enabled: bool = True
+    llm_extracted_confidence: float = 0.7
+    pattern_causal_confidence: float = 0.6
+    pattern_contradiction_confidence: float = 0.5
+    pattern_extension_confidence: float = 0.6
+
+
+@dataclass
 class AppConfig:
     """Main application configuration"""
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -75,6 +94,8 @@ class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     api: APIConfig = field(default_factory=APIConfig)
     data: DataConfig = field(default_factory=DataConfig)
+    rule_engine: RuleConfig = field(default_factory=RuleConfig)
+    fact_extraction: FactExtractionConfig = field(default_factory=FactExtractionConfig)
     log_level: str = "INFO"
     log_file: str = "./logs/app.log"
 
@@ -181,6 +202,27 @@ class ConfigLoader:
             processed_path=os.getenv("DATA_PROCESSED_PATH") or yaml_config.get("data", {}).get("processed_path", "./data/processed"),
         )
         
+        # Rule Engine Configuration
+        rule_cfg = yaml_config.get("rule_engine", {})
+        rule_defaults = rule_cfg.get("defaults", {})
+        rule_config = RuleConfig(
+            enabled=rule_cfg.get("enabled", True),
+            claim_confidence=float(rule_defaults.get("claim_confidence", 0.5)),
+            min_confidence_threshold=float(rule_defaults.get("min_confidence_threshold", 0.3)),
+            rules=rule_cfg.get("rules", {}),
+        )
+        
+        # Fact Extraction Configuration
+        fact_cfg = yaml_config.get("fact_extraction", {})
+        fact_thresholds = fact_cfg.get("confidence_thresholds", {})
+        fact_config = FactExtractionConfig(
+            enabled=fact_cfg.get("enabled", True),
+            llm_extracted_confidence=float(fact_thresholds.get("llm_extracted", 0.7)),
+            pattern_causal_confidence=float(fact_thresholds.get("pattern_causal", 0.6)),
+            pattern_contradiction_confidence=float(fact_thresholds.get("pattern_contradiction", 0.5)),
+            pattern_extension_confidence=float(fact_thresholds.get("pattern_extension", 0.6)),
+        )
+        
         # Main Configuration
         app_config = AppConfig(
             llm=llm_config,
@@ -189,6 +231,8 @@ class ConfigLoader:
             retrieval=retrieval_config,
             api=api_config,
             data=data_config,
+            rule_engine=rule_config,
+            fact_extraction=fact_config,
             log_level=os.getenv("LOG_LEVEL") or yaml_config.get("log_level", "INFO"),
             log_file=os.getenv("LOG_FILE") or yaml_config.get("log_file", "./logs/app.log"),
         )

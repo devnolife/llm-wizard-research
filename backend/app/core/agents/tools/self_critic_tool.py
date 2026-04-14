@@ -245,7 +245,7 @@ class SelfCriticTool:
                 report = self.rule_engine.validate(claim, context)
                 total += 1
                 
-                verdict = report.overall_verdict.value if hasattr(report.overall_verdict, 'value') else str(report.overall_verdict)
+                verdict = str(report.overall_verdict)
                 if verdict == "PASS":
                     passed += 1
                 elif verdict == "FLAG":

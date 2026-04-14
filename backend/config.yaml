@@ -108,6 +108,128 @@ performance:
   parallel_processing: true
   max_workers: 4
 
+# Rule-Based Validation Layer Configuration
+rule_engine:
+  enabled: true
+  rules:
+    feasibility:
+      F1:
+        name: "Resource Compatibility"
+        enabled: true
+        critical: true
+        confidence_penalty: -0.5
+      F2:
+        name: "Data Compatibility"
+        enabled: true
+        critical: false
+        confidence_penalty: -0.2
+      F3:
+        name: "Scale Compatibility"
+        enabled: true
+        critical: true
+        confidence_penalty: -0.5
+    causality:
+      C1:
+        name: "Minimal Causal Evidence"
+        enabled: true
+        critical: false
+        confidence_penalty: -0.15
+        min_evidence_count: 2
+      C2:
+        name: "Causal Direction"
+        enabled: true
+        critical: true
+        confidence_penalty: -0.5
+      C3:
+        name: "Confounding Check"
+        enabled: true
+        critical: false
+        confidence_penalty: -0.2
+    consistency:
+      K1:
+        name: "Internal Non-contradiction"
+        enabled: true
+        critical: false
+        confidence_penalty: -0.1
+      K2:
+        name: "KG Fact Consistency"
+        enabled: true
+        critical: false
+        confidence_penalty: -0.15
+      K3:
+        name: "Transitivity Check"
+        enabled: true
+        critical: false
+        confidence_penalty: -0.15
+  defaults:
+    claim_confidence: 0.5
+    min_confidence_threshold: 0.3
+
+# Fact Extraction Configuration
+fact_extraction:
+  enabled: true
+  confidence_thresholds:
+    llm_extracted: 0.7
+    pattern_causal: 0.6
+    pattern_contradiction: 0.5
+    pattern_extension: 0.6
+  entity_types:
+    - METHOD
+    - CONCEPT
+    - DOMAIN
+    - FINDING
+    - DATASET
+    - METRIC
+    - PAPER
+    - CONSTRAINT
+  predicate_types:
+    - USES_METHOD
+    - PROPOSES
+    - APPLIES_TO
+    - ACHIEVES
+    - REQUIRES_RESOURCE
+    - REQUIRES_DATA
+    - IMPROVES
+    - CONTRADICTS
+    - EXTENDS
+    - EVALUATED_ON
+    - HAS_CONSTRAINT
+    - DISCUSSES
+  linguistic_markers:
+    causal:
+      - "causes"
+      - "leads to"
+      - "results in"
+      - "because"
+      - "therefore"
+      - "consequently"
+      - "due to"
+      - "effect of"
+      - "contributes to"
+      - "enables"
+      - "prevents"
+      - "inhibits"
+      - "improves"
+    contradiction:
+      - "however"
+      - "contradicts"
+      - "in contrast"
+      - "whereas"
+      - "on the other hand"
+      - "inconsistent with"
+      - "conflicts with"
+      - "contrary to"
+      - "disputes"
+      - "challenges"
+    extension:
+      - "extends"
+      - "builds upon"
+      - "based on"
+      - "improvement over"
+      - "derived from"
+      - "enhances"
+      - "augments"
+
 # Feature Flags
 features:
   knowledge_graph: true

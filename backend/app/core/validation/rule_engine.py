@@ -286,6 +286,14 @@ class RuleEngine:
             ValidationReport with overall verdict and per-rule results
         """
         results: List[RuleResult] = []
+        
+        # Normalize claim to dict
+        if isinstance(claim, str):
+            claim = {
+                "description": claim,
+                "confidence": (context or {}).get("confidence", 0.5),
+            }
+        
         original_confidence = claim.get("confidence", 0.5)
         confidence = original_confidence
         

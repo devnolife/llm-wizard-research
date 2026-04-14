@@ -381,11 +381,7 @@ class CoordinatorAgent:
                     
                     report = self.rule_engine.validate(claim, ind_context)
                     
-                    verdict = (
-                        report.overall_verdict.value
-                        if hasattr(report.overall_verdict, "value")
-                        else str(report.overall_verdict)
-                    )
+                    verdict = str(report.overall_verdict)
                     
                     indicator["rule_engine_verdict"] = verdict
                     indicator["adjusted_confidence"] = report.adjusted_confidence
@@ -602,7 +598,7 @@ class CoordinatorAgent:
             logger.info(
                 f"LangGraph execution complete — "
                 f"{result.get('metadata', {}).get('iterations', '?')} iterations, "
-                f"{result.get('metadata', {}).get('total_indicators', 0)} indicators"
+                f"{result.get('metadata', {}).get('total_indicators', 0)} indicators"  # noqa: E501
             )
             return result
             

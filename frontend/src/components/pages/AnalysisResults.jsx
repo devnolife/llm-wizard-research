@@ -78,7 +78,7 @@ const AnalysisResults = () => {
 
   if (error) {
     return (
-      <div className="container mx-auto max-w-2xl px-6 py-12 text-center">
+      <div className="w-full px-6 lg:px-10 py-12 text-center">
         <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
         <h2 className="text-2xl font-bold mb-2">Analysis Failed</h2>
         <p className="text-muted-foreground mb-6">{error}</p>
@@ -111,7 +111,7 @@ const AnalysisResults = () => {
   )
 
   return (
-    <div className="container mx-auto max-w-4xl px-6 py-12">
+    <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
       <div className="mb-10">
         <div className="flex items-center gap-3 mb-2">

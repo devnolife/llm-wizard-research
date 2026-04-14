@@ -60,7 +60,7 @@ const ChatPage = () => {
   }
 
   return (
-    <div className="container mx-auto max-w-3xl px-6 py-6 h-[calc(100vh-80px)] flex flex-col">
+    <div className="w-full px-6 lg:px-10 py-6 h-[calc(100vh-80px)] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>

@@ -26,17 +26,18 @@ References:
 from typing import Dict, Any, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from collections import Counter
-from enum import Enum
 
 from loguru import logger
 import numpy as np
 
+from ...models.responses import (
+    IndicatorType,
+    RuleVerdictType,
+    GapIndicatorModel,
+)
 
-class GapIndicatorType(str, Enum):
-    """Three mainstream synthesis gap indicators (Cooper 1998, Booth 2012)"""
-    FRAGMENTATION = "FRAGMENTATION"
-    INCONSISTENCY = "INCONSISTENCY"
-    INCOMPLETENESS = "INCOMPLETENESS"
+# Re-export for backward compatibility
+GapIndicatorType = IndicatorType
 
 
 @dataclass
@@ -47,14 +48,15 @@ class GapIndicator:
     The system outputs indicators that must be validated by a human researcher.
     See revisi.md Section 4: Batasan Epistemologis.
     """
-    indicator_type: GapIndicatorType
+    indicator_type: IndicatorType
     description: str
     confidence: float                    # 0.0 - 1.0
     related_papers: List[str]            # Paper IDs involved
     evidence: List[str]                  # Supporting evidence texts
     suggested_directions: List[str]      # Potential research directions
     requires_human_validation: bool = True  # Always True per revisi.md
-    rule_engine_verdict: str = "PENDING"    # PASS/FLAG/REJECT from Rule Engine
+    rule_engine_verdict: Optional[RuleVerdictType] = None  # PASS/FLAG/REJECT from Rule Engine
+    adjusted_confidence: Optional[float] = None  # Confidence after Rule Engine adjustment
     
     # Metadata for traceability
     detection_method: str = ""           # e.g., "topic_clustering", "nli_check"
@@ -69,9 +71,24 @@ class GapIndicator:
             "evidence": self.evidence[:5],
             "suggested_directions": self.suggested_directions,
             "requires_human_validation": self.requires_human_validation,
-            "rule_engine_verdict": self.rule_engine_verdict,
+            "rule_engine_verdict": self.rule_engine_verdict.value if self.rule_engine_verdict else None,
             "detection_method": self.detection_method,
         }
+
+    def to_model(self) -> GapIndicatorModel:
+        """Convert internal GapIndicator to the API response model."""
+        return GapIndicatorModel(
+            indicator_type=self.indicator_type,
+            title=self.description.split(":")[0].strip() if ":" in self.description else self.description[:80],
+            description=self.description,
+            confidence=self.confidence,
+            adjusted_confidence=self.adjusted_confidence,
+            rule_engine_verdict=self.rule_engine_verdict,
+            requires_human_validation=self.requires_human_validation,
+            evidence=self.evidence[:5],
+            supporting_papers=self.related_papers,
+            suggested_directions=self.suggested_directions,
+        )
 
 
 class GapAnalyzer:
@@ -151,6 +168,16 @@ class GapAnalyzer:
         
         logger.info(f"Detected {len(indicators)} gap indicators")
         return indicators
+    
+    def analyze_gaps_as_models(
+        self,
+        topic: str,
+        papers: List[Dict[str, Any]],
+        depth: str = "standard",
+    ) -> List[GapIndicatorModel]:
+        """Run gap analysis and return API-ready GapIndicatorModel list."""
+        indicators = self.analyze_gaps(topic, papers, depth)
+        return [ind.to_model() for ind in indicators]
     
     # -------------------------------------------------------------------
     # Indicator 1: FRAGMENTATION
@@ -385,11 +412,13 @@ class GapAnalyzer:
             }
             
             report = self.rule_engine.validate(claim)
-            indicator.rule_engine_verdict = report.overall_verdict
+            indicator.rule_engine_verdict = RuleVerdictType(report.overall_verdict) \
+                if isinstance(report.overall_verdict, str) else report.overall_verdict
+            indicator.adjusted_confidence = report.adjusted_confidence
             indicator.confidence = report.adjusted_confidence
             
             # Only include if not REJECTED
-            if report.overall_verdict != "REJECT":
+            if indicator.rule_engine_verdict != RuleVerdictType.REJECT:
                 validated.append(indicator)
             else:
                 logger.info(

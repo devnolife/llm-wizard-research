@@ -69,7 +69,7 @@ const SearchPage = () => {
   }
 
   return (
-    <div className="container mx-auto max-w-4xl px-6 py-12">
+    <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Search Papers</h1>
