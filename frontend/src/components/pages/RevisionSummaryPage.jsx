@@ -471,7 +471,7 @@ const RevisionSummaryPage = () => {
               <GraduationCap className="w-5 h-5 text-primary" />
               <div>
                 <p className="text-sm font-medium">Prof. Dr. Adnan, ST., MT.</p>
-                <p className="text-xs text-muted-foreground">24\u201325 Desember 2025 \u00b7 {COMMENTS.filter(c => c.severity === 'fatal').length} FATAL \u00b7 {COMMENTS.filter(c => c.severity === 'warning').length} Arahan</p>
+                <p className="text-xs text-muted-foreground">24–25 Desember 2025 · {COMMENTS.filter(c => c.severity === 'fatal').length} FATAL · {COMMENTS.filter(c => c.severity === 'warning').length} Arahan</p>
               </div>
             </div>
             <div className="flex gap-2 no-print">
