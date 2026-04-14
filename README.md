@@ -1,185 +1,166 @@
 # Wizard Research
 
-**AI-Powered Research Paper Recommendation System with Automatic Gap Detection**
+**Neuro-Symbolic Agentic System for Synthesis Gap Detection in Scientific Literature**
 
-A full-stack RAG-LLM application that helps researchers discover relevant papers, detect research gaps, and get personalized recommendations using advanced AI agents.
+A research prototype that combines LLM-based reasoning with rule-based validation to detect indicators of synthesis gaps (fragmentation, inconsistency, incompleteness) in academic papers. Built as a thesis project for the Master's program in Informatics Engineering at Universitas Hasanuddin.
 
-## 🌟 Features
+> **Thesis:** *Pendekatan Neuro-Symbolic Agentic untuk Deteksi Indikator Synthesis Gap pada Literatur Ilmiah*
+> **Author:** Andi Agung Dwi Arya B (D082251054)
 
-- **📄 PDF Upload & Processing** - Automatic text extraction and chunking
-- **🔍 Semantic Search** - Vector-based similarity search across research papers
-- **🤖 Multi-Agent Analysis** - Coordinator, Analyzer, Gap Detector, and Recommender agents
-- **🌐 External Paper APIs** - Integration with arXiv, Semantic Scholar, CORE, PubMed, CrossRef
-- **🎯 Auto-Analysis** - Upload PDFs and get instant topic extraction, gap detection, and recommendations
-- **💬 Research Assistant Chat** - Interactive Q&A about your research corpus
-- **🔗 Knowledge Graph** - Citation network visualization (optional Neo4j integration)
+---
 
-## 🏗️ Project Structure
+## Architecture
+
+The system implements a **Neuro-Symbolic Agentic** architecture with 4 processing phases:
+
+```
+Phase 1: INGESTION          PDF → Parse → Chunk → Embed → Vector Store (ChromaDB)
+Phase 2: FACT EXTRACTION     Entity Extraction → Relation Extraction → SPO Triples → Knowledge Graph
+Phase 3: AGENTIC ANALYSIS    Plan → Act → Observe → Reflect → Repeat/Stop (LangGraph)
+Phase 4: VALIDATION          Rule Engine (9 rules) → PASS / FLAG / REJECT
+```
+
+### Key Components
+
+| Component | Description | Location |
+|-----------|-------------|----------|
+| **Gap Analyzer** | Detects 3 Cooper (1998) indicators: Fragmentation, Inconsistency, Incompleteness | `backend/app/core/gap_detection/` |
+| **Rule Engine** | 9 rules in 3 categories (Feasibility, Causality, Consistency) with PASS/FLAG/REJECT verdicts | `backend/app/core/validation/rule_engine.py` |
+| **Knowledge Graph** | SPO Fact Base with 8 entity types and 12 predicates for deductive reasoning | `backend/app/core/knowledge/` |
+| **3-Layer Discriminator** | Semantic Filtering → Evidence Extraction → Rule-Based Validation | `backend/app/core/validation/relation_classifier.py` |
+| **Agent Coordinator** | LangGraph-based multi-step reasoning with tool selection | `backend/app/core/agents/coordinator.py` |
+| **RAG Pipeline** | SciBERT embeddings + ChromaDB vector retrieval | `backend/app/core/retrieval/` |
+
+---
+
+## Project Structure
 
 ```
 wizard-research/
-├── backend/                    # Python FastAPI backend
+├── backend/
 │   ├── app/
-│   │   ├── api/               # API routes (modular)
-│   │   ├── core/              # Business logic (agents, RAG, graphs)
-│   │   ├── services/          # External services (LLM, APIs)
-│   │   ├── models/            # Pydantic models
-│   │   └── main.py            # FastAPI entry point
-│   ├── tests/                 # Unit, integration, e2e tests
-│   ├── config.yaml            # Configuration
+│   │   ├── api/routes/          # FastAPI endpoints (analysis, documents, papers, health)
+│   │   ├── core/
+│   │   │   ├── agents/          # LangGraph coordinator + 4 specialized agents
+│   │   │   │   └── tools/       # RAG, KG querier, NLI checker, paper analyzer, self-critic
+│   │   │   ├── gap_detection/   # Synthesis gap analyzer (3 indicators)
+│   │   │   ├── knowledge/       # Fact table + fact extractor (SPO triples)
+│   │   │   ├── knowledge_graph/ # Graph builder
+│   │   │   ├── recommendation/  # Research recommendation engine
+│   │   │   ├── retrieval/       # Vector store + RAG retriever
+│   │   │   └── validation/      # Rule engine + relation classifier (3-layer)
+│   │   ├── services/            # LLM service (Ollama) + external paper APIs
+│   │   └── utils/               # Config loader, document processor
+│   ├── experiments/             # Evaluation experiment runner
+│   ├── tests/                   # Unit + integration tests
+│   ├── config.yaml
 │   └── requirements.txt
 │
-├── frontend/                   # React + Vite frontend
-│   ├── src/
-│   │   ├── components/        # pages/, layout/, common/
-│   │   ├── services/          # API clients
-│   │   └── App.jsx
-│   └── package.json
+├── frontend/                    # React 19 + Vite + TailwindCSS (shadcn/ui style)
+│   └── src/
+│       ├── components/
+│       │   ├── pages/           # Upload, Results, Search, Chat, Documents, Revisi
+│       │   ├── layout/          # Navbar
+│       │   └── common/          # Badge, EmptyState, ErrorBoundary, LoadingSpinner
+│       ├── contexts/            # DarkMode, Toast
+│       ├── hooks/               # useApi
+│       └── services/            # API clients
 │
-├── data/                       # Raw PDFs, processed data, backups
-├── chroma_db/                 # Vector database (ChromaDB)
-├── research_papers/           # Sample papers
-└── Makefile                   # Common commands
+├── drafts/                      # Proposal chapter drafts (BAB I–V)
+├── RINGKASAN_REVISI.md          # Comprehensive revision summary
+├── Makefile
+└── docker-compose.yml
 ```
 
-## 🚀 Quick Start
+---
+
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.9+
 - Node.js 18+
-- Ollama (for LLM inference)
+- [Ollama](https://ollama.ai) with `llama3.2:latest` (or any compatible model)
 
 ### Installation
 
-1. **Clone the repository**
 ```bash
 git clone https://github.com/devnolife/wizard-research.git
 cd wizard-research
-```
-
-2. **Setup (installs all dependencies)**
-```bash
 make setup
 ```
 
-3. **Configure environment variables**
-```bash
-# Edit backend/.env and frontend/.env with your settings
-# See .env.example files for reference
-```
+### Start Ollama
 
-4. **Start Ollama (in a separate terminal)**
 ```bash
 ollama serve
-ollama pull glm-4-flash  # or your preferred model
+ollama pull llama3.2
 ```
 
-5. **Run development servers**
+### Run Development Servers
 
-**Option A: Using Makefile (Recommended)**
 ```bash
-# Terminal 1 - Backend
+# Terminal 1 — Backend (port 8000)
 make backend
 
-# Terminal 2 - Frontend  
+# Terminal 2 — Frontend (port 5173)
 make frontend
 ```
 
-**Option B: Manual**
-```bash
-# Terminal 1 - Backend
-./run_backend.sh
-# or
-cd backend && uvicorn app.main:app --reload
+- **Frontend:** http://localhost:5173
+- **API Docs:** http://localhost:8000/docs
 
-# Terminal 2 - Frontend
-cd frontend && npm run dev
-```
+---
 
-This will start:
-- Backend API: http://localhost:8000
-- Frontend: http://localhost:5173
-- API Docs: http://localhost:8000/docs
+## Usage
 
-## 📖 Usage
+1. **Upload Papers** — Drag & drop 3–10 PDF papers on the upload page
+2. **Auto-Analysis** — System extracts facts, builds KG, runs agentic analysis
+3. **View Results** — Dashboard with 5 tabs: Overview, Topics, Gaps, Recommendations, Roadmap
+4. **Search** — Query external APIs (arXiv, Semantic Scholar, CORE, PubMed, CrossRef)
+5. **Chat** — Interactive Q&A about your research corpus
 
-### Upload & Auto-Analyze Papers
+---
 
-1. Navigate to http://localhost:5173
-2. Drag & drop PDF papers or click to browse
-3. Click "Upload & Auto-Analyze"
-4. View extracted topics, research gaps, and recommendations
+## API Endpoints
 
-### Search External Papers
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/upload-and-analyze` | Upload PDFs and run full analysis pipeline |
+| `GET` | `/api/analysis-status/{job_id}` | Check analysis progress |
+| `POST` | `/api/recommend` | Get research recommendations |
+| `POST` | `/api/gaps` | Detect synthesis gap indicators |
+| `POST` | `/api/chat` | Chat with research assistant |
+| `POST` | `/api/ingest` | Ingest a single PDF |
+| `POST` | `/api/search` | Semantic search across documents |
+| `POST` | `/api/papers/search` | Search external paper APIs |
+| `GET` | `/health` | Health check |
 
-```bash
-curl -X POST "http://localhost:8000/api/papers/search" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "transformer neural networks", "sources": ["arxiv", "semantic_scholar"]}'
-```
+---
 
-### Chat with Research Assistant
+## Testing
 
 ```bash
-curl -X POST "http://localhost:8000/api/chat" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "What are the main research directions in NLP?"}'
+make test              # Run all tests
+make test-unit         # Unit tests only
+make test-integration  # Integration tests only
 ```
 
-## 🛠️ Development
+---
 
-### Backend Commands
+## Docker
 
 ```bash
-make backend          # Run backend server
-make install-backend  # Install backend deps
-make test            # Run all tests
-make test-unit       # Run unit tests only
+docker-compose up -d    # Start all services
+docker-compose down     # Stop services
+docker-compose logs -f  # View logs
 ```
 
-### Frontend Commands
+---
 
-```bash
-make frontend         # Run frontend dev server
-make install-frontend # Install frontend deps
-```
+## External API Keys (Optional)
 
-### Docker
-
-```bash
-make docker-up       # Start all services
-make docker-down     # Stop all services
-make docker-logs     # View logs
-```
-
-## 🔌 API Endpoints
-
-### Documents
-- `POST /api/ingest` - Upload PDF
-- `POST /api/search` - Search documents
-- `GET /api/stats` - Get statistics
-- `DELETE /api/documents/{id}` - Delete document
-
-### External Papers
-- `POST /api/papers/search` - Search external APIs
-- `POST /api/papers/batch-ingest` - Bulk ingest papers
-- `POST /api/papers/ingest-external` - Ingest specific paper
-
-### Analysis
-- `POST /api/upload-and-analyze` - Auto-analyze PDFs
-- `GET /api/analysis-status/{job_id}` - Check analysis status
-- `POST /api/recommend` - Get recommendations
-- `POST /api/gaps` - Detect research gaps
-- `POST /api/chat` - Chat with assistant
-
-### System
-- `GET /health` - Health check
-- `GET /api/sources/status` - Check API keys
-
-## 🔑 External API Keys (Optional)
-
-Add these to `backend/.env` for enhanced functionality:
+Add to `backend/.env` for enhanced paper search:
 
 ```bash
 SEMANTIC_SCHOLAR_API_KEY=your_key
@@ -188,23 +169,23 @@ PUBMED_API_KEY=your_key
 CROSSREF_EMAIL=your_email
 ```
 
-## 📚 Documentation
+---
 
-See API documentation at http://localhost:8000/docs after starting the server.
+## Tech Stack
 
-## 🤝 Contributing
+| Layer | Technology |
+|-------|------------|
+| **Backend** | Python, FastAPI, LangGraph, ChromaDB, SciSpaCy |
+| **Frontend** | React 19, Vite 5, TailwindCSS 3.4 (shadcn/ui style) |
+| **LLM** | Ollama (llama3.2 / configurable) |
+| **Vector DB** | ChromaDB |
+| **APIs** | arXiv, Semantic Scholar, CORE, PubMed, CrossRef |
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+---
 
-## 📄 License
+## License
 
-This project is licensed under the MIT License.
-
-## 🙏 Acknowledgments
-
-- Built with FastAPI, React, ChromaDB, and Ollama
-- Integrates arXiv, Semantic Scholar, CORE, PubMed, and CrossRef APIs
-- Powered by GLM-4 and other open-source LLMs
+MIT License
 
 ---
 
