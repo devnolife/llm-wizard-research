@@ -3,8 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, FileText, X, Sparkles } from 'lucide-react'
 import { analysisService } from '../../services/analysisService'
+import { useDarkMode } from '../../contexts/DarkModeContext'
+import { useToast } from '../../contexts/ToastContext'
 
-const UploadPage = ({ darkMode }) => {
+const UploadPage = () => {
+  const { darkMode } = useDarkMode()
+  const toast = useToast()
   const navigate = useNavigate()
   const [files, setFiles] = useState([])
   const [isDragging, setIsDragging] = useState(false)
@@ -64,7 +68,8 @@ const UploadPage = ({ darkMode }) => {
       // Navigate to results page
       navigate(`/results/${response.job_id}`)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Upload failed. Please try again.')
+      setError(err.userMessage || 'Upload failed. Please try again.')
+      toast.error(err.userMessage || 'Upload failed')
       setUploading(false)
     }
   }

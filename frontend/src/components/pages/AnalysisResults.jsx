@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, AlertTriangle, Lightbulb, Map, ChevronDown, ChevronUp, Download, Loader } from 'lucide-react'
-import axios from 'axios'
+import { CheckCircle, AlertTriangle, Lightbulb, Map, ChevronDown, Download, Loader } from 'lucide-react'
+import { useDarkMode } from '../../contexts/DarkModeContext'
+import { useToast } from '../../contexts/ToastContext'
+import { analysisService } from '../../services/analysisService'
 
-const AnalysisResults = ({ darkMode }) => {
+const AnalysisResults = () => {
+  const { darkMode } = useDarkMode()
+  const toast = useToast()
+  const navigate = useNavigate()
   const { jobId } = useParams()
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState(null)
@@ -19,29 +24,33 @@ const AnalysisResults = ({ darkMode }) => {
   })
 
   useEffect(() => {
+    let cancelled = false
+
     const fetchResults = async () => {
       try {
-        const response = await axios.get(`http://localhost:8000/api/analysis-status/${jobId}`, {
-          params: { lang: language }
-        })
+        const response = await analysisService.getAnalysisStatus(jobId, language)
 
-        if (response.data.status === 'completed') {
-          setData(response.data.results)
+        if (cancelled) return
+
+        if (response.status === 'completed') {
+          setData(response.results)
           setLoading(false)
-        } else if (response.data.status === 'processing') {
-          // Poll again after 3 seconds
+          toast.success('Analysis complete!')
+        } else if (response.status === 'processing') {
           setTimeout(fetchResults, 3000)
-        } else if (response.data.status === 'failed') {
-          setError(response.data.error || 'Analysis failed')
+        } else if (response.status === 'failed') {
+          setError(response.error || 'Analysis failed')
           setLoading(false)
         }
       } catch (err) {
-        setError(err.response?.data?.detail || 'Failed to fetch results')
+        if (cancelled) return
+        setError(err.userMessage || 'Failed to fetch results')
         setLoading(false)
       }
     }
 
     fetchResults()
+    return () => { cancelled = true }
   }, [jobId, language])
 
   const toggleSection = (section) => {
@@ -122,7 +131,7 @@ const AnalysisResults = ({ darkMode }) => {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => window.location.href = '/'}
+            onClick={() => navigate('/')}
             className={`mt-8 px-8 py-4 rounded-2xl font-semibold ${darkMode
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600'
                 : 'bg-gradient-to-r from-blue-500 to-purple-500'
