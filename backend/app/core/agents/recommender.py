@@ -193,21 +193,32 @@ class RecommenderAgent:
     def _apply_gap_awareness(
         self,
         candidates: List[Recommendation],
-        gaps: Dict[str, Any]
+        gaps: Any
     ) -> List[Recommendation]:
         """
-        Boost recommendations that address identified gaps
+        Boost recommendations that address identified gaps.
+        Handles both dict format (legacy) and list of gap indicators.
         """
-        # Extract gap keywords
         gap_keywords = set()
         
-        for area in gaps.get("unexplored_areas", []):
-            if isinstance(area, dict):
-                gap_keywords.add(area.get("area", "").lower())
-        
-        for method in gaps.get("methodological_gaps", []):
-            if isinstance(method, dict):
-                gap_keywords.add(method.get("method", "").lower())
+        if isinstance(gaps, dict):
+            for area in gaps.get("unexplored_areas", []):
+                if isinstance(area, dict):
+                    gap_keywords.add(area.get("area", "").lower())
+            for method in gaps.get("methodological_gaps", []):
+                if isinstance(method, dict):
+                    gap_keywords.add(method.get("method", "").lower())
+        elif isinstance(gaps, list):
+            for gap in gaps:
+                if isinstance(gap, dict):
+                    desc = gap.get("description", gap.get("title", "")).lower()
+                    for word in desc.split():
+                        if len(word) > 4:
+                            gap_keywords.add(word)
+                elif isinstance(gap, str):
+                    for word in gap.lower().split():
+                        if len(word) > 4:
+                            gap_keywords.add(word)
         
         # Boost scores for papers addressing gaps
         for candidate in candidates:
