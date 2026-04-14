@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText } from 'lucide-react'
+import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Cpu } from 'lucide-react'
 import { useDarkMode } from '../../contexts/DarkModeContext'
+import ModelSelector from '../common/ModelSelector'
 
 const NAV_LINKS = [
   { to: '/', label: 'Upload', icon: Upload },
@@ -46,10 +47,13 @@ const Navbar = () => {
           ))}
         </div>
 
+        {/* Model Selector */}
+        <ModelSelector />
+
         {/* Dark Mode Toggle */}
         <button
           onClick={toggleDarkMode}
-          className="inline-flex items-center justify-center rounded-md w-9 h-9 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          className="inline-flex items-center justify-center rounded-md w-9 h-9 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors ml-1"
         >
           {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>

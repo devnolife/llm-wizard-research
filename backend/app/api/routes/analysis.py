@@ -9,12 +9,15 @@ Updated to support:
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from loguru import logger
 from typing import List
 from pathlib import Path
+import asyncio
 import tempfile
 import uuid
 import time
+import json
 
 from ...models.requests import (
     RecommendationRequest,
@@ -37,6 +40,7 @@ from ..dependencies import (
     get_fact_table,
     get_fact_extractor,
     get_rule_engine,
+    get_knowledge_graph,
 )
 from ...utils.document_processor import DocumentProcessor
 
@@ -590,6 +594,44 @@ Research Roadmap:"""
             except Exception:
                 pass
 
+        # ── Compute evaluation metrics ────────────────────────
+        eval_metrics = {}
+        try:
+            n_gaps = len(gaps)
+            n_recs = len(recommendations) if isinstance(recommendations, list) else len([l for l in (recommendations or '').split('\n') if l.strip()]) if recommendations else 0
+            n_topics = len(topics)
+            n_facts = fact_table_stats.get("total_facts", 0) if fact_table_stats else 0
+            n_entities = fact_table_stats.get("total_entities", 0) if fact_table_stats else 0
+
+            # Coverage: how many topics have at least one gap
+            topic_coverage = min(n_gaps / max(n_topics, 1), 1.0)
+            # Recommendation completeness: gaps addressed by recommendations
+            rec_completeness = min(n_recs / max(n_gaps, 1), 1.0)
+            # KG density: facts per entity
+            kg_density = n_facts / max(n_entities, 1)
+            # Pipeline completeness score
+            pipeline_score = sum([
+                0.2 if execution_mode == "langgraph" else 0.1,
+                0.2 if n_facts > 0 else 0,
+                0.2 if gap_indicators else 0,
+                0.2 if rule_engine_report else 0,
+                0.2 if n_recs > 0 else 0,
+            ])
+
+            eval_metrics = {
+                "topic_coverage": round(topic_coverage, 3),
+                "recommendation_completeness": round(rec_completeness, 3),
+                "kg_density": round(kg_density, 3),
+                "pipeline_score": round(pipeline_score, 3),
+                "total_topics": n_topics,
+                "total_gaps": n_gaps,
+                "total_recommendations": n_recs,
+                "total_facts": n_facts,
+                "total_entities": n_entities,
+            }
+        except Exception as eval_err:
+            logger.warning(f"Evaluation metrics computation failed: {eval_err}")
+
         _analysis_jobs[job_id].update({
             "status": "completed",
             "progress": 100,
@@ -607,6 +649,7 @@ Research Roadmap:"""
                 "rule_engine_report": rule_engine_report,
                 "fact_table_stats": fact_table_stats,
                 "reasoning_trace": reasoning_trace,
+                "eval_metrics": eval_metrics,
             },
         })
 
@@ -617,3 +660,67 @@ Research Roadmap:"""
             "error": str(e),
             "message": f"Analysis failed: {str(e)}",
         })
+
+
+# ───────────────────────────────────────────
+# Knowledge Graph Visualization Endpoint
+# ───────────────────────────────────────────
+
+@router.get("/kg/graph")
+async def get_kg_graph():
+    """Return KG nodes and edges for visualization."""
+    kg = get_knowledge_graph()
+    data = kg.export_to_dict()
+    return {
+        "nodes": data.get("nodes", []),
+        "edges": data.get("edges", []),
+        "stats": {
+            "total_nodes": len(data.get("nodes", [])),
+            "total_edges": len(data.get("edges", [])),
+        },
+    }
+
+
+# ───────────────────────────────────────────
+# SSE Streaming Endpoint
+# ───────────────────────────────────────────
+
+@router.get("/stream/{job_id}")
+async def stream_analysis(job_id: str):
+    """Stream analysis progress via Server-Sent Events."""
+
+    async def event_generator():
+        prev_status = None
+        prev_message = None
+        while True:
+            job = _analysis_jobs.get(job_id)
+            if not job:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Job not found'})}\n\n"
+                return
+
+            status = job.get("status", "unknown")
+            message = job.get("message", "")
+
+            if status != prev_status or message != prev_message:
+                payload = {
+                    "type": "progress",
+                    "status": status,
+                    "message": message,
+                    "progress": job.get("progress", 0),
+                }
+                if status == "completed":
+                    payload["type"] = "complete"
+                    payload["result"] = job.get("result")
+                elif status == "failed":
+                    payload["type"] = "error"
+                    payload["error"] = job.get("error", "")
+                yield f"data: {json.dumps(payload, default=str)}\n\n"
+                prev_status = status
+                prev_message = message
+
+            if status in ("completed", "failed"):
+                return
+
+            await asyncio.sleep(1)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

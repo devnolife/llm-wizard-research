@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   CheckCircle, AlertTriangle, Lightbulb, Map, Download, Loader,
   FileText, Database, Tag, Search, ArrowRight, Clock, Target,
   TrendingUp, BarChart3, BookOpen, Zap, Sparkles, ChevronDown,
-  Shield, ExternalLink, Compass
+  Shield, ExternalLink, Compass, Share2, FileDown
 } from 'lucide-react'
 import { useToast } from '../../contexts/ToastContext'
 import { analysisService } from '../../services/analysisService'
@@ -109,6 +109,7 @@ const TABS = [
   { id: 'gaps', label: 'Research Gaps', icon: Search },
   { id: 'recommendations', label: 'Recommendations', icon: Lightbulb },
   { id: 'roadmap', label: 'Roadmap', icon: Map },
+  { id: 'knowledge-graph', label: 'Knowledge Graph', icon: Share2 },
   { id: 'pipeline', label: 'Pipeline', icon: Zap },
 ]
 
@@ -150,30 +151,70 @@ const AnalysisResults = () => {
 
   useEffect(() => {
     let cancelled = false
-    const fetchResults = async () => {
+    const API_BASE = import.meta.env.VITE_API_URL || ''
+
+    // Try SSE first, fall back to polling
+    const trySSE = () => {
       try {
-        const response = await analysisService.getAnalysisStatus(jobId, language)
-        if (cancelled) return
-        if (response.status === 'completed') {
-          setData(response.results)
-          setProgress(100)
-          setLoading(false)
-          toast.success('Analysis complete!')
-        } else if (response.status === 'processing') {
-          setProgress(response.progress || 0)
-          setProgressMsg(response.message || 'Processing...')
-          setTimeout(fetchResults, 2000)
-        } else if (response.status === 'failed') {
-          setError(response.error || 'Analysis failed')
-          setLoading(false)
+        const es = new EventSource(`${API_BASE}/api/analysis/stream/${jobId}`)
+        es.onmessage = (event) => {
+          if (cancelled) { es.close(); return }
+          try {
+            const payload = JSON.parse(event.data)
+            if (payload.type === 'complete') {
+              setData(payload.result)
+              setProgress(100)
+              setLoading(false)
+              toast.success('Analysis complete!')
+              es.close()
+            } else if (payload.type === 'error') {
+              setError(payload.error || payload.message || 'Analysis failed')
+              setLoading(false)
+              es.close()
+            } else {
+              setProgress(payload.progress || 0)
+              setProgressMsg(payload.message || 'Processing...')
+            }
+          } catch { /* ignore parse errors */ }
         }
-      } catch (err) {
-        if (cancelled) return
-        setError(err.userMessage || 'Failed to fetch results')
-        setLoading(false)
+        es.onerror = () => {
+          es.close()
+          if (!cancelled) fallbackPolling()
+        }
+        return () => { es.close() }
+      } catch {
+        fallbackPolling()
       }
     }
-    fetchResults()
+
+    const fallbackPolling = () => {
+      const fetchResults = async () => {
+        try {
+          const response = await analysisService.getAnalysisStatus(jobId, language)
+          if (cancelled) return
+          if (response.status === 'completed') {
+            setData(response.results)
+            setProgress(100)
+            setLoading(false)
+            toast.success('Analysis complete!')
+          } else if (response.status === 'processing') {
+            setProgress(response.progress || 0)
+            setProgressMsg(response.message || 'Processing...')
+            setTimeout(fetchResults, 2000)
+          } else if (response.status === 'failed') {
+            setError(response.error || 'Analysis failed')
+            setLoading(false)
+          }
+        } catch (err) {
+          if (cancelled) return
+          setError(err.userMessage || 'Failed to fetch results')
+          setLoading(false)
+        }
+      }
+      fetchResults()
+    }
+
+    trySSE()
     return () => { cancelled = true }
   }, [jobId, language])
 
@@ -223,6 +264,36 @@ const AnalysisResults = () => {
     a.download = `analysis-${jobId}.json`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const exportPdf = async () => {
+    try {
+      toast.info('Generating PDF...')
+      const { default: html2canvas } = await import('html2canvas')
+      const { default: jsPDF } = await import('jspdf')
+      const el = document.getElementById('analysis-content')
+      if (!el) return
+      const canvas = await html2canvas(el, { scale: 1.5, useCORS: true, logging: false })
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const margin = 10
+      const imgW = pageW - margin * 2
+      const imgH = (canvas.height * imgW) / canvas.width
+      let y = margin
+      let remaining = imgH
+      while (remaining > 0) {
+        if (y !== margin) pdf.addPage()
+        pdf.addImage(imgData, 'PNG', margin, y === margin ? margin : -(imgH - remaining), imgW, imgH)
+        remaining -= (pageH - margin * 2)
+        y = margin
+      }
+      pdf.save(`analysis-${jobId}.pdf`)
+      toast.success('PDF exported!')
+    } catch (e) {
+      toast.error('PDF export failed: ' + e.message)
+    }
   }
 
   const runDeepAnalysis = async () => {
@@ -1039,16 +1110,169 @@ const AnalysisResults = () => {
             <p className="text-sm">No pipeline data available. The analysis may have used LLM-only mode.</p>
           </div>
         )}
+
+        {/* Evaluation Metrics */}
+        {data?.eval_metrics && (
+          <div className="rounded-lg border bg-card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <TrendingUp className="w-5 h-5 text-primary" />
+              <h4 className="font-semibold">Evaluation Metrics</h4>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              {[
+                { label: 'Pipeline Score', value: data.eval_metrics.pipeline_score, color: 'text-green-500' },
+                { label: 'Topic Coverage', value: data.eval_metrics.topic_coverage, color: 'text-blue-500' },
+                { label: 'Rec. Completeness', value: data.eval_metrics.recommendation_completeness, color: 'text-purple-500' },
+                { label: 'KG Density', value: data.eval_metrics.kg_density, color: 'text-amber-500' },
+              ].map((m, i) => (
+                <div key={i} className="text-center">
+                  <p className={`text-2xl font-bold ${m.color}`}>{(m.value * 100).toFixed(0)}%</p>
+                  <p className="text-xs text-muted-foreground">{m.label}</p>
+                  <div className="mt-1 h-1.5 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full rounded-full bg-current transition-all" style={{ width: `${Math.min(m.value * 100, 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-t pt-3">
+              <span>Topics: {data.eval_metrics.total_topics}</span>
+              <span>Gaps: {data.eval_metrics.total_gaps}</span>
+              <span>Recommendations: {data.eval_metrics.total_recommendations}</span>
+              <span>Facts: {data.eval_metrics.total_facts}</span>
+              <span>Entities: {data.eval_metrics.total_entities}</span>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
 
-  const tabComponents = { overview: OverviewTab, topics: TopicsTab, gaps: GapsTab, recommendations: RecommendationsTab, roadmap: RoadmapTab, pipeline: PipelineTab }
+  // ── Knowledge Graph Tab ──────────────────────────────────
+  const KnowledgeGraphTab = () => {
+    const canvasRef = useRef(null)
+    const [kgData, setKgData] = useState(null)
+    const [kgLoading, setKgLoading] = useState(true)
+
+    useEffect(() => {
+      import('../../services/api').then(({ default: api }) => {
+        api.get('/api/analysis/kg/graph')
+          .then(res => setKgData(res.data))
+          .catch(() => setKgData({ nodes: [], edges: [], stats: { total_nodes: 0, total_edges: 0 } }))
+          .finally(() => setKgLoading(false))
+      })
+    }, [])
+
+    const drawGraph = useCallback(() => {
+      if (!kgData || !canvasRef.current) return
+      const canvas = canvasRef.current
+      const ctx = canvas.getContext('2d')
+      const { nodes, edges } = kgData
+      if (!nodes.length) return
+
+      const W = canvas.parentElement.offsetWidth || 800
+      const H = 500
+      canvas.width = W * 2
+      canvas.height = H * 2
+      canvas.style.width = W + 'px'
+      canvas.style.height = H + 'px'
+      ctx.scale(2, 2)
+
+      const colors = {
+        entity: '#3b82f6', paper: '#10b981', METHOD: '#8b5cf6',
+        DOMAIN: '#f59e0b', FINDING: '#ef4444', default: '#6b7280'
+      }
+
+      const positions = nodes.map((_, i) => {
+        const angle = (2 * Math.PI * i) / nodes.length
+        const r = Math.min(W, H) * 0.35
+        return { x: W / 2 + r * Math.cos(angle), y: H / 2 + r * Math.sin(angle) }
+      })
+      const nodeMap = {}
+      nodes.forEach((n, i) => { nodeMap[n.id] = i })
+
+      ctx.clearRect(0, 0, W, H)
+
+      edges.forEach(e => {
+        const si = nodeMap[e.source]
+        const ti = nodeMap[e.target]
+        if (si === undefined || ti === undefined) return
+        ctx.beginPath()
+        ctx.moveTo(positions[si].x, positions[si].y)
+        ctx.lineTo(positions[ti].x, positions[ti].y)
+        ctx.strokeStyle = '#d1d5db'
+        ctx.lineWidth = 0.5
+        ctx.stroke()
+      })
+
+      nodes.forEach((n, i) => {
+        const { x, y } = positions[i]
+        const type = n.entity_type || n.node_type || 'default'
+        const col = colors[type] || colors.default
+        ctx.beginPath()
+        ctx.arc(x, y, 5, 0, Math.PI * 2)
+        ctx.fillStyle = col
+        ctx.fill()
+        ctx.font = '9px sans-serif'
+        ctx.fillStyle = '#374151'
+        const label = (n.name || n.title || n.id || '').substring(0, 20)
+        ctx.fillText(label, x + 7, y + 3)
+      })
+    }, [kgData])
+
+    useEffect(() => { drawGraph() }, [drawGraph])
+
+    if (kgLoading) return <div className="flex items-center gap-2 p-8"><Loader className="w-5 h-5 animate-spin" /> Loading graph...</div>
+
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-3 gap-4">
+          <div className="rounded-lg border bg-card p-4 text-center">
+            <p className="text-2xl font-bold">{kgData?.stats?.total_nodes || 0}</p>
+            <p className="text-xs text-muted-foreground">Nodes</p>
+          </div>
+          <div className="rounded-lg border bg-card p-4 text-center">
+            <p className="text-2xl font-bold">{kgData?.stats?.total_edges || 0}</p>
+            <p className="text-xs text-muted-foreground">Edges</p>
+          </div>
+          <div className="rounded-lg border bg-card p-4 text-center">
+            <p className="text-2xl font-bold">{new Set((kgData?.nodes || []).map(n => n.entity_type || n.node_type || 'unknown')).size}</p>
+            <p className="text-xs text-muted-foreground">Entity Types</p>
+          </div>
+        </div>
+
+        <div className="rounded-lg border bg-card overflow-hidden">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <Share2 className="w-4 h-4" />
+            <span className="font-medium text-sm">Knowledge Graph Visualization</span>
+          </div>
+          {kgData?.nodes?.length ? (
+            <div className="p-2">
+              <canvas ref={canvasRef} className="w-full rounded" />
+              <div className="flex gap-4 mt-3 px-2 flex-wrap">
+                {Object.entries({ paper: '#10b981', METHOD: '#8b5cf6', DOMAIN: '#f59e0b', FINDING: '#ef4444', entity: '#3b82f6' }).map(([k, c]) => (
+                  <div key={k} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c }} />
+                    {k}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-muted-foreground">
+              <p className="text-sm">No knowledge graph data yet. Run an analysis first.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const tabComponents = { overview: OverviewTab, topics: TopicsTab, gaps: GapsTab, recommendations: RecommendationsTab, roadmap: RoadmapTab, 'knowledge-graph': KnowledgeGraphTab, pipeline: PipelineTab }
   const ActiveTabComponent = tabComponents[activeTab]
 
   // ── Main Render ────────────────────────────────────────
   return (
-    <div className="w-full px-6 lg:px-10 py-8">
+    <div id="analysis-content" className="w-full px-6 lg:px-10 py-8">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1076,7 +1300,10 @@ const AnalysisResults = () => {
               <button onClick={() => setLanguage('id')} className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${language === 'id' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}>ID</button>
             </div>
             <button onClick={downloadResults} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium hover:bg-secondary transition-colors">
-              <Download className="w-3.5 h-3.5" /> Export
+              <Download className="w-3.5 h-3.5" /> JSON
+            </button>
+            <button onClick={exportPdf} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium hover:bg-secondary transition-colors">
+              <FileDown className="w-3.5 h-3.5" /> PDF
             </button>
           </div>
         </div>

@@ -134,6 +134,30 @@ class GLMInterface:
         logger.info(f"Initialized GLM Interface with model: {self.config.model_name}")
         logger.info(f"Ollama base URL: {self.config.base_url}")
     
+    def switch_model(self, model_name: str):
+        """Switch to a different Ollama model at runtime."""
+        self.config.model_name = model_name
+        logger.info(f"Switched to model: {model_name}")
+
+    def list_available_models(self) -> List[Dict[str, Any]]:
+        """List all models available in Ollama."""
+        try:
+            models_response = self.client.list()
+            models_list = models_response.models if hasattr(models_response, 'models') else models_response.get('models', [])
+            result = []
+            for m in models_list:
+                name = m.model if hasattr(m, 'model') else m.get('name', '')
+                size = ''
+                if hasattr(m, 'details'):
+                    size = m.details.parameter_size if hasattr(m.details, 'parameter_size') else ''
+                elif isinstance(m, dict):
+                    size = m.get('details', {}).get('parameter_size', '')
+                result.append({"name": name, "size": size, "active": name == self.config.model_name})
+            return result
+        except Exception as e:
+            logger.error(f"Failed to list models: {e}")
+            return []
+
     async def health_check(self) -> Dict[str, Any]:
         """
         Check if Ollama server and model are available
