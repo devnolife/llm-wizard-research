@@ -397,14 +397,14 @@ async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
         _analysis_jobs[job_id]["progress"] = 20
         _analysis_jobs[job_id]["message"] = "Extracting topics..."
 
-        # ── Step 2: Extract topics (lightweight LLM call) ──────
-        sample_docs = vector_store.collection.get(limit=50)
-        sample_text = " ".join([doc for doc in sample_docs["documents"][:10]])
+        # ── Step 2: Extract topics from UPLOADED papers only ────
+        uploaded_sources = [p["source"] for p in paper_contents]
+        sample_text = " ".join([p["content"] for p in paper_contents])
 
         topic_prompt = f"""Analyze this research content and extract 5 main research topics.
 Return ONLY a numbered list, one topic per line.
 
-Content: {sample_text[:2000]}
+Content: {sample_text[:3000]}
 
 Topics:"""
 
@@ -467,7 +467,10 @@ Topics:"""
         _analysis_jobs[job_id]["message"] = "Generating research summary..."
 
         if topics:
-            search_results = vector_store.search(topics[0], top_k=15)
+            source_filter = {"source": {"$in": uploaded_sources}} if len(uploaded_sources) > 1 else {"source": uploaded_sources[0]}
+            search_results = vector_store.search(topics[0], top_k=15, filter_metadata=source_filter)
+            if not search_results:
+                search_results = vector_store.search(topics[0], top_k=15)
             context = "\n\n".join(
                 [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
             )
@@ -503,7 +506,10 @@ Summary:"""
                 )
         else:
             for topic in topics[:3]:
-                search_results = vector_store.search(topic, top_k=10)
+                source_filter = {"source": {"$in": uploaded_sources}} if len(uploaded_sources) > 1 else {"source": uploaded_sources[0]}
+                search_results = vector_store.search(topic, top_k=10, filter_metadata=source_filter)
+                if not search_results:
+                    search_results = vector_store.search(topic, top_k=10)
                 context = "\n\n".join(
                     [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
                 )
