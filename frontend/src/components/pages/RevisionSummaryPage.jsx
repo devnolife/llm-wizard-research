@@ -3,7 +3,8 @@ import {
   FileText, Printer, ChevronDown, ChevronRight,
   CheckCircle2, AlertTriangle, XCircle, Clock,
   BookOpen, Target, Layers, Shield, Database,
-  GitBranch, BarChart3, FileCheck, Lightbulb, Ban
+  GitBranch, BarChart3, FileCheck, Lightbulb, Ban,
+  MessageSquare, ArrowRight, Quote, User, GraduationCap
 } from 'lucide-react'
 
 /* ─── data ─── */
@@ -13,6 +14,109 @@ const TIMELINE = [
   { version: 'v1.1', date: '20 Des 2025', file: 'REVISI_PROPOSAL.md', label: 'Koreksi Fokus', desc: 'Bukan paper search, tapi analisis setelah papers ada', status: 'done' },
   { version: 'v2.0', date: '2 Mar 2026', file: 'revisi.md', label: 'Master Dokumen Revisi', desc: 'Respons menyeluruh terhadap 8 kritik FATAL penguji', status: 'done' },
   { version: 'v3.0', date: '24 Mar 2026', file: 'PROPOSAL_REVISI_FINAL_v2.docx', label: 'Proposal Final', desc: 'BAB I–V lengkap dengan seluruh revisi terintegrasi', status: 'done' },
+]
+
+const SEMINAR_COMMENTS = [
+  {
+    id: 1,
+    date: '24 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Target Pengguna',
+    komentar: 'Saya tidak setuju pendapat pengusul bahwa ide ini untuk calon peneliti. Sebab calon peneliti harus belajar berpikir sebagaimana manusia akademisi. Saya hanya setuju ini gunakan oleh yang sudah memiliki expertise pada bidangnya.',
+    solusi: 'Posisi sistem direvisi secara eksplisit menjadi "alat bantu keputusan (decision support tool)" untuk peneliti yang SUDAH memiliki expertise. Sistem menghasilkan indikator, bukan kesimpulan — peneliti manusia tetap pengambil keputusan akhir.',
+    penjelasan: 'Perubahan ini tercermin di BAB I §1.5 (Batasan Epistemologis) dan perubahan judul dari "Sistem Otomatis" menjadi pendekatan yang menghasilkan "Indikator". Klaim-klaim yang TIDAK dibuat oleh sistem juga ditegaskan secara eksplisit.',
+    ref: 'batasan',
+    severity: 'warning',
+  },
+  {
+    id: 2,
+    date: '24 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Rumusan Masalah',
+    komentar: 'Rumusan masalah yang sepertinya ditulis oleh mahasiswa yang tidak paham apa itu masalah. Masalah adalah kesenjangan antara sains dengan kenyataan. Harusnya disini dituliskan sebuah pertanyaan yang mengindikasikan kesenjangan tersebut. Pertanyaan ini adalah pertanyaan seorang pribadi yang tidak tahu cara mengintegrasikan RAG dengan LLM untuk keperluan identifikasi gap penelitian.',
+    kutipan_asal: '"Bagaimana merancang arsitektur sistem berbasis RAG dan LLM yang mampu menganalisis beberapa jurnal untuk menemukan celah penelitian (synthesis gap) secara otomatis?"',
+    solusi: 'Rumusan masalah DITULIS ULANG TOTAL menggunakan pola FENOMENA → KESENJANGAN → PERTANYAAN. Kata kunci berubah dari "Bagaimana merancang..." (pertanyaan engineer) menjadi "Sejauh mana..." (pertanyaan peneliti). Sekarang terdiri dari 3 Research Questions yang mengindikasikan kesenjangan pengetahuan.',
+    penjelasan: 'RQ1: Sejauh mana pendekatan agentic mampu mendeteksi indikator synthesis gap? RQ2: Bagaimana mekanisme pembeda memengaruhi akurasi? RQ3: Apa batasan epistemologis pendekatan ini?',
+    ref: 'rumusan',
+    severity: 'danger',
+  },
+  {
+    id: 3,
+    date: '24 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Definisi Synthesis Gap',
+    komentar: 'Definisi \'kombinasi ide baru\' yang pengusul tulis itu terlalu dangkal. Di level S2, sintesis bukan sekadar \'kawin silang\' antara Metode X dan Kerangka Y. Sintesis adalah upaya logis untuk menyatukan literatur yang terpecah agar menjadi satu kesimpulan yang konklusif. Bagaimana sistemmu bisa menjamin bahwa kombinasi X dan Y itu logis?',
+    solusi: 'Definisi synthesis gap DIGANTI TOTAL dengan definisi Cooper (1998) & Booth, Sutton & Papaioannou (2012): synthesis gap = kondisi di mana literatur BELUM menghasilkan kesimpulan terpadu yang konklusif. Dioperasionalisasikan menjadi 3 indikator terukur: Fragmentasi, Inkonsistensi, Ketidaklengkapan Kolektif.',
+    penjelasan: 'Yang BUKAN synthesis gap juga ditegaskan: ❌ Kombinasi metode-domain yang belum pernah ada (itu hanya "belum diterapkan"). ❌ Topik yang belum diteliti (itu knowledge gap). Sistem tidak menjamin kombinasi logis — sistem mendeteksi INDIKATOR bahwa literatur terpecah.',
+    ref: 'gap',
+    severity: 'danger',
+  },
+  {
+    id: 4,
+    date: '24 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Kemampuan Semantik vs Penalaran',
+    komentar: 'Proposal agung nampak wah.. tapi gagal menjelaskan bagaimana sistem yang berbasis semantik dapat menarik research gap. RAG dan LLM bukan sesuatu yang dapat menalar selayaknya manusia berpikir induktif.',
+    solusi: 'Ditambahkan bagian Batasan Epistemologis (BAB I §1.5) yang secara eksplisit mengakui bahwa LLM TIDAK mampu menalar induktif. Sistem diposisikan sebagai decision support tool yang menghasilkan indikator, bukan gap final.',
+    penjelasan: 'Untuk mengompensasi keterbatasan LLM, ditambahkan komponen Neuro-Symbolic: Rule Engine (penalaran deduktif formal) + Knowledge Graph sebagai Fact Base + Mekanisme pembeda 3 lapis. Klaim yang TIDAK dibuat: sistem TIDAK menggantikan review manusia, TIDAK menalar induktif, TIDAK menemukan gap yang pasti valid.',
+    ref: 'batasan',
+    severity: 'danger',
+  },
+  {
+    id: 5,
+    date: '25 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Kebaruan (Novelty)',
+    komentar: 'Kombinasi RAG dan LLM sudah banyak diterapkan dan semuanya memiliki fundamental ide yang tidak berbeda. Tidak ada kebaruan dari usulan ini secara mendasar. Hanya berbeda dalam penerapan.',
+    solusi: 'Kebaruan digeser dari "RAG+LLM untuk research gap" (sudah banyak) ke Neuro-Symbolic Agentic System — integrasi penalaran neural (LLM) + simbolik (Rule Engine) dalam arsitektur agentic untuk deteksi synthesis gap. Ini BELUM ADA di literatur.',
+    penjelasan: '4 pilar kebaruan: (1) Agentic Architecture — multi-step reasoning, bukan pipeline linear. (2) Rule Engine — 9 aturan formal untuk validasi output. (3) Semantic-Logic Discriminator — 3 lapis pembeda. (4) KG sebagai Fact Base — bukan sekadar visualisasi.',
+    ref: 'arsitektur',
+    severity: 'danger',
+  },
+  {
+    id: 6,
+    date: '25 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Penalaran Induktif vs Semantik',
+    komentar: 'Anda harus menjelaskan bagaimana sistem membedakan antara konsep yang sekadar "sering muncul bersama" dengan konsep yang secara logis memiliki hubungan kausalitas atau kontradiksi.',
+    solusi: 'Ditambahkan Mekanisme Pembeda 3 Lapis: (1) Semantic Filtering — filter berdasarkan similarity threshold. (2) Evidence Extraction — cari bukti eksplisit: penanda kausal (causes, leads to) & kontradiksi (however, contradicts). (3) Rule-Based Validation — cek terhadap aturan logika di Fact Base.',
+    penjelasan: 'Tanpa penanda eksplisit dalam teks, hubungan dilabel "co-occurrence only" — tidak diklaim sebagai hubungan logis. Ini mencegah spurious correlation yang dikhawatirkan Prof.',
+    ref: 'pembeda',
+    severity: 'danger',
+  },
+  {
+    id: 7,
+    date: '25 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Rule-Based Validation Layer',
+    komentar: 'Untuk mengatasi risiko halusinasi LLM dalam menyimpulkan gap, Anda perlu menambahkan satu komponen Rule-Based Validation. Gunakan Knowledge Graph bukan hanya untuk pencarian (retrieval), tetapi sebagai Knowledge Base (Fakta). Buatlah aturan logika formal.',
+    solusi: 'Ditambahkan Rule Engine lengkap dengan 9 aturan dalam 3 kategori: Feasibility (F1-F3), Causality (C1-C3), Consistency (K1-K3). Setiap output LLM dicek terhadap aturan sebelum ditampilkan. 3 kemungkinan verdict: PASS, FLAG, REJECT.',
+    penjelasan: 'Contoh implementasi: Jika LLM menyarankan "GPT-4 untuk edge device" → Rule F1 (kompatibilitas sumber daya) menolak karena cacat logika. Knowledge Graph digunakan sebagai Fact Base untuk menyediakan fakta bagi Rule Engine, bukan sekadar retrieval.',
+    ref: 'rules',
+    severity: 'danger',
+  },
+  {
+    id: 8,
+    date: '25 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Diagram Alir & Logical Checker',
+    komentar: 'Diagram Anda saat ini masih terlalu linear dan sangat bergantung pada "Black Box" LLM. Tambahkan blok "Logical Consistency Checker" setelah proses Reasoning LLM. Definisikan logical rules: Aturan Kelayakan, Aturan Kausalitas, dan Aturan Konsistensi.',
+    solusi: 'Diagram alir DITULIS ULANG TOTAL dari 3 tahap linear menjadi 4 Fase: (1) Ingestion, (2) Fact Extraction, (3) Agentic Analysis, (4) Logical Consistency Checker. Fase 4 adalah komponen BARU yang menjalankan Rule Engine sebagai filter terakhir.',
+    penjelasan: 'Aturan sudah didefinisikan: Kelayakan (F1-F3), Kausalitas (C1-C3), Konsistensi (K1-K3). Arsitektur berubah dari monolitik ke modular agentic — agent dapat memanggil tool berbeda untuk sub-task berbeda, termasuk Rule Engine.',
+    ref: 'arsitektur',
+    severity: 'danger',
+  },
+  {
+    id: 9,
+    date: '25 Desember 2025',
+    penguji: 'Prof. Dr. Adnan, ST., MT.',
+    kategori: 'Knowledge Graph & Tabel Fakta',
+    komentar: 'Saya ingin melihat di Bab III bagaimana Anda mentransformasi teks jurnal yang tidak terstruktur menjadi Tabel Fakta (Predikat-Subjek-Objek). Tanpa tabel fakta yang jelas, Knowledge Graph Anda hanya akan menjadi alat visualisasi, bukan alat penalaran.',
+    solusi: 'KG ditransformasi menjadi Fact Base dengan ontologi eksplisit: 8 tipe entitas (METHOD, CONCEPT, DOMAIN, FINDING, DATASET, METRIC, PAPER, CONSTRAINT) dan 12 predikat relasi. Proses transformasi: Entity Extraction (SciSpaCy + LLM) → Relation Extraction → Triple Construction & Validation → Tabel SPO.',
+    penjelasan: 'Contoh: Dari teks "We propose CNN for medical image segmentation, achieves 92.3% Dice..." → SPO: (Paper_Current, PROPOSES, CNN_Segmentation), (CNN_Segmentation, ACHIEVES, Dice_92.3%). Fakta turunan juga diinfer: CNN_Segmentation → INFEASIBLE_FOR → Edge_Deployment (via Rule F1).',
+    ref: 'kg',
+    severity: 'danger',
+  },
 ]
 
 const KRITIK = [
@@ -144,6 +248,7 @@ const RevisionSummaryPage = () => {
 
   const NAV_ITEMS = [
     { id: 'timeline', label: 'Timeline Progress', icon: GitBranch },
+    { id: 'seminar', label: 'Catatan Seminar', icon: MessageSquare },
     { id: 'kritik', label: 'Kritik & Respons', icon: Target },
     { id: 'judul', label: 'Perubahan Judul', icon: FileText },
     { id: 'rumusan', label: 'Rumusan Masalah', icon: Lightbulb },
@@ -285,6 +390,103 @@ const RevisionSummaryPage = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            </Section>
+
+            {/* ── CATATAN SEMINAR/UJIAN ── */}
+            <Section id="seminar" icon={MessageSquare} title="Catatan Seminar / Ujian Proposal">
+              <Card className="p-4 mb-4 bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50">
+                <div className="flex items-start gap-3">
+                  <GraduationCap className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-semibold">Seminar Proposal — 24-25 Desember 2025</h3>
+                    <p className="text-xs text-muted-foreground mt-1">Penguji: <strong>Prof. Dr. Adnan, ST., MT.</strong> — Menyampaikan 9 poin kritik & arahan fundamental yang menjadi dasar seluruh revisi proposal.</p>
+                  </div>
+                </div>
+              </Card>
+
+              <div className="space-y-4">
+                {SEMINAR_COMMENTS.map((item) => (
+                  <Card key={item.id} className="overflow-hidden">
+                    {/* Header */}
+                    <div className={`px-4 py-2 flex items-center justify-between text-xs ${
+                      item.severity === 'danger' ? 'bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-900/50' : 'bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-900/50'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={item.severity === 'danger' ? 'danger' : 'warning'}>Kritik #{item.id}</Badge>
+                        <span className="font-medium">{item.kategori}</span>
+                      </div>
+                      <span className="text-muted-foreground">{item.date}</span>
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                      {/* Komentar penguji */}
+                      <div className="flex gap-3">
+                        <div className="shrink-0 mt-1">
+                          <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center">
+                            <User className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-muted-foreground mb-1">{item.penguji}</p>
+                          <div className="bg-secondary/50 rounded-lg p-3 text-sm leading-relaxed italic">
+                            "{item.komentar}"
+                          </div>
+                          {item.kutipan_asal && (
+                            <div className="mt-2 flex items-start gap-2 bg-red-50/70 dark:bg-red-950/20 rounded p-2 text-xs">
+                              <Quote className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
+                              <span className="text-red-600 dark:text-red-400 italic">{item.kutipan_asal}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Solusi */}
+                      <div className="ml-10 border-l-2 border-emerald-300 dark:border-emerald-700 pl-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">Solusi yang Dilakukan</span>
+                        </div>
+                        <p className="text-sm">{item.solusi}</p>
+                      </div>
+
+                      {/* Penjelasan */}
+                      <div className="ml-10 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-1">Penjelasan Detail</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed">{item.penjelasan}</p>
+                      </div>
+
+                      {/* Link ke section terkait */}
+                      <button
+                        onClick={() => scrollTo(item.ref)}
+                        className="ml-10 inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                      >
+                        <ArrowRight className="w-3 h-3" />
+                        Lihat detail di section terkait
+                      </button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Summary stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+                <Card className="p-3 text-center">
+                  <div className="text-2xl font-bold text-primary">9</div>
+                  <div className="text-xs text-muted-foreground">Total Kritik</div>
+                </Card>
+                <Card className="p-3 text-center">
+                  <div className="text-2xl font-bold text-emerald-500">9</div>
+                  <div className="text-xs text-muted-foreground">Sudah Direspons</div>
+                </Card>
+                <Card className="p-3 text-center">
+                  <div className="text-2xl font-bold text-red-500">8</div>
+                  <div className="text-xs text-muted-foreground">Kritik FATAL</div>
+                </Card>
+                <Card className="p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-500">1</div>
+                  <div className="text-xs text-muted-foreground">Saran/Arahan</div>
+                </Card>
               </div>
             </Section>
 
