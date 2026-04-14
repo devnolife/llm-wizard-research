@@ -82,8 +82,8 @@ const UploadPage = () => {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {[
-          { label: 'Documents Processed', value: '1.4K+' },
-          { label: 'Topics Identified', value: '320+' },
+          { label: 'Papers Indexed', value: '8' },
+          { label: 'Chunks in Vector DB', value: '1,795' },
           { label: 'Avg. Analysis Time', value: '~2 min' },
         ].map((stat, idx) => (
           <div key={idx} className="rounded-lg border bg-card p-4">
