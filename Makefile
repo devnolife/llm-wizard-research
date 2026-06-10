@@ -1,6 +1,6 @@
-# Wizard Research - RAG-LLM Research Recommendation System
+# Wizard Research — Neuro-Symbolic Synthesis Gap Detection
 
-.PHONY: help install dev test clean docker-up docker-down backend frontend
+.PHONY: help install dev test clean docker-up docker-down backend frontend experiment
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -34,11 +34,30 @@ frontend: ## Run frontend development server
 test: ## Run all tests
 	cd backend && pytest tests/
 
-test-unit: ## Run unit tests only
-	cd backend && pytest tests/unit/
+test-unit: ## Run unit tests only (core components)
+	cd backend && pytest tests/test_fact_table.py tests/test_rule_engine.py tests/test_relation_classifier.py tests/test_fact_extractor.py tests/test_gap_analyzer.py
 
 test-integration: ## Run integration tests only
-	cd backend && pytest tests/integration/
+	cd backend && pytest tests/test_integration.py
+
+experiment-data: ## Download the 23-paper benchmark dataset from arXiv
+	cd backend && python experiments/download_papers.py
+
+experiment: ## Run the full neuro-symbolic experiment pipeline
+	cd backend && python experiments/run_experiment.py --mode full --fresh-db
+
+experiment-ablation: ## Run ablation runs (no-rule-engine + linear-baseline)
+	cd backend && python experiments/run_experiment.py --mode no-rule-engine --skip-ingest
+	cd backend && python experiments/run_experiment.py --mode linear-baseline --skip-ingest
+
+experiment-compare: ## Aggregate experiment results into BAB IV tables
+	cd backend && python experiments/compare_results.py
+
+experiment-stats: ## Multi-run experiments with mean±std + Mann-Whitney U (H6/H7)
+	cd backend && python experiments/run_multi.py --runs 3
+
+experiment-annotate: ## Sample 50 SPO facts into an annotation sheet (precision)
+	cd backend && python experiments/annotate_facts.py sample --results experiments/results/experiment_full_llama3.2_latest.json --n 50
 
 lint: ## Run linters
 	cd backend && pylint app/

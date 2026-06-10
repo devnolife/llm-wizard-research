@@ -1,13 +1,14 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Cpu } from 'lucide-react'
+import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Share2 } from 'lucide-react'
 import { useDarkMode } from '../../contexts/DarkModeContext'
 import ModelSelector from '../common/ModelSelector'
 
 const NAV_LINKS = [
-  { to: '/', label: 'Upload', icon: Upload },
-  { to: '/search', label: 'Search', icon: Search },
+  { to: '/', label: 'Unggah', icon: Upload },
+  { to: '/search', label: 'Cari', icon: Search },
   { to: '/chat', label: 'Chat', icon: MessageSquare },
-  { to: '/documents', label: 'Documents', icon: Database },
+  { to: '/documents', label: 'Dokumen', icon: Database },
+  { to: '/graph', label: 'Graf', icon: Share2 },
   { to: '/revisi', label: 'Revisi', icon: FileText },
 ]
 
@@ -34,10 +35,9 @@ const Navbar = () => {
               to={to}
               end={to === '/'}
               className={({ isActive }) =>
-                `flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-secondary text-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                `flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isActive
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
                 }`
               }
             >

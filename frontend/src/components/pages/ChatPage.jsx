@@ -12,6 +12,7 @@ const ChatPage = () => {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [conversationId] = useState(() => crypto.randomUUID())
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -32,7 +33,7 @@ const ChatPage = () => {
     setLoading(true)
 
     try {
-      const response = await analysisService.chat(text)
+      const response = await analysisService.chat(text, conversationId)
       const botMsg = {
         role: 'assistant',
         content: response.response || response.answer || response.message || JSON.stringify(response),
@@ -64,14 +65,14 @@ const ChatPage = () => {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Research Assistant</h1>
-          <p className="text-sm text-muted-foreground">Ask questions about your research corpus</p>
+          <h1 className="text-2xl font-bold tracking-tight">Asisten Penelitian</h1>
+          <p className="text-sm text-muted-foreground">Tanyakan tentang korpus penelitian Anda</p>
         </div>
         {messages.length > 0 && (
           <button
             onClick={clearChat}
             className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
-            title="Clear chat"
+            title="Hapus chat"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -84,8 +85,8 @@ const ChatPage = () => {
           <div className="h-full flex items-center justify-center">
             <EmptyState
               icon={MessageSquare}
-              title="Start a conversation"
-              description="Ask about research topics, gaps, methodologies, or anything related to your uploaded papers"
+              title="Mulai percakapan"
+              description="Tanyakan tentang topik penelitian, gap, metodologi, atau apapun terkait paper yang Anda unggah"
             />
           </div>
         ) : (
@@ -147,7 +148,7 @@ const ChatPage = () => {
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder="Ask about your research..."
+          placeholder="Tanyakan tentang penelitian Anda..."
           disabled={loading}
           className="flex-1 px-4 py-3 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
         />

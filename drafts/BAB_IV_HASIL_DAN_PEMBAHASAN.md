@@ -45,9 +45,10 @@ Komponen inti yang membedakan sistem ini dari pipeline RAG+LLM konvensional:
 ### 4.1.4 Statistik Implementasi
 
 - **Total modul Python**: 25+ modul dalam 8 paket
-- **Unit test**: 197 test (65 Rule Engine + 65 Fact Table + 44 Relation Classifier + 23 Integration)
-- **Test coverage**: Semua komponen Neuro-Symbolic tervalidasi
+- **Unit test**: 235+ test (Rule Engine, Fact Table, Relation Classifier, Fact Extractor, Gap Analyzer, Integration)
+- **Test coverage**: Semua komponen Neuro-Symbolic tervalidasi, termasuk parsing JSON terstruktur (Ollama JSON mode + retry + salvage truncated array)
 - **5 Tool Agen**: RAGTool, PaperAnalyzerTool, NLICheckerTool, KGQuerierTool, SelfCriticTool
+- **Mode eksperimen**: `full`, `no-rule-engine` (ablasi H7), `linear-baseline` (ablasi H6)
 
 ---
 
@@ -55,25 +56,30 @@ Komponen inti yang membedakan sistem ini dari pipeline RAG+LLM konvensional:
 
 ### 4.2.1 Dataset Pengujian
 
-Eksperimen menggunakan 5 paper benchmark dari domain *deep learning* dan *computer vision*:
+Eksperimen menggunakan **23 paper benchmark** dari domain *computer science*
+(2014–2021) yang diunduh secara *reproducible* dari arXiv
+(`backend/experiments/download_papers.py`), terorganisasi dalam 4 kelompok topik
+(3–10 paper per kelompok, sesuai batasan masalah proposal):
 
-| No. | Paper | Penulis | Tahun | Ukuran | Chunks |
-|-----|-------|---------|-------|--------|--------|
-| 1 | Attention Is All You Need | Vaswani et al. | 2017 | 2.2 MB | 86 |
-| 2 | BERT: Pre-training of Deep Bidirectional Transformers | Devlin et al. | 2019 | 775 KB | 139 |
-| 3 | Generative Adversarial Nets | Goodfellow et al. | 2014 | 530 KB | 63 |
-| 4 | Deep Residual Learning for Image Recognition | He et al. | 2016 | 819 KB | 129 |
-| 5 | You Only Look Once (YOLO) | Redmon et al. | 2016 | 5.3 MB | 92 |
+| Topik | Fokus | Jumlah Paper | Contoh Paper |
+|-------|-------|--------------|--------------|
+| T1 | Arsitektur deep learning & optimasi | 6 | ResNet, DenseNet, Adam, BatchNorm, LayerNorm, GAN |
+| T2 | Computer vision & object detection | 6 | YOLO, Faster R-CNN, SSD, Mask R-CNN, EfficientNet, ViT |
+| T3 | NLP & attention mechanisms | 6 | Transformer, BERT, GPT-3, T5, RoBERTa, ELECTRA |
+| T4 | Deployment efisien & kompresi model | 5 | MobileNet v1/v2, DistilBERT, Distillation, SqueezeNet |
 
-**Total**: 509 chunks teks, ~234.063 karakter dari 5 paper.
+Topik T4 sengaja dipilih karena karakteristik *resource constraint*-nya
+mengaktifkan aturan kelayakan (F1–F3) Rule Engine. Metadata lengkap tersimpan
+di `research_papers/papers_manifest.json`.
 
 ### 4.2.2 Topik Query Pengujian
 
-Tiga topik query dipilih untuk merepresentasikan domain yang berbeda namun saling terkait:
+Empat topik query sesuai kelompok dataset:
 
-1. **T1**: *"Deep learning architectures and optimization techniques"* — mencakup arsitektur dan optimasi
-2. **T2**: *"Computer vision object detection and image recognition"* — fokus pada visi komputer
-3. **T3**: *"Natural language processing and attention mechanisms"* — fokus pada NLP
+1. **T1**: *"Deep learning architectures and optimization techniques"*
+2. **T2**: *"Computer vision object detection and image recognition"*
+3. **T3**: *"Natural language processing and attention mechanisms"*
+4. **T4**: *"Efficient deep learning deployment on resource-constrained edge devices"*
 
 ### 4.2.3 Metrik Evaluasi
 
@@ -87,14 +93,35 @@ Sesuai framework evaluasi pada BAB III, metrik yang diukur:
 | M4 | Verdict Rule Engine | Distribusi PASS/FLAG/REJECT |
 | M5 | Waktu Eksekusi | Durasi per fase pipeline |
 | M6 | Kebutuhan Validasi Manusia | Proporsi indikator yang membutuhkan verifikasi |
+| M7 | RERR (*Rule Engine Rejection Rate*) | Persentase output LLM yang tidak lolos bersih (FLAG+REJECT) |
+| M8 | Akurasi Adversarial | Persentase kasus adversarial dengan verdict sesuai harapan |
 
-### 4.2.4 Setup Eksperimen
+Metrik berbasis pakar (EAR, LCS, AS, FDR, SHG, REP — hipotesis H4–H5) diukur
+terpisah melalui instrumen penilaian di `backend/experiments/expert_eval/`
+setelah hasil eksperimen final.
+
+### 4.2.4 Desain Eksperimen: Mode Ablasi & Validasi Adversarial
+
+Untuk menguji hipotesis H6 dan H7, eksperimen dijalankan dalam **3 mode**:
+
+| Mode | Komponen Aktif | Hipotesis |
+|------|----------------|-----------|
+| `full` | Pipeline lengkap: ingestion → fact extraction → gap detection → rule engine | — (baseline sistem) |
+| `no-rule-engine` | Pipeline penuh TANPA lapisan validasi simbolis | H7: apakah Rule Engine mengurangi false discovery |
+| `linear-baseline` | RAG + single-prompt LLM (tanpa agentic loop, tanpa fact base, tanpa rule engine) | H6: apakah sistem agentic mengungguli pipeline linear |
+
+Selain itu, **fase validasi adversarial** menyuntikkan 6 klaim yang dirancang
+melanggar aturan spesifik (F1, F2, F3, K1, C1 + 1 kontrol bersih) ke FactTable
+terisolasi, untuk membuktikan Rule Engine benar-benar mendiskriminasi — bukan
+sekadar meloloskan semua input.
+
+### 4.2.5 Setup Eksperimen
 
 - **Hardware**: Server lokal
-- **Model LLM**: `llama3.2:latest` (3B parameter) via Ollama
+- **Model LLM**: `llama3.2:latest` (3B) dan `gpt-oss:latest` (13B) via Ollama — komparasi model
 - **Embedding**: `all-MiniLM-L6-v2` (384 dimensi)
-- **Parameter LLM**: temperature = 0.3, max_tokens = 2048
-- **Kedalaman analisis**: `standard` (mencakup fragmentasi + inkonsistensi + ketidaklengkapan)
+- **Parameter LLM**: temperature = 0.3, max_tokens = 2048, JSON mode (structured output) untuk ekstraksi fakta
+- **Kedalaman analisis**: `standard` (fragmentasi + inkonsistensi + ketidaklengkapan)
 
 ---
 
@@ -256,25 +283,55 @@ Berdasarkan hasil eksperimen, keunggulan pendekatan Neuro-Symbolic dibandingkan 
 
 ### 4.4.3 Keterbatasan yang Ditemukan
 
-1. **Ekstraksi Fakta**: Modul fact extraction mengalami kendala parsing JSON dari output LLM, menghasilkan 0 fakta SPO. Ini menunjukkan kebutuhan *prompt engineering* yang lebih baik atau mekanisme *retry* dengan format yang lebih ketat.
+1. **Kualitas Ekstraksi Fakta**: Kendala awal parsing JSON dari output LLM (yang
+   sempat menghasilkan 0 fakta SPO) telah diatasi melalui tiga mekanisme:
+   (a) *structured output* JSON mode Ollama, (b) *retry* dengan prompt lebih
+   ketat, dan (c) *salvage parser* untuk respons terpotong akibat batas token.
+   Namun demikian, *kebenaran* fakta yang terekstrak tetap perlu diukur —
+   presisi ekstraksi dievaluasi melalui anotasi manual sampel acak
+   (`experiments/annotate_facts.py`) dan dilaporkan terpisah.
 
-2. **Sensitivitas Model**: Eksperimen menggunakan model 3B parameter (`llama3.2`). Model yang lebih besar mungkin menghasilkan deteksi inkonsistensi yang lebih akurat.
+2. **Sensitivitas Model**: Eksperimen utama menggunakan model 3B parameter
+   (`llama3.2`). Komparasi dengan model 13B (`gpt-oss`) dilakukan untuk
+   mengukur sensitivitas hasil terhadap kapasitas model.
 
-3. **Dataset Terbatas**: 5 paper benchmark belum merepresentasikan keragaman domain riset. Eksperimen skala penuh memerlukan 50-100 paper dari berbagai bidang.
+3. **Cakupan Dataset**: 23 paper benchmark dalam 4 topik masih terbatas pada
+   domain *computer science* (2014–2021). Generalisasi ke domain lain
+   (kedokteran, sosial) memerlukan validasi tambahan.
 
-4. **Tidak Ada Evaluasi Pakar**: Metrik *Expert Acceptance Rate* belum dapat diukur karena memerlukan evaluasi oleh pakar domain. Ini direncanakan untuk fase evaluasi penuh.
+4. **Evaluasi Pakar Tertunda**: Metrik berbasis pakar (EAR, LCS, AS, FDR, SHG,
+   REP) belum diukur — instrumen penilaian (form XLSX + kalkulator metrik)
+   telah disiapkan di `experiments/expert_eval/` dan menunggu sesi penilaian
+   pakar terhadap output final sistem.
 
-5. **Rule Engine PASS 100%**: Tingkat kelulusan sempurna mungkin menunjukkan threshold aturan yang terlalu longgar, atau paper benchmark yang berkualitas tinggi. Diperlukan kalibrasi dengan dataset yang lebih menantang.
+5. **Kalibrasi Verdict pada Data Bersih**: Pada indikator yang dihasilkan dari
+   paper benchmark berkualitas tinggi, Rule Engine cenderung memberi verdict
+   PASS. Untuk membuktikan lapisan validasi benar-benar mendiskriminasi (bukan
+   meloloskan semua input), eksperimen dilengkapi **fase validasi adversarial**:
+   6 klaim yang dirancang melanggar aturan spesifik disuntikkan ke FactTable
+   terisolasi, dan verdict aktual dibandingkan dengan verdict yang diharapkan
+   (lihat §4.3.4). Threshold penyesuaian confidence per aturan masih bersifat
+   *rule-of-thumb* dan menjadi kandidat analisis sensitivitas pada penelitian
+   lanjutan.
+
+6. **Potensi Kontaminasi Pre-training**: Paper benchmark (Transformer, BERT,
+   ResNet, dst.) adalah paper terkenal yang kemungkinan besar muncul dalam data
+   pre-training LLM. Indikator gap yang dihasilkan dapat terpengaruh
+   pengetahuan parametrik model, bukan murni dari korpus yang dianalisis. Ini
+   merupakan ancaman validitas internal yang melekat pada semua sistem berbasis
+   LLM dan dimitigasi sebagian oleh *grounding* RAG serta validasi simbolis.
 
 ### 4.4.4 Perbandingan dengan Studi Terkait
 
 | Aspek | Pipeline RAG+LLM Biasa | Wizard Research (Neuro-Symbolic) |
 |-------|------------------------|----------------------------------|
 | Validasi output | Tidak ada | 9 aturan dalam 3 kategori |
+| Bukti validasi bekerja | N/A | Validasi adversarial 6 kasus (F1–F3, K1, C1 + kontrol) |
 | Transparansi | Output langsung LLM | Reasoning trace + evidence |
 | Klaim epistemologis | Sering terlalu kuat | Dibatasi pada "indikator" |
 | Overhead validasi | N/A | <0.01 detik |
 | Jenis output | "Research gaps" | "Gap indicators + human validation flag" |
 | Representasi pengetahuan | Embedding saja | Embedding + SPO Knowledge Graph |
+| Deteksi kontradiksi | LLM generatif (sirkuler) | Marker linguistik + NLI cross-encoder terdedikasi (opsional) + fakta KG |
 
 Dibandingkan dengan sistem seperti ResearchRabbit [2023] dan Elicit [2023] yang menggunakan pipeline RAG end-to-end, pendekatan Wizard Research menambahkan lapisan validasi simbolis yang memberikan jaminan tambahan terhadap kualitas output. Namun, sistem ini masih memerlukan validasi oleh pakar untuk mengukur akurasi aktual indikator gap.

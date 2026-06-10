@@ -104,34 +104,34 @@ const parseRoadmap = (text) => {
 }
 
 const TABS = [
-  { id: 'overview', label: 'Overview', icon: BarChart3 },
-  { id: 'topics', label: 'Topics & Analysis', icon: Tag },
-  { id: 'gaps', label: 'Research Gaps', icon: Search },
-  { id: 'recommendations', label: 'Recommendations', icon: Lightbulb },
-  { id: 'roadmap', label: 'Roadmap', icon: Map },
-  { id: 'knowledge-graph', label: 'Knowledge Graph', icon: Share2 },
+  { id: 'overview', label: 'Ringkasan', icon: BarChart3 },
+  { id: 'topics', label: 'Topik & Analisis', icon: Tag },
+  { id: 'gaps', label: 'Gap Penelitian', icon: Search },
+  { id: 'recommendations', label: 'Rekomendasi', icon: Lightbulb },
+  { id: 'roadmap', label: 'Peta Jalan', icon: Map },
+  { id: 'knowledge-graph', label: 'Graf Pengetahuan', icon: Share2 },
   { id: 'pipeline', label: 'Pipeline', icon: Zap },
 ]
 
 const GAP_TYPES = ['FRAGMENTATION', 'INCONSISTENCY', 'INCOMPLETENESS']
 const GAP_COLORS = {
-  FRAGMENTATION: { border: 'border-blue-500', bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400', label: 'Fragmentation', desc: 'Papers address the same topic from different angles without integration' },
-  INCONSISTENCY: { border: 'border-amber-500', bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', label: 'Inconsistency', desc: 'Contradicting findings across papers' },
-  INCOMPLETENESS: { border: 'border-red-500', bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Incompleteness', desc: 'Critical aspects not covered by existing literature' },
+  FRAGMENTATION: { border: 'border-blue-500', bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400', label: 'Fragmentasi', desc: 'Paper membahas topik yang sama dari sudut berbeda tanpa integrasi' },
+  INCONSISTENCY: { border: 'border-amber-500', bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', label: 'Inkonsistensi', desc: 'Temuan yang bertentangan antar paper' },
+  INCOMPLETENESS: { border: 'border-red-500', bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Ketidaklengkapan', desc: 'Aspek kritis yang belum tercakup dalam literatur' },
 }
 
 const PRIORITY_COLORS = {
-  high: { bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'High Priority' },
-  medium: { bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', label: 'Medium Priority' },
-  low: { bg: 'bg-green-500/10', text: 'text-green-600 dark:text-green-400', label: 'Priority' },
+  high: { bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Prioritas Tinggi' },
+  medium: { bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', label: 'Prioritas Sedang' },
+  low: { bg: 'bg-green-500/10', text: 'text-green-600 dark:text-green-400', label: 'Prioritas Rendah' },
 }
 
 const LOADING_STEPS = [
-  { label: 'Processing PDFs', threshold: 10 },
-  { label: 'Extracting Topics', threshold: 40 },
-  { label: 'Analyzing Research', threshold: 60 },
-  { label: 'Detecting Gaps', threshold: 75 },
-  { label: 'Generating Insights', threshold: 90 },
+  { label: 'Memproses PDF', threshold: 10 },
+  { label: 'Mengekstrak Topik', threshold: 40 },
+  { label: 'Menganalisis Penelitian', threshold: 60 },
+  { label: 'Mendeteksi Gap', threshold: 75 },
+  { label: 'Menghasilkan Insight', threshold: 90 },
 ]
 
 const AnalysisResults = () => {
@@ -143,7 +143,7 @@ const AnalysisResults = () => {
   const [progressMsg, setProgressMsg] = useState('')
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
-  const [language, setLanguage] = useState('en')
+  const [language, setLanguage] = useState('id')
   const [activeTab, setActiveTab] = useState('overview')
   const [deepAnalysis, setDeepAnalysis] = useState(null)
   const [deepLoading, setDeepLoading] = useState(false)
@@ -162,7 +162,7 @@ const AnalysisResults = () => {
           try {
             const payload = JSON.parse(event.data)
             if (payload.type === 'complete') {
-              setData(payload.result)
+              setData(payload.results)
               setProgress(100)
               setLoading(false)
               toast.success('Analysis complete!')
@@ -219,7 +219,25 @@ const AnalysisResults = () => {
   }, [jobId, language])
 
   const parsedRecommendations = useMemo(() => {
-    const raw = parseNumberedList(data?.recommendations)
+    const recs = data?.recommendations || []
+    if (Array.isArray(recs)) {
+      return recs.map((rec, idx) => {
+        if (typeof rec === 'object' && rec !== null) {
+          return {
+            title: rec.title || '',
+            description: rec.description || '',
+            why: rec.why || '',
+            how: rec.how || '',
+            priority: rec.priority || (idx < 2 ? 'high' : idx < 4 ? 'medium' : 'low'),
+            index: idx,
+          }
+        }
+        // Legacy string format fallback
+        return { ...parseStructuredRecommendation(String(rec)), priority: idx < 2 ? 'high' : idx < 4 ? 'medium' : 'low', index: idx }
+      })
+    }
+    // Legacy: plain text
+    const raw = parseNumberedList(recs)
     return raw.map((text, idx) => ({
       ...parseStructuredRecommendation(text),
       priority: idx < 2 ? 'high' : idx < 4 ? 'medium' : 'low',
@@ -228,28 +246,59 @@ const AnalysisResults = () => {
   }, [data?.recommendations])
 
   const parsedGaps = useMemo(() => {
-    return (data?.gaps || []).map((gap, idx) => ({
-      ...parseStructuredGap(gap),
-      index: idx,
-      raw: gap,
-    }))
+    const gaps = data?.gaps || []
+    return gaps.map((gap, idx) => {
+      if (typeof gap === 'object' && gap !== null) {
+        return {
+          title: gap.title || `Gap ${idx + 1}`,
+          description: gap.description || '',
+          type: (gap.type || '').toUpperCase() || null,
+          confidence: gap.confidence,
+          rule_engine_verdict: gap.rule_engine_verdict,
+          evidence: gap.evidence || [],
+          suggested_directions: gap.suggested_directions || [],
+          index: idx,
+          raw: gap,
+        }
+      }
+      // Legacy string format fallback
+      return { ...parseStructuredGap(String(gap)), index: idx, raw: gap }
+    })
   }, [data?.gaps])
 
-  const parsedRoadmap = useMemo(() => parseRoadmap(data?.roadmap), [data?.roadmap])
+  const parsedRoadmap = useMemo(() => {
+    const roadmap = data?.roadmap
+    if (Array.isArray(roadmap)) {
+      return roadmap.map((phase, idx) => {
+        if (typeof phase === 'object' && phase !== null) {
+          const phaseName = (phase.phase || `Phase ${idx + 1}`).toLowerCase()
+          let label = phase.phase || `Phase ${idx + 1}`
+          let icon = 'clock'
+          if (phaseName.includes('short') || phaseName.includes('pendek') || phaseName.includes('1')) { label = label || 'Short Term'; icon = 'zap' }
+          else if (phaseName.includes('medium') || phaseName.includes('menengah') || phaseName.includes('2')) { label = label || 'Medium Term'; icon = 'trending' }
+          else if (phaseName.includes('long') || phaseName.includes('panjang') || phaseName.includes('3')) { label = label || 'Long Term'; icon = 'target' }
+          return { label, icon, items: phase.items || [] }
+        }
+        return { label: `Phase ${idx + 1}`, icon: 'clock', items: [String(phase)] }
+      })
+    }
+    // Legacy: plain text
+    return parseRoadmap(roadmap)
+  }, [data?.roadmap])
 
   const stats = useMemo(() => {
     if (!data) return []
     const base = [
-      { label: 'Files Processed', value: data.files_processed || 0, icon: FileText, color: 'text-blue-500' },
-      { label: 'Chunks Analyzed', value: data.total_chunks || 0, icon: Database, color: 'text-green-500' },
-      { label: 'Topics Found', value: data.topics?.length || 0, icon: Tag, color: 'text-purple-500' },
-      { label: 'Gaps Detected', value: data.gaps?.length || 0, icon: AlertTriangle, color: 'text-amber-500' },
+      { label: 'File Diproses', value: data.files_processed || 0, icon: FileText, color: 'text-blue-500' },
+      { label: 'Chunk Dianalisis', value: data.total_chunks || 0, icon: Database, color: 'text-green-500' },
+      { label: 'Topik Ditemukan', value: data.topics?.length || 0, icon: Tag, color: 'text-purple-500' },
+      { label: 'Gap Terdeteksi', value: data.gaps?.length || 0, icon: AlertTriangle, color: 'text-amber-500' },
     ]
     if (data.fact_table_stats?.total_entities) {
-      base.push({ label: 'KG Entities', value: data.fact_table_stats.total_entities, icon: Database, color: 'text-cyan-500' })
+      base.push({ label: 'Entitas KG', value: data.fact_table_stats.total_entities, icon: Database, color: 'text-cyan-500' })
     }
     if (data.fact_table_stats?.total_facts) {
-      base.push({ label: 'SPO Facts', value: data.fact_table_stats.total_facts, icon: Shield, color: 'text-indigo-500' })
+      base.push({ label: 'Fakta SPO', value: data.fact_table_stats.total_facts, icon: Shield, color: 'text-indigo-500' })
     }
     return base
   }, [data])
@@ -320,7 +369,7 @@ const AnalysisResults = () => {
         <div className="w-full max-w-lg">
           <div className="text-center mb-8">
             <Loader className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-1">Analyzing Your Research</h2>
+            <h2 className="text-2xl font-bold mb-1">Menganalisis Penelitian Anda</h2>
             <p className="text-sm text-muted-foreground">{progressMsg || 'Preparing analysis pipeline...'}</p>
           </div>
           <div className="w-full bg-secondary rounded-full h-2 mb-6">
@@ -352,7 +401,7 @@ const AnalysisResults = () => {
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-6">
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center max-w-md">
           <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-xl font-bold mb-2">Analysis Failed</h2>
+          <h2 className="text-xl font-bold mb-2">Analisis Gagal</h2>
           <p className="text-sm text-muted-foreground mb-6">{error}</p>
           <button onClick={() => navigate('/')} className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors">
             Try Again
@@ -373,17 +422,17 @@ const AnalysisResults = () => {
         <div className="rounded-lg border-2 border-primary/20 bg-primary/5 p-4">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-sm font-semibold">Deep Analysis Results</span>
+            <span className="text-sm font-semibold">Hasil Analisis Mendalam</span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Advanced gap detection using the multi-agent pipeline with {indicators.length} gap indicator(s) found.
+            Deteksi gap lanjutan menggunakan pipeline multi-agen dengan {indicators.length} indikator gap ditemukan.
           </p>
         </div>
 
         {/* Gap Indicators */}
         {indicators.length > 0 && (
           <div className="space-y-3">
-            <h4 className="font-semibold text-sm">Synthesis Gap Indicators</h4>
+            <h4 className="font-semibold text-sm">Indikator Gap Sintesis</h4>
             {indicators.map((gi, idx) => {
               const typeKey = (gi.indicator_type || '').toUpperCase()
               const colors = GAP_COLORS[typeKey] || GAP_COLORS.FRAGMENTATION
@@ -497,10 +546,10 @@ const AnalysisResults = () => {
       <div className="rounded-lg border bg-card p-6">
         <div className="flex items-center gap-2 mb-4">
           <BookOpen className="w-5 h-5 text-primary" />
-          <h3 className="text-lg font-semibold">Research Summary</h3>
+          <h3 className="text-lg font-semibold">Ringkasan Penelitian</h3>
         </div>
         <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
-          {data?.summary || 'No summary available.'}
+          {data?.summary || 'Ringkasan tidak tersedia.'}
         </p>
       </div>
 
@@ -510,14 +559,14 @@ const AnalysisResults = () => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Compass className="w-5 h-5 text-primary" />
-              <h3 className="text-lg font-semibold">Research Directions</h3>
+              <h3 className="text-lg font-semibold">Arah Penelitian</h3>
             </div>
             <span className="text-xs text-muted-foreground bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-              {parsedRecommendations.length} directions
+              {parsedRecommendations.length} arah
             </span>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Actionable research directions derived from synthesis gap analysis. Each direction addresses identified gaps in the literature.
+            Arah penelitian yang dapat ditindaklanjuti berdasarkan analisis gap sintesis. Setiap arah menjawab gap yang teridentifikasi dalam literatur.
           </p>
           <div className="space-y-3">
             {parsedRecommendations.slice(0, 3).map((rec, idx) => {
@@ -560,7 +609,7 @@ const AnalysisResults = () => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-purple-500" />
-              <h3 className="font-semibold">Key Topics</h3>
+              <h3 className="font-semibold">Topik Utama</h3>
             </div>
             <button onClick={() => setActiveTab('topics')} className="text-xs text-primary hover:underline flex items-center gap-1">
               View all <ArrowRight className="w-3 h-3" />
@@ -579,7 +628,7 @@ const AnalysisResults = () => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Search className="w-5 h-5 text-amber-500" />
-              <h3 className="font-semibold">Research Gaps</h3>
+              <h3 className="font-semibold">Gap Penelitian</h3>
             </div>
             <button onClick={() => setActiveTab('gaps')} className="text-xs text-primary hover:underline flex items-center gap-1">
               View all <ArrowRight className="w-3 h-3" />
@@ -608,10 +657,10 @@ const AnalysisResults = () => {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Sparkles className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold">Deep Analysis</h3>
+              <h3 className="font-semibold">Analisis Mendalam</h3>
             </div>
             <p className="text-sm text-muted-foreground">
-              Run the multi-agent pipeline for structured gap indicators with confidence scores, evidence, and research directions.
+              Jalankan pipeline multi-agen untuk indikator gap terstruktur dengan skor kepercayaan, bukti, dan arah penelitian.
             </p>
           </div>
           <button
@@ -620,7 +669,7 @@ const AnalysisResults = () => {
             className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2 flex-shrink-0 ml-4"
           >
             {deepLoading ? <Loader className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {deepLoading ? 'Analyzing...' : 'Run Analysis'}
+            {deepLoading ? 'Menganalisis...' : 'Jalankan Analisis'}
           </button>
         </div>
       )}
@@ -632,7 +681,7 @@ const AnalysisResults = () => {
   const TopicsTab = () => (
     <div className="space-y-4">
       <div className="mb-2">
-        <h3 className="text-lg font-semibold">Extracted Research Topics</h3>
+        <h3 className="text-lg font-semibold">Topik Penelitian yang Diekstrak</h3>
         <p className="text-sm text-muted-foreground">Topics identified from comparative analysis of your uploaded papers.</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -651,7 +700,7 @@ const AnalysisResults = () => {
         <div className="rounded-lg border bg-card p-6 mt-6">
           <div className="flex items-center gap-2 mb-3">
             <BookOpen className="w-5 h-5 text-primary" />
-            <h3 className="font-semibold">Comparative Analysis Summary</h3>
+            <h3 className="font-semibold">Ringkasan Analisis Komparatif</h3>
           </div>
           <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{data.summary}</p>
         </div>
@@ -662,9 +711,9 @@ const AnalysisResults = () => {
   const GapsTab = () => (
     <div className="space-y-4">
       <div className="mb-2">
-        <h3 className="text-lg font-semibold">Synthesis Gap Detection</h3>
+        <h3 className="text-lg font-semibold">Deteksi Gap Sintesis</h3>
         <p className="text-sm text-muted-foreground">
-          Research gaps identified through cross-paper comparative analysis, categorized by Cooper (1998) indicators.
+          Gap penelitian yang teridentifikasi melalui analisis komparatif lintas paper, dikategorikan berdasarkan indikator Cooper (1998).
         </p>
       </div>
 
@@ -703,10 +752,42 @@ const AnalysisResults = () => {
                     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
                       {colors.label}
                     </span>
+                    {gap.confidence != null && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+                        Confidence: {(gap.confidence * 100).toFixed(0)}%
+                      </span>
+                    )}
+                    {gap.rule_engine_verdict && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        gap.rule_engine_verdict === 'ACCEPT' ? 'bg-green-500/10 text-green-600' :
+                        gap.rule_engine_verdict === 'REVIEW' ? 'bg-amber-500/10 text-amber-600' :
+                        'bg-red-500/10 text-red-600'
+                      }`}>
+                        {gap.rule_engine_verdict}
+                      </span>
+                    )}
                   </div>
                 </div>
                 {gap.title && <h4 className="font-medium text-sm mb-2">{gap.title}</h4>}
                 <p className="text-sm text-foreground leading-relaxed">{gap.description}</p>
+                {gap.evidence?.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Bukti:</p>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      {gap.evidence.map((ev, i) => <li key={i} className="flex items-start gap-1"><span>•</span><span>{ev}</span></li>)}
+                    </ul>
+                  </div>
+                )}
+                {gap.suggested_directions?.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Arah yang Disarankan:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {gap.suggested_directions.map((dir, i) => (
+                        <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">{dir}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )
@@ -716,7 +797,7 @@ const AnalysisResults = () => {
       {parsedGaps.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <Search className="w-10 h-10 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No research gaps detected.</p>
+          <p className="text-sm">Tidak ada gap penelitian yang terdeteksi.</p>
         </div>
       )}
 
@@ -724,9 +805,9 @@ const AnalysisResults = () => {
       {!deepAnalysis && parsedGaps.length > 0 && (
         <div className="rounded-lg border-2 border-dashed border-primary/30 p-6 text-center">
           <Sparkles className="w-8 h-8 text-primary/50 mx-auto mb-2" />
-          <h4 className="font-semibold text-sm mb-1">Want deeper insights?</h4>
+          <h4 className="font-semibold text-sm mb-1">Ingin insight lebih mendalam?</h4>
           <p className="text-xs text-muted-foreground mb-3">
-            Run deep analysis to get structured gap indicators with confidence scores, evidence, and suggested research directions.
+            Jalankan analisis mendalam untuk mendapatkan indikator gap terstruktur dengan skor kepercayaan, bukti, dan arah penelitian yang disarankan.
           </p>
           <button
             onClick={runDeepAnalysis}
@@ -734,7 +815,7 @@ const AnalysisResults = () => {
             className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 inline-flex items-center gap-2"
           >
             {deepLoading ? <Loader className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {deepLoading ? 'Running...' : 'Run Deep Analysis'}
+            {deepLoading ? 'Memproses...' : 'Jalankan Analisis Mendalam'}
           </button>
         </div>
       )}
@@ -747,14 +828,14 @@ const AnalysisResults = () => {
     <div className="space-y-4">
       <div className="flex items-start justify-between mb-2">
         <div>
-          <h3 className="text-lg font-semibold">Research Recommendations</h3>
+          <h3 className="text-lg font-semibold">Rekomendasi Penelitian</h3>
           <p className="text-sm text-muted-foreground">
-            Actionable research directions with justification, based on detected gaps and comparative analysis.
+            Arah penelitian yang dapat ditindaklanjuti dengan justifikasi, berdasarkan gap yang terdeteksi dan analisis komparatif.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-4">
           <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
-            {parsedRecommendations.length} recommendations
+            {parsedRecommendations.length} rekomendasi
           </span>
         </div>
       </div>
@@ -806,7 +887,7 @@ const AnalysisResults = () => {
                           onClick={() => setExpandedRecs(prev => ({ ...prev, [idx]: !prev[idx] }))}
                           className="flex items-center gap-1 text-xs text-primary mt-2 hover:underline"
                         >
-                          {isExpanded ? 'Hide' : 'Show'} details
+                          {isExpanded ? 'Sembunyikan' : 'Lihat'} detail
                           <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                         </button>
 
@@ -815,7 +896,7 @@ const AnalysisResults = () => {
                             {rec.why && (
                               <div>
                                 <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
-                                  <Target className="w-3 h-3" /> Why This Matters
+                                  <Target className="w-3 h-3" /> Mengapa Ini Penting
                                 </p>
                                 <p className="text-sm text-muted-foreground pl-4">{rec.why}</p>
                               </div>
@@ -823,7 +904,7 @@ const AnalysisResults = () => {
                             {rec.how && (
                               <div>
                                 <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
-                                  <Zap className="w-3 h-3" /> Suggested Approach
+                                  <Zap className="w-3 h-3" /> Pendekatan yang Disarankan
                                 </p>
                                 <p className="text-sm text-muted-foreground pl-4">{rec.how}</p>
                               </div>
@@ -851,9 +932,9 @@ const AnalysisResults = () => {
       {!deepAnalysis && (
         <div className="rounded-lg border-2 border-dashed border-primary/30 p-6 text-center mt-4">
           <Sparkles className="w-8 h-8 text-primary/50 mx-auto mb-2" />
-          <h4 className="font-semibold text-sm mb-1">Get Paper Recommendations</h4>
+          <h4 className="font-semibold text-sm mb-1">Dapatkan Rekomendasi Paper</h4>
           <p className="text-xs text-muted-foreground mb-3">
-            Run deep analysis to discover relevant papers with relevance scores and reasoning.
+            Jalankan analisis mendalam untuk menemukan paper relevan dengan skor relevansi dan penalaran.
           </p>
           <button
             onClick={runDeepAnalysis}
@@ -861,7 +942,7 @@ const AnalysisResults = () => {
             className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 inline-flex items-center gap-2"
           >
             {deepLoading ? <Loader className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {deepLoading ? 'Analyzing...' : 'Find Relevant Papers'}
+            {deepLoading ? 'Menganalisis...' : 'Cari Paper Relevan'}
           </button>
         </div>
       )}
@@ -880,8 +961,8 @@ const AnalysisResults = () => {
     return (
       <div className="space-y-4">
         <div className="mb-2">
-          <h3 className="text-lg font-semibold">Research Roadmap</h3>
-          <p className="text-sm text-muted-foreground">Structured plan for future research directions.</p>
+          <h3 className="text-lg font-semibold">Peta Jalan Penelitian</h3>
+          <p className="text-sm text-muted-foreground">Rencana terstruktur untuk arah penelitian masa depan.</p>
         </div>
         <div className="relative">
           {parsedRoadmap.map((phase, phaseIdx) => {
@@ -936,7 +1017,7 @@ const AnalysisResults = () => {
     return (
       <div className="space-y-6">
         <div className="mb-2">
-          <h3 className="text-lg font-semibold">Neuro-Symbolic Pipeline</h3>
+          <h3 className="text-lg font-semibold">Pipeline Neuro-Simbolik</h3>
           <p className="text-sm text-muted-foreground">
             Execution details from the Observe → Think → Act → Evaluate agentic loop.
           </p>
@@ -967,19 +1048,19 @@ const AnalysisResults = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-cyan-500">{factStats.total_entities || 0}</p>
-            <p className="text-xs text-muted-foreground">KG Entities</p>
+            <p className="text-xs text-muted-foreground">Entitas KG</p>
           </div>
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-indigo-500">{factStats.total_facts || 0}</p>
-            <p className="text-xs text-muted-foreground">SPO Facts</p>
+            <p className="text-xs text-muted-foreground">Fakta SPO</p>
           </div>
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-green-500">{ruleReport.passed || 0}</p>
-            <p className="text-xs text-muted-foreground">Rules Passed</p>
+            <p className="text-xs text-muted-foreground">Aturan Lolos</p>
           </div>
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-amber-500">{ruleReport.flagged || 0}</p>
-            <p className="text-xs text-muted-foreground">Rules Flagged</p>
+            <p className="text-xs text-muted-foreground">Aturan Ditandai</p>
           </div>
         </div>
 
@@ -1279,10 +1360,10 @@ const AnalysisResults = () => {
           <div>
             <div className="flex items-center gap-3 mb-1">
               <CheckCircle className="w-6 h-6 text-green-500" />
-              <h1 className="text-2xl font-bold tracking-tight">Analysis Complete</h1>
+              <h1 className="text-2xl font-bold tracking-tight">Analisis Selesai</h1>
             </div>
             <p className="text-sm text-muted-foreground">
-              AI-powered research insights from your uploaded papers
+              Insight penelitian berbasis AI dari paper yang Anda unggah
               {data?.execution_mode && (
                 <span className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                   data.execution_mode === 'langgraph' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :

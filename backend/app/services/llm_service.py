@@ -1,8 +1,9 @@
 """
-GLM-4.6 Interface for Ollama Integration
+LLM Interface for Ollama Integration
 
-This module provides a comprehensive interface for interacting with the GLM-4.6 model
-through Ollama, including prompt management, streaming support, and error handling.
+This module provides a comprehensive interface for interacting with local LLMs
+(e.g., llama3.2, gpt-oss) through Ollama, including prompt management,
+structured JSON output, streaming support, and error handling.
 """
 
 import json
@@ -110,11 +111,12 @@ Summary:"""
 
 class GLMInterface:
     """
-    Interface for interacting with GLM-4.6 model through Ollama
+    Interface for interacting with local LLMs through Ollama
     
     Features:
     - Connection management and health checks
     - Prompt template management
+    - Structured JSON output (Ollama format="json")
     - Streaming and non-streaming responses
     - Token counting and usage tracking
     - Error handling and retries
@@ -215,10 +217,11 @@ class GLMInterface:
         system_prompt: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        stream: bool = False
+        stream: bool = False,
+        format: Optional[str] = None
     ) -> Union[str, Generator[str, None, None]]:
         """
-        Generate a response from GLM-4.6
+        Generate a response from the LLM
         
         Args:
             prompt: User prompt
@@ -226,6 +229,7 @@ class GLMInterface:
             temperature: Override default temperature
             max_tokens: Override default max tokens
             stream: Whether to stream the response
+            format: Output format constraint (e.g. "json" to force valid JSON via Ollama)
             
         Returns:
             Generated text or generator for streaming
@@ -250,20 +254,25 @@ class GLMInterface:
             if stream:
                 return self._generate_stream(messages, options)
             else:
-                return self._generate_complete(messages, options)
+                return self._generate_complete(messages, options, format=format)
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             raise
     
-    def _generate_complete(self, messages: List[Dict], options: Dict) -> str:
+    def _generate_complete(self, messages: List[Dict], options: Dict, format: Optional[str] = None) -> str:
         """Generate complete response (non-streaming)"""
         start_time = time.time()
+        
+        kwargs = {}
+        if format:
+            kwargs["format"] = format
         
         response = self.client.chat(
             model=self.config.model_name,
             messages=messages,
             options=options,
-            stream=False
+            stream=False,
+            **kwargs
         )
         
         elapsed = time.time() - start_time
@@ -454,6 +463,10 @@ class GLMInterface:
         return f"GLMInterface(model={self.config.model_name}, base_url={self.config.base_url})"
 
 
+# Preferred alias — the interface is model-agnostic (works with any Ollama model)
+LLMInterface = GLMInterface
+
+
 # Example usage and testing
 if __name__ == "__main__":
     # Configure logging
@@ -464,7 +477,7 @@ if __name__ == "__main__":
     
     # Health check
     if glm.health_check():
-        print("✅ GLM-4.6 is ready!")
+        print("✅ LLM is ready!")
         
         # Test simple generation
         response = glm.generate(
@@ -477,4 +490,4 @@ if __name__ == "__main__":
         chat_response = glm.chat("What are the key innovations in GPT-3?")
         print(f"\n💬 Chat:\n{chat_response}")
     else:
-        print("❌ GLM-4.6 is not available. Please check Ollama installation.")
+        print("❌ LLM is not available. Please check Ollama installation.")

@@ -168,10 +168,10 @@ class VectorStore:
             else:
                 clean_metadata[key] = str(value)
         
-        # Add document to collection
+        # ChromaDB rejects empty metadata dicts — use None instead
         self.collection.add(
             documents=[content_str],
-            metadatas=[clean_metadata],
+            metadatas=[clean_metadata] if clean_metadata else None,
             ids=[doc_id]
         )
         
@@ -200,7 +200,8 @@ class VectorStore:
             
             batch_ids = [doc.id for doc in batch]
             batch_contents = [doc.content for doc in batch]
-            batch_metadatas = [doc.metadata for doc in batch]
+            # ChromaDB rejects empty metadata dicts — substitute None per document
+            batch_metadatas = [doc.metadata if doc.metadata else None for doc in batch]
             
             self.collection.add(
                 documents=batch_contents,

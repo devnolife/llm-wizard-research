@@ -7,7 +7,7 @@ import tempfile
 import shutil
 from pathlib import Path
 
-from src.retrieval.vector_store import VectorStore, Document, SearchResult
+from app.core.retrieval.vector_store import VectorStore, Document, SearchResult
 
 
 @pytest.fixture

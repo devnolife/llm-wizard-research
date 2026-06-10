@@ -237,19 +237,38 @@ class RAGRetriever:
         # Retrieve with expanded query
         return self.retrieve(query=expanded_query, top_k=top_k)
     
+    # Lightweight domain synonym map for query expansion (CS/ML domain)
+    QUERY_EXPANSION_MAP = {
+        "cnn": "convolutional neural network",
+        "rnn": "recurrent neural network",
+        "nlp": "natural language processing",
+        "llm": "large language model",
+        "gan": "generative adversarial network",
+        "object detection": "object recognition localization",
+        "attention": "attention mechanism transformer",
+        "transformer": "attention mechanism",
+        "optimization": "training optimization gradient",
+        "edge": "edge device mobile resource-constrained",
+        "compression": "model compression distillation quantization",
+        "image recognition": "image classification computer vision",
+    }
+
     def _expand_query(self, query: str) -> str:
         """
-        Simple query expansion
-        
-        In production, this could use:
-        - Synonym databases
-        - Word embeddings
-        - Knowledge graphs
-        - User query history
+        Simple dictionary-based query expansion.
+
+        Appends domain synonyms/expansions for known CS/ML terms found in
+        the query. Deterministic and offline (no LLM call).
         """
-        # For now, just return original query
-        # TODO: Implement sophisticated query expansion
-        return query
+        query_lower = query.lower()
+        additions = [
+            expansion
+            for term, expansion in self.QUERY_EXPANSION_MAP.items()
+            if term in query_lower and expansion.lower() not in query_lower
+        ]
+        if not additions:
+            return query
+        return f"{query} {' '.join(additions)}"
     
     def retrieve_multi_query(
         self,

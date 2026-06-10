@@ -463,27 +463,32 @@ Label penilaian pakar per indikator:
 
 | Komponen | File | Status |
 |----------|------|--------|
-| Agent Orchestrator (LangGraph) | `backend/app/core/agents/` | ✅ Implementasi |
-| RAG Pipeline | `backend/app/core/rag/` | ✅ Implementasi |
+| Agent Orchestrator (LangGraph) | `backend/app/core/agents/coordinator.py` | ✅ Implementasi |
+| RAG Pipeline | `backend/app/core/retrieval/` | ✅ Implementasi |
 | Gap Analyzer (3 indikator) | `backend/app/core/gap_detection/analyzer.py` | ✅ Implementasi |
-| Rule Engine | `backend/app/core/gap_detection/rule_engine.py` | ✅ Implementasi |
-| Fact Table | `backend/app/core/gap_detection/fact_table.py` | ✅ Implementasi |
+| Rule Engine | `backend/app/core/validation/rule_engine.py` | ✅ Implementasi |
+| Fact Table | `backend/app/core/knowledge/fact_table.py` | ✅ Implementasi |
+| Fact Extractor (SPO) | `backend/app/core/knowledge/fact_extractor.py` | ✅ Implementasi (JSON mode + retry) |
 | Recommendation Engine | `backend/app/core/recommendation/engine.py` | ✅ Implementasi |
-| ChromaDB Vector Store | `chroma_db/` (1423 dokumen) | ✅ Implementasi |
+| ChromaDB Vector Store | `chroma_db/` | ✅ Implementasi |
 | Frontend Dashboard | `frontend/src/components/pages/AnalysisResults.jsx` | ✅ Implementasi |
+| Experiment Runner + Ablation | `backend/experiments/run_experiment.py` (mode full / no-rule-engine / linear-baseline) | ✅ Implementasi |
+| Dataset Benchmark | `research_papers/` — 23 paper, 4 topik (manifest tersedia) | ✅ Implementasi |
+| Tooling Evaluasi Pakar | `backend/experiments/expert_eval/` (form XLSX + kalkulator metrik) | ✅ Implementasi |
 
 ### Kesesuaian Implementasi dengan Proposal Revisi
 
 | Aspek Proposal | Implementasi | Kesesuaian |
 |----------------|-------------|------------|
 | 3 indikator Cooper (FRAGMENTATION, INCONSISTENCY, INCOMPLETENESS) | `IndicatorType` enum di `responses.py` | ✅ Sesuai |
-| Rule Engine dengan verdict PASS/FLAG/REJECT | `RuleEngineReportModel` di `responses.py` | ✅ Sesuai |
+| Rule Engine dengan verdict PASS/FLAG/REJECT | `RuleEngineReportModel` di `responses.py` + validasi adversarial (6 kasus, akurasi 100%) | ✅ Sesuai |
 | Arsitektur Agentic | LangGraph-based coordinator | ✅ Sesuai |
 | RAG grounding | ChromaDB + embedding | ✅ Sesuai |
 | Knowledge Graph sebagai Fact Base | `fact_table.py` + `FactTableStats` | ✅ Sesuai |
 | Mekanisme pembeda semantik vs logis | NLI + Evidence Extraction | ⚠️ Parsial |
-| Evaluasi 7 metrik | Belum diimplementasikan | ❌ Belum |
-| User study | Belum dilakukan | ❌ Belum |
+| Ablation study (H6: agentic vs linear; H7: dengan/tanpa rule engine) | mode `linear-baseline` & `no-rule-engine` di experiment runner | ✅ Tooling siap |
+| Evaluasi 7 metrik (EAR, LCS, AS, FDR, SHG, RERR, REP) | RERR otomatis di runner; EAR/LCS/AS/FDR/SHG/REP via `expert_eval/compute_metrics.py` | ✅ Tooling siap — menunggu penilaian pakar |
+| User study (H8) | Belum dilakukan | ❌ Belum |
 
 ---
 

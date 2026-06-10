@@ -59,8 +59,8 @@ const DocumentsPage = () => {
     <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Documents</h1>
-        <p className="text-muted-foreground">Manage your research document collection and vector store</p>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Dokumen</h1>
+        <p className="text-muted-foreground">Kelola koleksi dokumen penelitian dan vector store Anda</p>
       </div>
 
       {/* Stats */}
@@ -71,8 +71,8 @@ const DocumentsPage = () => {
       ) : stats && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           {[
-            { icon: FileText, label: 'Total Documents', value: stats.total_documents ?? stats.document_count ?? '—' },
-            { icon: BarChart3, label: 'Total Chunks', value: stats.total_chunks ?? stats.chunk_count ?? '—' },
+            { icon: FileText, label: 'Total Dokumen', value: stats.total_documents ?? stats.document_count ?? '—' },
+            { icon: BarChart3, label: 'Total Chunk', value: stats.total_chunks ?? stats.chunk_count ?? '—' },
             { icon: Database, label: 'Vector Store', value: stats.vector_count ?? stats.collection_count ?? '—' },
           ].map((stat, idx) => (
             <div key={idx} className="rounded-lg border bg-card p-5">
@@ -87,7 +87,7 @@ const DocumentsPage = () => {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-md border text-sm font-medium hover:bg-secondary transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
-              Refresh
+              Segarkan
             </button>
           </div>
         </div>

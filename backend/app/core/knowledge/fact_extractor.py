@@ -97,6 +97,12 @@ Respond ONLY with a JSON array. Example:
 
 JSON:"""
 
+RETRY_SUFFIX = """
+
+IMPORTANT: Your previous response could not be parsed as JSON.
+Respond with ONLY a valid JSON array starting with [ and ending with ].
+No explanations, no markdown, no code fences."""
+
 
 # ---------------------------------------------------------------------------
 # Linguistic markers for pattern-based relation detection
@@ -263,18 +269,13 @@ class FactExtractor:
         prompt = ENTITY_EXTRACTION_PROMPT.format(text=text)
         
         try:
-            response = self.llm.generate(
+            entities_data = self._generate_json(
                 prompt,
-                system_prompt="You are a precise scientific entity extractor. Respond only with valid JSON.",
-                temperature=0.1,
-                max_tokens=2048,
+                system_prompt="You are a precise scientific entity extractor. Respond only with a valid JSON array.",
             )
             
-            # Parse JSON from LLM response
-            entities_data = self._parse_json_response(response)
-            
-            if not isinstance(entities_data, list):
-                logger.warning("LLM returned non-list response for entities")
+            if not entities_data:
+                logger.warning("LLM entity extraction returned no parseable entities, using pattern fallback")
                 return self._extract_entities_pattern(text, paper_id, fact_table)
             
             entities = []
@@ -383,17 +384,13 @@ class FactExtractor:
         )
         
         try:
-            response = self.llm.generate(
+            relations_data = self._generate_json(
                 prompt,
-                system_prompt="You are a precise scientific relation extractor. Respond only with valid JSON.",
-                temperature=0.1,
-                max_tokens=2048,
+                system_prompt="You are a precise scientific relation extractor. Respond only with a valid JSON array.",
             )
             
-            relations_data = self._parse_json_response(response)
-            
-            if not isinstance(relations_data, list):
-                logger.warning("LLM returned non-list response for relations")
+            if not relations_data:
+                logger.warning("LLM relation extraction returned no parseable relations")
                 return []
             
             facts = []
@@ -460,7 +457,7 @@ class FactExtractor:
                 if marker in sentence_lower:
                     # Try to find entities in this sentence
                     mentioned = self._find_entities_in_text(sentence, entities)
-                    if len(mentioned) >= 2:
+                    if len(mentioned) >= 2 and mentioned[0].entity_id != mentioned[1].entity_id:
                         fact = Fact(
                             subject_id=mentioned[0].entity_id,
                             predicate=PredicateType.IMPROVES if marker in ["improves", "enhances", "increases"] 
@@ -484,7 +481,7 @@ class FactExtractor:
                 if marker in sentence_lower:
                     mentioned = self._find_entities_in_text(sentence, entities)
                     findings = [e for e in mentioned if e.entity_type == EntityType.FINDING]
-                    if len(findings) >= 2:
+                    if len(findings) >= 2 and findings[0].entity_id != findings[1].entity_id:
                         fact = Fact(
                             subject_id=findings[0].entity_id,
                             predicate=PredicateType.CONTRADICTS,
@@ -506,7 +503,7 @@ class FactExtractor:
             for marker in EXTENSION_MARKERS:
                 if marker in sentence_lower:
                     mentioned = self._find_entities_in_text(sentence, entities)
-                    if len(mentioned) >= 2:
+                    if len(mentioned) >= 2 and mentioned[0].entity_id != mentioned[1].entity_id:
                         fact = Fact(
                             subject_id=mentioned[0].entity_id,
                             predicate=PredicateType.EXTENDS,
@@ -530,33 +527,155 @@ class FactExtractor:
     # Utility methods
     # -----------------------------------------------------------------------
 
-    def _parse_json_response(self, response: str) -> Any:
-        """Parse JSON from LLM response, handling common formatting issues."""
+    def _generate_json(
+        self,
+        prompt: str,
+        system_prompt: str,
+        max_retries: int = 1,
+    ) -> List[Any]:
+        """
+        Call the LLM expecting a JSON array response.
+        
+        Uses Ollama's structured output (format="json") when supported, and
+        retries once with a stricter prompt if parsing fails.
+        
+        Returns:
+            Parsed list (possibly empty if the LLM legitimately found nothing
+            or all attempts failed).
+        """
+        attempt_prompt = prompt
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.llm.generate(
+                    attempt_prompt,
+                    system_prompt=system_prompt,
+                    temperature=0.1,
+                    max_tokens=2048,
+                    format="json",
+                )
+            except TypeError:
+                # LLM interface without `format` kwarg (e.g., custom mocks)
+                response = self.llm.generate(
+                    attempt_prompt,
+                    system_prompt=system_prompt,
+                    temperature=0.1,
+                    max_tokens=2048,
+                )
+            
+            parsed = self._parse_json_response(response)
+            if parsed is not None:
+                return parsed
+            
+            if attempt < max_retries:
+                logger.warning(
+                    f"JSON parse failed (attempt {attempt + 1}/{max_retries + 1}), "
+                    "retrying with stricter prompt"
+                )
+                attempt_prompt = prompt + RETRY_SUFFIX
+        
+        logger.error("All JSON extraction attempts failed")
+        return []
+
+    def _parse_json_response(self, response: str) -> Optional[List[Any]]:
+        """
+        Parse a JSON array from LLM response, handling common formatting issues.
+        
+        Returns:
+            Parsed list, or None when no JSON could be recovered (signals retry).
+        """
+        parsed = None
+        
         # Try direct parse first
         try:
-            return json.loads(response)
+            parsed = json.loads(response)
         except json.JSONDecodeError:
-            pass
+            # Try extracting from markdown code block (most specific)
+            code_block_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response, re.DOTALL)
+            if code_block_match:
+                try:
+                    parsed = json.loads(code_block_match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            
+            # Try extracting bare JSON array
+            if parsed is None:
+                json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                if json_match:
+                    try:
+                        parsed = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        pass
         
-        # Try extracting JSON array from response
-        # LLM sometimes wraps JSON in markdown code blocks
-        json_match = re.search(r'\[.*\]', response, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
+        if parsed is None:
+            # Last resort: salvage complete objects from a TRUNCATED array
+            # (common when the LLM hits its max_tokens limit mid-response)
+            salvaged = self._salvage_truncated_array(response)
+            if salvaged:
+                logger.warning(
+                    f"Salvaged {len(salvaged)} complete objects from truncated JSON response"
+                )
+                return salvaged
+            logger.warning(f"Failed to parse JSON from LLM response: {response[:200]}...")
+            return None
         
-        # Try extracting from code block
-        code_block_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response, re.DOTALL)
-        if code_block_match:
-            try:
-                return json.loads(code_block_match.group(1))
-            except json.JSONDecodeError:
-                pass
+        # Ollama JSON mode often wraps arrays in an object, e.g. {"entities": [...]}
+        if isinstance(parsed, dict):
+            for value in parsed.values():
+                if isinstance(value, list):
+                    return value
+            # Single JSON object → treat as a one-element array
+            return [parsed]
         
-        logger.warning(f"Failed to parse JSON from LLM response: {response[:200]}...")
-        return []
+        if isinstance(parsed, list):
+            return parsed
+        
+        return None
+
+    @staticmethod
+    def _salvage_truncated_array(text: str) -> Optional[List[Any]]:
+        """
+        Recover complete JSON objects from a truncated array response.
+        
+        Scans from the first '[' and collects every brace-balanced top-level
+        object, ignoring the trailing incomplete one.
+        """
+        start = text.find("[")
+        if start == -1:
+            return None
+        
+        objects = []
+        depth = 0
+        obj_start = None
+        in_string = False
+        escaped = False
+        
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                if depth == 0:
+                    obj_start = i
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0 and obj_start is not None:
+                    try:
+                        objects.append(json.loads(text[obj_start:i + 1]))
+                    except json.JSONDecodeError:
+                        pass
+                    obj_start = None
+        
+        return objects or None
 
     def _resolve_entity(
         self, name: str, entities: List[Entity]
@@ -582,13 +701,17 @@ class FactExtractor:
     def _find_entities_in_text(
         self, text: str, entities: List[Entity]
     ) -> List[Entity]:
-        """Find which entities are mentioned in a text snippet."""
+        """Find which entities are mentioned in a text snippet (deduplicated)."""
         mentioned = []
+        seen_ids = set()
         text_lower = text.lower()
         
         for entity in entities:
+            if entity.entity_id in seen_ids:
+                continue
             if entity.name.lower() in text_lower:
                 mentioned.append(entity)
+                seen_ids.add(entity.entity_id)
         
         return mentioned
 

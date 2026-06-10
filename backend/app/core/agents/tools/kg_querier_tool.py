@@ -75,7 +75,7 @@ class KGQuerierTool:
             )
             facts = raw if isinstance(raw, list) else []
         elif self.fact_table:
-            from backend.app.core.knowledge.fact_table import Fact
+            from ...knowledge.fact_table import Fact
             raw = self.fact_table.query(
                 subject_id=subject, predicate=predicate, object_id=obj
             )
@@ -165,7 +165,7 @@ class KGQuerierTool:
             return {"action": "entities", "error": "Fact table not available"}
         
         if entity_type:
-            from backend.app.core.knowledge.fact_table import EntityType
+            from ...knowledge.fact_table import EntityType
             try:
                 et = EntityType(entity_type)
                 entities = self.fact_table.find_entities(entity_type=et)

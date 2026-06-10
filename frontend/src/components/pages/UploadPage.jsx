@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Upload, FileText, X, Loader } from 'lucide-react'
 import { analysisService } from '../../services/analysisService'
@@ -14,6 +14,20 @@ const UploadPage = () => {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
+  const [stats, setStats] = useState({ papers: '-', chunks: '-' })
+
+  useEffect(() => {
+    const API_BASE = import.meta.env.VITE_API_URL || ''
+    fetch(`${API_BASE}/api/stats`)
+      .then(r => r.json())
+      .then(d => {
+        setStats({
+          papers: d.total_documents ?? d.document_count ?? '-',
+          chunks: d.total_chunks ?? '-',
+        })
+      })
+      .catch(() => {})
+  }, [])
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault()
@@ -73,18 +87,18 @@ const UploadPage = () => {
     <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Auto-Analyze Research</h1>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Auto-Analisis Penelitian</h1>
         <p className="text-muted-foreground">
-          Upload PDF papers. AI extracts topics, detects research gaps, and generates recommendations.
+          Unggah paper PDF. AI mengekstrak topik, mendeteksi gap penelitian, dan menghasilkan rekomendasi.
         </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {[
-          { label: 'Papers Indexed', value: '8' },
-          { label: 'Chunks in Vector DB', value: '1,795' },
-          { label: 'Avg. Analysis Time', value: '~2 min' },
+          { label: 'Paper Terindeks', value: stats.papers },
+          { label: 'Chunk di Vector DB', value: typeof stats.chunks === 'number' ? stats.chunks.toLocaleString() : stats.chunks },
+          { label: 'Waktu Analisis Rata-rata', value: '~2 menit' },
         ].map((stat, idx) => (
           <div key={idx} className="rounded-lg border bg-card p-4">
             <p className="text-sm text-muted-foreground">{stat.label}</p>
@@ -115,9 +129,9 @@ const UploadPage = () => {
         />
         <label htmlFor="file-input" className="cursor-pointer block">
           <Upload className="w-10 h-10 mx-auto mb-4 text-muted-foreground" />
-          <p className="text-lg font-medium mb-1">Drop PDF files here</p>
-          <p className="text-sm text-muted-foreground">or click to browse from your device</p>
-          <p className="text-xs text-muted-foreground mt-2">Supports: PDF files up to 50MB</p>
+          <p className="text-lg font-medium mb-1">Letakkan file PDF di sini</p>
+          <p className="text-sm text-muted-foreground">atau klik untuk memilih dari perangkat Anda</p>
+          <p className="text-xs text-muted-foreground mt-2">Format: File PDF maksimal 50MB</p>
         </label>
       </div>
 
@@ -157,7 +171,7 @@ const UploadPage = () => {
           onClick={handleUploadAndAnalyze}
           className="mt-6 w-full py-3 px-4 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
         >
-          Upload & Auto-Analyze ({files.length} file{files.length > 1 ? 's' : ''})
+          Unggah & Auto-Analisis ({files.length} file)
         </button>
       )}
 

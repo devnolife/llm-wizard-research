@@ -127,10 +127,14 @@ async def get_statistics():
     """Get system statistics"""
     try:
         vector_store = get_vector_store()
+        vs_stats = vector_store.get_stats()
+        total_docs = vector_store.count()
         
         return {
-            "vector_store": vector_store.get_stats(),
-            "total_documents": vector_store.count()
+            "vector_store": vs_stats,
+            "total_documents": total_docs,
+            "document_count": total_docs,
+            "total_chunks": vs_stats.get("total_chunks", vs_stats.get("count", total_docs)),
         }
     except Exception as e:
         logger.error(f"Stats retrieval failed: {e}")

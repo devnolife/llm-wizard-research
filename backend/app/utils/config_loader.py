@@ -17,7 +17,7 @@ from loguru import logger
 class LLMConfig:
     """LLM configuration"""
     base_url: str = "http://localhost:11434"
-    model_name: str = "glm-4.6:cloud"
+    model_name: str = "llama3.2:latest"
     temperature: float = 0.7
     max_tokens: int = 2048
     context_window: int = 4096
@@ -57,6 +57,10 @@ class APIConfig:
     port: int = 8000
     workers: int = 4
     reload: bool = False
+    cors_origins: list = field(default_factory=lambda: [
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ])
 
 
 @dataclass
@@ -127,6 +131,7 @@ class ConfigLoader:
             "./configs/config.yaml",
             "./config.yaml",
             "../configs/config.yaml",
+            str(self.PROJECT_ROOT / "backend" / "config.yaml"),
         ]
         
         for path in possible_paths:
@@ -136,6 +141,23 @@ class ConfigLoader:
         
         logger.warning("No config file found, using defaults")
         return None
+    
+    # Project root = wizard-research/ (parent of backend/)
+    PROJECT_ROOT = Path(__file__).resolve().parents[3]
+    
+    @classmethod
+    def _resolve_path(cls, path: str) -> str:
+        """
+        Resolve a relative path against the project root.
+        
+        Makes paths deterministic regardless of the current working directory
+        (prevents accidental creation of duplicate chroma_db/data directories
+        when running from backend/ vs project root).
+        """
+        p = Path(path)
+        if p.is_absolute():
+            return str(p)
+        return str((cls.PROJECT_ROOT / p).resolve())
     
     def _load_yaml(self) -> Dict[str, Any]:
         """Load configuration from YAML file"""
@@ -158,7 +180,7 @@ class ConfigLoader:
         # LLM Configuration
         llm_config = LLMConfig(
             base_url=os.getenv("OLLAMA_BASE_URL") or yaml_config.get("llm", {}).get("base_url", "http://localhost:11434"),
-            model_name=os.getenv("OLLAMA_MODEL") or yaml_config.get("llm", {}).get("model_name", "glm-4.6:cloud"),
+            model_name=os.getenv("OLLAMA_MODEL") or yaml_config.get("llm", {}).get("model_name", "llama3.2:latest"),
             temperature=float(os.getenv("LLM_TEMPERATURE", yaml_config.get("llm", {}).get("temperature", 0.7))),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", yaml_config.get("llm", {}).get("max_tokens", 2048))),
             context_window=int(os.getenv("LLM_CONTEXT_WINDOW", yaml_config.get("llm", {}).get("context_window", 4096))),
@@ -166,7 +188,9 @@ class ConfigLoader:
         
         # Vector DB Configuration
         vector_db_config = VectorDBConfig(
-            persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY") or yaml_config.get("vector_db", {}).get("persist_directory", "./chroma_db"),
+            persist_directory=self._resolve_path(
+                os.getenv("CHROMA_PERSIST_DIRECTORY") or yaml_config.get("vector_db", {}).get("persist_directory", "./chroma_db")
+            ),
             collection_name=os.getenv("CHROMA_COLLECTION_NAME") or yaml_config.get("vector_db", {}).get("collection_name", "research_papers"),
             embedding_model=os.getenv("EMBEDDING_MODEL") or yaml_config.get("vector_db", {}).get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2"),
             distance_metric=yaml_config.get("vector_db", {}).get("distance_metric", "cosine"),
@@ -194,12 +218,20 @@ class ConfigLoader:
             port=int(os.getenv("API_PORT", yaml_config.get("api", {}).get("port", 8000))),
             workers=int(os.getenv("API_WORKERS", yaml_config.get("api", {}).get("workers", 4))),
             reload=yaml_config.get("api", {}).get("reload", False),
+            cors_origins=yaml_config.get("api", {}).get("cors_origins", [
+                "http://localhost:5173",
+                "http://localhost:3000",
+            ]),
         )
         
         # Data Configuration
         data_config = DataConfig(
-            raw_path=os.getenv("DATA_RAW_PATH") or yaml_config.get("data", {}).get("raw_path", "./data/raw"),
-            processed_path=os.getenv("DATA_PROCESSED_PATH") or yaml_config.get("data", {}).get("processed_path", "./data/processed"),
+            raw_path=self._resolve_path(
+                os.getenv("DATA_RAW_PATH") or yaml_config.get("data", {}).get("raw_path", "./data/raw")
+            ),
+            processed_path=self._resolve_path(
+                os.getenv("DATA_PROCESSED_PATH") or yaml_config.get("data", {}).get("processed_path", "./data/processed")
+            ),
         )
         
         # Rule Engine Configuration

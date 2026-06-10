@@ -9,6 +9,7 @@ export const analysisService = {
     const response = await api.post('/api/upload-and-analyze', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress,
+      timeout: 300000, // 5 minutes — large PDFs + busy server
     })
     return response.data
   },
@@ -42,10 +43,11 @@ export const analysisService = {
   },
 
   // Chat with research assistant
-  async chat(message, useHistory = true) {
+  async chat(message, conversationId = null, useHistory = true) {
     const response = await api.post('/api/chat', {
       message,
       use_history: useHistory,
+      conversation_id: conversationId,
     })
     return response.data
   },

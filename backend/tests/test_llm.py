@@ -3,14 +3,14 @@ Test suite for LLM interface
 """
 
 import pytest
-from src.llm.glm_interface import GLMInterface, ModelConfig, PromptTemplate
+from app.services.llm_service import GLMInterface, ModelConfig, PromptTemplate
 
 
 @pytest.fixture
 def glm_interface():
-    """Create GLM interface for testing"""
+    """Create LLM interface for testing"""
     config = ModelConfig(
-        model_name="glm-4.6:cloud",
+        model_name="llama3.2:latest",
         base_url="http://localhost:11434",
         temperature=0.7
     )
@@ -19,8 +19,8 @@ def glm_interface():
 
 def test_model_config():
     """Test model configuration"""
-    config = ModelConfig()
-    assert config.model_name == "glm-4.6:cloud"
+    config = ModelConfig(model_name="llama3.2:latest")
+    assert config.model_name == "llama3.2:latest"
     assert config.temperature == 0.7
     assert config.max_tokens == 2048
 

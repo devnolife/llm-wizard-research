@@ -1,9 +1,9 @@
-# RAG-LLM Research Recommendation System Configuration
+# Wizard Research — Neuro-Symbolic Synthesis Gap Detection Configuration
 
 # LLM Configuration
 llm:
   provider: "ollama"
-  model_name: "gpt-oss:latest"  # 13GB model for better quality (was llama3.2:latest)
+  model_name: "llama3.2:latest"  # Default (3B). Eksperimen komparasi memakai gpt-oss:latest (13B) via --model
   base_url: "http://localhost:11434"
   temperature: 0.7
   max_tokens: 2048
@@ -32,7 +32,9 @@ retrieval:
   top_k: 5
   chunk_size: 512
   chunk_overlap: 50
-  min_relevance_score: 0.7
+  # Cosine similarity threshold for all-MiniLM-L6-v2 — scores rarely exceed
+  # 0.5 except near-duplicates; 0.15 filters noise while keeping recall
+  min_relevance_score: 0.15
   max_context_tokens: 2000
   rerank_enabled: true
   diversity_weight: 0.3
@@ -68,6 +70,7 @@ api:
   reload: false
   cors_enabled: true
   cors_origins:
+    - http://localhost:5173
     - http://localhost:3000
     - http://localhost:8000
   rate_limit_enabled: true

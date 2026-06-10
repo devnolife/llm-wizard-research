@@ -116,18 +116,27 @@ class RelationClassifier:
         llm_interface=None,
         similarity_threshold: float = 0.3,
         causal_confidence_threshold: float = 0.5,
+        nli_model=None,
     ):
         """
         Args:
             llm_interface: GLMInterface for evidence extraction
             similarity_threshold: Minimum semantic similarity for Layer 1
             causal_confidence_threshold: Minimum confidence for causal classification
+            nli_model: Optional dedicated NLIModel (validation.nli_model) —
+                provides an independent discriminative signal in Layer 2,
+                decoupling contradiction detection from the generative LLM
         """
         self.llm = llm_interface
         self.similarity_threshold = similarity_threshold
         self.causal_confidence_threshold = causal_confidence_threshold
+        self.nli_model = nli_model
         
-        logger.info("RelationClassifier initialized (3-layer pipeline)")
+        logger.info(
+            "RelationClassifier initialized (3-layer pipeline"
+            + (", dedicated NLI enabled" if nli_model else "")
+            + ")"
+        )
 
     def classify(
         self,
@@ -172,10 +181,32 @@ class RelationClassifier:
             entity_a, entity_b, text_context
         )
         
+        # Layer 2b (optional): dedicated NLI model — independent signal that
+        # can PROMOTE a co-occurrence to contradiction or corroborate one
+        nli_note = ""
+        if self.nli_model is not None:
+            nli_result = self.nli_model.check_contradiction(entity_a, entity_b)
+            if nli_result is not None:
+                if nli_result["is_contradiction"] and relation_type != RelationType.CONTRADICTION:
+                    relation_type = RelationType.CONTRADICTION
+                    markers = markers + ["nli_model"]
+                    nli_note = (
+                        f" NLI model detected contradiction "
+                        f"(p={nli_result['confidence']:.2f})."
+                    )
+                elif nli_result["is_contradiction"]:
+                    markers = markers + ["nli_model"]
+                    nli_note = (
+                        f" Corroborated by NLI model "
+                        f"(p={nli_result['confidence']:.2f})."
+                    )
+        
         # Layer 3: Rule-Based Validation
         validated, explanation = self._validate_with_rules(
             entity_a, entity_b, relation_type, kg_facts or []
         )
+        if nli_note:
+            explanation += nli_note
         
         # Calculate final confidence
         confidence = self._calculate_confidence(

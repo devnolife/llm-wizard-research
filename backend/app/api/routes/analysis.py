@@ -79,8 +79,12 @@ Indonesian translation:"""
 
 
 @router.post("/recommend")
-async def recommend(request: RecommendationRequest):
-    """Get research recommendations via the agentic pipeline"""
+def recommend(request: RecommendationRequest):
+    """Get research recommendations via the agentic pipeline.
+
+    Sync endpoint (runs in threadpool) — the LLM call blocks for tens of
+    seconds and must not run on the event loop.
+    """
     try:
         coordinator = get_coordinator()
         
@@ -129,8 +133,8 @@ async def recommend(request: RecommendationRequest):
 
 
 @router.post("/gaps")
-async def detect_gaps(request: GapDetectionRequest):
-    """Detect synthesis gaps using the 3-indicator model"""
+def detect_gaps(request: GapDetectionRequest):
+    """Detect synthesis gaps using the 3-indicator model (sync → threadpool)"""
     try:
         gap_analyzer = get_gap_analyzer()
         retriever = get_retriever()
@@ -228,19 +232,35 @@ async def detect_gaps(request: GapDetectionRequest):
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest):
-    """Chat with the research assistant"""
+def chat(request: ChatRequest):
+    """Chat with the research assistant (sync → threadpool)"""
     try:
         glm = get_glm_interface()
+        
+        conversation_id = getattr(request, "conversation_id", None) or str(uuid.uuid4())
         
         response = glm.chat(
             message=request.message,
             use_history=request.use_history
         )
         
+        # Attempt to find relevant sources
+        sources = []
+        try:
+            retriever = get_retriever()
+            results = retriever.retrieve(query=request.message, top_k=3)
+            sources = [
+                r.document.metadata.get("title", r.document.metadata.get("source", ""))
+                for r in results if r.document.metadata
+            ]
+        except Exception:
+            pass
+        
         return {
             "message": request.message,
-            "response": response
+            "response": response,
+            "conversation_id": conversation_id,
+            "sources": sources,
         }
     except Exception as e:
         logger.error(f"Chat failed: {e}")
@@ -336,21 +356,50 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
     # Translate if requested and job is completed
     if lang == "id" and job["status"] == "completed" and "results" in job:
         if "results_id" not in job:
-            # Translate results to Indonesian
             glm = get_glm_interface()
             results = job["results"]
             
+            # Translate structured fields
+            translated_gaps = []
+            for g in results.get("gaps", []):
+                if isinstance(g, dict):
+                    tg = dict(g)
+                    tg["title"] = translate_to_indonesian(glm, g.get("title", ""))
+                    tg["description"] = translate_to_indonesian(glm, g.get("description", ""))
+                    translated_gaps.append(tg)
+                else:
+                    translated_gaps.append(g)
+
+            translated_recs = []
+            for r in results.get("recommendations", []):
+                if isinstance(r, dict):
+                    tr = dict(r)
+                    for key in ("title", "description", "why", "how"):
+                        if tr.get(key):
+                            tr[key] = translate_to_indonesian(glm, tr[key])
+                    translated_recs.append(tr)
+                else:
+                    translated_recs.append(r)
+
+            translated_roadmap = []
+            for phase in results.get("roadmap", []):
+                if isinstance(phase, dict):
+                    tp = dict(phase)
+                    tp["phase"] = translate_to_indonesian(glm, phase.get("phase", ""))
+                    tp["items"] = translate_to_indonesian(glm, phase.get("items", []))
+                    translated_roadmap.append(tp)
+                else:
+                    translated_roadmap.append(phase)
+
             job["results_id"] = {
+                **results,
                 "topics": translate_to_indonesian(glm, results.get("topics", [])),
                 "summary": translate_to_indonesian(glm, results.get("summary", "")),
-                "gaps": translate_to_indonesian(glm, results.get("gaps", [])),
-                "recommendations": translate_to_indonesian(glm, results.get("recommendations", "")),
-                "roadmap": translate_to_indonesian(glm, results.get("roadmap", "")),
-                "total_chunks": results.get("total_chunks"),
-                "files_processed": results.get("files_processed")
+                "gaps": translated_gaps,
+                "recommendations": translated_recs,
+                "roadmap": translated_roadmap,
             }
         
-        # Return translated version
         return {
             **job,
             "results": job["results_id"]
@@ -359,8 +408,180 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
     return job
 
 
-async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
-    """Background task to process PDFs and run full neuro-symbolic analysis."""
+# ── Helper parsers for LLM fallback output ──────────────────────────────────
+
+def _parse_gap_json(raw: str) -> list:
+    """Parse LLM JSON output for gaps. Falls back to text parsing."""
+    import json as _json
+    import re as _re
+    text = raw.strip()
+    # Try to extract JSON array from markdown code blocks
+    match = _re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, _re.DOTALL)
+    if match:
+        text = match.group(1)
+    elif not text.startswith('['):
+        # Try to find a JSON array anywhere in the text
+        match = _re.search(r'(\[.*\])', text, _re.DOTALL)
+        if match:
+            text = match.group(1)
+    try:
+        items = _json.loads(text)
+        if isinstance(items, list):
+            result = []
+            for item in items:
+                if isinstance(item, dict):
+                    result.append({
+                        "title": item.get("title", item.get("gap", "Untitled")),
+                        "description": item.get("description", ""),
+                        "type": item.get("type", "general"),
+                        "confidence": item.get("confidence", 0.5),
+                        "evidence": item.get("evidence", []),
+                        "suggested_directions": item.get("suggested_directions", []),
+                    })
+            return result
+    except (_json.JSONDecodeError, ValueError):
+        pass
+    # Fallback: parse numbered list text
+    return _parse_gap_text(text)
+
+
+def _parse_gap_text(text: str) -> list:
+    """Parse plain text gaps (numbered list) into structured dicts."""
+    import re as _re
+    gaps = []
+    # Split by numbered items like "1." or "- "
+    items = _re.split(r'\n\s*(?:\d+[\.\)]\s*|-\s+)', text)
+    for item in items:
+        item = item.strip()
+        if not item or len(item) < 10:
+            continue
+        title = item.split('\n')[0].strip().rstrip(':')
+        desc = '\n'.join(item.split('\n')[1:]).strip() or title
+        gaps.append({
+            "title": title[:200],
+            "description": desc,
+            "type": "general",
+            "confidence": 0.5,
+            "evidence": [],
+            "suggested_directions": [],
+        })
+    return gaps
+
+
+def _parse_recommendations_json(raw: str) -> list:
+    """Parse LLM JSON output for recommendations."""
+    import json as _json
+    import re as _re
+    text = raw.strip()
+    match = _re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, _re.DOTALL)
+    if match:
+        text = match.group(1)
+    elif not text.startswith('['):
+        match = _re.search(r'(\[.*\])', text, _re.DOTALL)
+        if match:
+            text = match.group(1)
+    try:
+        items = _json.loads(text)
+        if isinstance(items, list):
+            result = []
+            for item in items:
+                if isinstance(item, dict):
+                    result.append({
+                        "title": item.get("title", "Untitled"),
+                        "description": item.get("description", ""),
+                        "why": item.get("why", ""),
+                        "how": item.get("how", ""),
+                        "priority": item.get("priority", "medium"),
+                    })
+            return result
+    except (_json.JSONDecodeError, ValueError):
+        pass
+    return _parse_recommendations_text(text)
+
+
+def _parse_recommendations_text(text: str) -> list:
+    """Parse plain text recommendations into structured dicts."""
+    import re as _re
+    recs = []
+    items = _re.split(r'\n\s*(?:\d+[\.\)]\s*|-\s+)', text)
+    for item in items:
+        item = item.strip()
+        if not item or len(item) < 10:
+            continue
+        title = item.split('\n')[0].strip().rstrip(':')
+        desc = '\n'.join(item.split('\n')[1:]).strip() or title
+        recs.append({
+            "title": title[:200],
+            "description": desc,
+            "why": "",
+            "how": "",
+            "priority": "medium",
+        })
+    return recs
+
+
+def _parse_roadmap_json(raw: str) -> list:
+    """Parse LLM JSON output for roadmap phases."""
+    import json as _json
+    import re as _re
+    text = raw.strip()
+    match = _re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, _re.DOTALL)
+    if match:
+        text = match.group(1)
+    elif not text.startswith('['):
+        match = _re.search(r'(\[.*\])', text, _re.DOTALL)
+        if match:
+            text = match.group(1)
+    try:
+        items = _json.loads(text)
+        if isinstance(items, list):
+            result = []
+            for item in items:
+                if isinstance(item, dict):
+                    result.append({
+                        "phase": item.get("phase", f"Phase {len(result)+1}"),
+                        "items": item.get("items", item.get("tasks", [])),
+                    })
+            return result
+    except (_json.JSONDecodeError, ValueError):
+        pass
+    # Fallback: parse text roadmap
+    return _parse_roadmap_text(text)
+
+
+def _parse_roadmap_text(text: str) -> list:
+    """Parse plain text roadmap into structured phases."""
+    import re as _re
+    phases = []
+    # Split by phase headers like "Phase 1:" or "### Phase 1"
+    parts = _re.split(r'\n\s*(?:#{1,3}\s*)?(?:Phase|Fase|Tahap)\s*\d+[:\s]', text, flags=_re.IGNORECASE)
+    for i, part in enumerate(parts):
+        part = part.strip()
+        if not part:
+            continue
+        items = []
+        for line in part.split('\n'):
+            line = line.strip().lstrip('-•* ').strip()
+            if line and len(line) > 3:
+                items.append(line)
+        if items:
+            phases.append({
+                "phase": f"Phase {len(phases)+1}",
+                "items": items,
+            })
+    if not phases and text.strip():
+        phases.append({"phase": "Phase 1", "items": [text.strip()]})
+    return phases
+
+
+def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
+    """Background task to process PDFs and run full neuro-symbolic analysis.
+
+    NOTE: deliberately a SYNC function — FastAPI runs sync background tasks
+    in the threadpool, keeping the event loop free. Declaring it `async def`
+    (without awaits) would run the whole multi-minute LLM pipeline ON the
+    event loop and block every other request (upload timeouts).
+    """
     try:
         _analysis_jobs[job_id]["progress"] = 5
         _analysis_jobs[job_id]["message"] = "Processing PDFs..."
@@ -369,8 +590,9 @@ async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
         document_processor = DocumentProcessor()
         glm = get_glm_interface()
 
-        # ── Step 0: Clear stale data so results reflect uploaded papers only ──
-        vector_store.clear_collection()
+        # ── Step 0: Clear fact table and KG for fresh analysis ──
+        # NOTE: We keep existing vector store documents and only add new ones.
+        # Fact table and KG are per-analysis artifacts so they are cleared.
         try:
             ft = get_fact_table()
             if ft:
@@ -416,12 +638,12 @@ async def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
         uploaded_sources = [p["source"] for p in paper_contents]
         sample_text = " ".join([p["content"] for p in paper_contents])
 
-        topic_prompt = f"""Analyze this research content and extract 5 main research topics.
-Return ONLY a numbered list, one topic per line.
+        topic_prompt = f"""Analisis konten penelitian berikut dan ekstrak 5 topik utama penelitian.
+Kembalikan HANYA dalam bentuk daftar bernomor, satu topik per baris. Gunakan Bahasa Indonesia.
 
-Content: {sample_text[:3000]}
+Konten: {sample_text[:3000]}
 
-Topics:"""
+Topik:"""
 
         topics_text = glm.generate(topic_prompt, max_tokens=200)
         topics = [
@@ -490,12 +712,13 @@ Topics:"""
                 [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
             )
 
-            summary_prompt = f"""Provide a comprehensive research summary for: {topics[0]}
+            summary_prompt = f"""Berikan ringkasan penelitian yang komprehensif untuk topik: {topics[0]}
+Gunakan Bahasa Indonesia.
 
-Context from papers:
+Konteks dari paper:
 {context[:3000]}
 
-Summary:"""
+Ringkasan:"""
             summary = glm.generate(summary_prompt, max_tokens=500)
         else:
             summary = "No topics extracted."
@@ -506,20 +729,25 @@ Summary:"""
 
         gaps = []
         if gap_indicators:
+            # Coordinator returned structured gap indicators — normalise to dicts
             for gi in gap_indicators:
-                gap_type = gi.get("type", gi.get("indicator_type", "UNKNOWN"))
-                title = gi.get("title", "")
-                desc = gi.get("description", "")
-                verdict = gi.get("rule_engine_verdict", "N/A")
-                confidence = gi.get("confidence", 0.0)
-                gaps.append(
-                    f"TITLE: {title}\n"
-                    f"DESCRIPTION: {desc}\n"
-                    f"TYPE: {gap_type}\n"
-                    f"CONFIDENCE: {confidence:.2f}\n"
-                    f"RULE_VERDICT: {verdict}"
-                )
+                gaps.append({
+                    "title": gi.get("title", ""),
+                    "description": gi.get("description", ""),
+                    "type": gi.get("type", gi.get("indicator_type", "FRAGMENTATION")),
+                    "confidence": gi.get("confidence", 0.0),
+                    "rule_engine_verdict": gi.get("rule_engine_verdict", None),
+                    "evidence": gi.get("evidence", []),
+                    "suggested_directions": gi.get("suggested_directions", []),
+                })
         else:
+            # LLM fallback — generate structured gaps then validate via Rule Engine
+            rule_engine = None
+            try:
+                rule_engine = get_rule_engine()
+            except Exception:
+                pass
+
             for topic in topics[:3]:
                 source_filter = {"source": {"$in": uploaded_sources}} if len(uploaded_sources) > 1 else {"source": uploaded_sources[0]}
                 search_results = vector_store.search(topic, top_k=10, filter_metadata=source_filter)
@@ -529,82 +757,123 @@ Summary:"""
                     [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
                 )
 
-                gap_prompt = f"""Based on the research papers below, identify ONE specific synthesis research gap for the topic: {topic}
+                gap_prompt = f"""Berdasarkan paper penelitian di bawah ini, identifikasi SATU gap sintesis penelitian spesifik untuk topik: {topic}
 
-A synthesis gap is a research opportunity that emerges from comparing multiple papers.
+Gap sintesis adalah peluang penelitian yang muncul dari membandingkan beberapa paper. Gunakan Bahasa Indonesia.
 
-Context from papers:
+Konteks dari paper:
 {context[:2000]}
 
-Provide the gap in this format:
-TITLE: [Short gap title]
-DESCRIPTION: [2-3 sentences describing the gap]
-TYPE: [FRAGMENTATION / INCONSISTENCY / INCOMPLETENESS]
+Kembalikan gap dalam format JSON TEPAT ini (tanpa teks tambahan):
+{{"title": "Judul gap singkat", "description": "2-3 kalimat menjelaskan gap", "type": "FRAGMENTATION atau INCONSISTENCY atau INCOMPLETENESS"}}
 
-Research Gap:"""
-                gap = glm.generate(gap_prompt, max_tokens=300)
-                gaps.append(gap.strip())
+JSON:"""
+                raw = glm.generate(gap_prompt, max_tokens=300).strip()
+
+                # Parse LLM output into structured dict
+                gap_dict = _parse_gap_json(raw)
+
+                # Apply Rule Engine validation to LLM-generated gap
+                verdict = None
+                if rule_engine and gap_dict:
+                    try:
+                        claim = {
+                            "claim": gap_dict.get("description", ""),
+                            "indicator_type": gap_dict.get("type", "FRAGMENTATION"),
+                        }
+                        validation = rule_engine.validate(claim, {"topic": topic})
+                        verdict = getattr(validation, "overall_verdict", None)
+                        if isinstance(verdict, str):
+                            pass
+                        elif hasattr(verdict, "value"):
+                            verdict = verdict.value
+                        else:
+                            verdict = str(verdict) if verdict else None
+
+                        # Track in report
+                        if verdict == "PASS":
+                            rule_engine_report["passed"] = rule_engine_report.get("passed", 0) + 1
+                        elif verdict == "FLAG":
+                            rule_engine_report["flagged"] = rule_engine_report.get("flagged", 0) + 1
+                        elif verdict == "REJECT":
+                            rule_engine_report["rejected"] = rule_engine_report.get("rejected", 0) + 1
+                        rule_engine_report["total"] = rule_engine_report.get("total", 0) + 1
+                    except Exception as re_err:
+                        logger.warning(f"Rule Engine validation failed for LLM gap: {re_err}")
+
+                gap_dict["rule_engine_verdict"] = verdict
+                gap_dict["confidence"] = gap_dict.get("confidence", 0.5)
+                gap_dict["evidence"] = gap_dict.get("evidence", [])
+                gap_dict["suggested_directions"] = gap_dict.get("suggested_directions", [])
+
+                # Skip REJECT gaps
+                if verdict != "REJECT":
+                    gaps.append(gap_dict)
 
         # ── Step 6: Recommendations (coordinator result or LLM fallback) ──
         _analysis_jobs[job_id]["progress"] = 85
         _analysis_jobs[job_id]["message"] = "Generating recommendations..."
 
+        recommendations = []
         if coordinator_result and coordinator_result.get("recommendations"):
             raw_recs = coordinator_result["recommendations"]
             if isinstance(raw_recs, list):
-                rec_parts = []
                 for i, r in enumerate(raw_recs):
                     if isinstance(r, dict):
-                        part = f"{i+1}. {r.get('title', '')}"
-                        if r.get("reason"):
-                            part += f"\n   WHY: {r['reason']}"
-                        if r.get("methodology"):
-                            part += f"\n   HOW: {r['methodology']}"
-                        rec_parts.append(part)
+                        recommendations.append({
+                            "title": r.get("title", f"Recommendation {i+1}"),
+                            "description": r.get("description", r.get("reason", "")),
+                            "why": r.get("reason", r.get("why", "")),
+                            "how": r.get("methodology", r.get("how", "")),
+                            "priority": "high" if i < 2 else "medium" if i < 4 else "low",
+                        })
                     else:
-                        rec_parts.append(f"{i+1}. {r}")
-                recommendations = "\n\n".join(rec_parts)
-            else:
-                recommendations = str(raw_recs)
+                        recommendations.append({
+                            "title": str(r)[:80],
+                            "description": str(r),
+                            "why": "",
+                            "how": "",
+                            "priority": "high" if i < 2 else "medium" if i < 4 else "low",
+                        })
+            elif isinstance(raw_recs, str):
+                recommendations = _parse_recommendations_text(raw_recs)
         else:
-            gaps_context = "\n".join([f"Gap {i+1}: {g}" for i, g in enumerate(gaps)])
-            rec_prompt = f"""You are a research advisor. Based on these research topics and identified gaps, provide 5 actionable research recommendations.
+            gaps_context = "\n".join([
+                f"Gap {i+1}: [{g.get('type','UNKNOWN')}] {g.get('title','')} — {g.get('description','')}"
+                for i, g in enumerate(gaps)
+            ])
+            rec_prompt = f"""Anda adalah penasihat penelitian. Berdasarkan topik penelitian dan gap yang teridentifikasi berikut, berikan 5 rekomendasi penelitian yang dapat ditindaklanjuti. Gunakan Bahasa Indonesia.
 
-Topics: {', '.join(topics[:3])}
+Topik: {', '.join(topics[:3])}
 
-Identified Gaps:
+Gap yang Teridentifikasi:
 {gaps_context}
 
-For EACH recommendation, use this format:
-1. [TITLE]: [What to research]
-   WHY: [Why this is important]
-   HOW: [Suggested methodology]
+Kembalikan sebagai JSON array (tanpa teks tambahan):
+[{{"title": "Judul rekomendasi", "description": "Apa yang perlu diteliti", "why": "Mengapa ini penting", "how": "Metodologi yang disarankan"}}]
 
-Research Recommendations:"""
-            recommendations = glm.generate(rec_prompt, max_tokens=600)
+JSON:"""
+            raw = glm.generate(rec_prompt, max_tokens=600).strip()
+            recommendations = _parse_recommendations_json(raw)
 
         # ── Step 7: Roadmap (always via LLM) ────────────────────
         _analysis_jobs[job_id]["progress"] = 95
         _analysis_jobs[job_id]["message"] = "Creating roadmap..."
 
         roadmap_topic = topics[0] if topics else "research"
-        roadmap_prompt = f"""Create a structured research roadmap for: {roadmap_topic}
+        roadmap_prompt = f"""Buat peta jalan penelitian terstruktur untuk: {roadmap_topic}
+Gunakan Bahasa Indonesia.
 
-Organize into three phases:
+Kembalikan sebagai JSON array fase (tanpa teks tambahan):
+[
+  {{"phase": "Jangka Pendek (1-3 bulan)", "items": ["tugas 1", "tugas 2"]}},
+  {{"phase": "Jangka Menengah (3-6 bulan)", "items": ["tugas 1", "tugas 2"]}},
+  {{"phase": "Jangka Panjang (6-12 bulan)", "items": ["tugas 1", "tugas 2"]}}
+]
 
-SHORT-TERM (1-3 months):
-- Literature review and baseline setup tasks
-
-MEDIUM-TERM (3-6 months):
-- Core research and experimentation tasks
-
-LONG-TERM (6-12 months):
-- Validation, publication, and extension tasks
-
-For each phase, list 2-3 specific actionable goals.
-
-Research Roadmap:"""
-        roadmap = glm.generate(roadmap_prompt, max_tokens=500)
+JSON:"""
+        raw_roadmap = glm.generate(roadmap_prompt, max_tokens=500).strip()
+        roadmap = _parse_roadmap_json(raw_roadmap)
 
         # ── Assemble final results ──────────────────────────────
         if not fact_table_stats:
@@ -619,7 +888,7 @@ Research Roadmap:"""
         eval_metrics = {}
         try:
             n_gaps = len(gaps)
-            n_recs = len(recommendations) if isinstance(recommendations, list) else len([l for l in (recommendations or '').split('\n') if l.strip()]) if recommendations else 0
+            n_recs = len(recommendations)
             n_topics = len(topics)
             n_facts = fact_table_stats.get("total_facts", 0) if fact_table_stats else 0
             n_entities = fact_table_stats.get("total_entities", 0) if fact_table_stats else 0
@@ -688,8 +957,12 @@ Research Roadmap:"""
 # ───────────────────────────────────────────
 
 @router.get("/kg/graph")
-async def get_kg_graph():
-    """Return KG nodes and edges for visualization."""
+async def get_kg_graph(job_id: str = None):
+    """Return KG nodes and edges for visualization.
+    
+    If job_id is provided, returns KG data from that analysis job's context.
+    Otherwise returns current global KG state.
+    """
     kg = get_knowledge_graph()
     data = kg.export_to_dict()
     return {
@@ -731,7 +1004,7 @@ async def stream_analysis(job_id: str):
                 }
                 if status == "completed":
                     payload["type"] = "complete"
-                    payload["result"] = job.get("result")
+                    payload["results"] = job.get("results")
                 elif status == "failed":
                     payload["type"] = "error"
                     payload["error"] = job.get("error", "")

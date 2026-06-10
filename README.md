@@ -29,7 +29,7 @@ Phase 4: VALIDATION          Rule Engine (9 rules) → PASS / FLAG / REJECT
 | **Knowledge Graph** | SPO Fact Base with 8 entity types and 12 predicates for deductive reasoning | `backend/app/core/knowledge/` |
 | **3-Layer Discriminator** | Semantic Filtering → Evidence Extraction → Rule-Based Validation | `backend/app/core/validation/relation_classifier.py` |
 | **Agent Coordinator** | LangGraph-based multi-step reasoning with tool selection | `backend/app/core/agents/coordinator.py` |
-| **RAG Pipeline** | SciBERT embeddings + ChromaDB vector retrieval | `backend/app/core/retrieval/` |
+| **RAG Pipeline** | Sentence-Transformers (all-MiniLM-L6-v2) embeddings + ChromaDB vector retrieval | `backend/app/core/retrieval/` |
 
 ---
 
@@ -148,6 +148,65 @@ make test-integration  # Integration tests only
 
 ---
 
+## Experiments (Thesis Evaluation)
+
+Reproducible experiment pipeline with ablation modes for hypothesis testing:
+
+```bash
+cd backend
+
+# 1. Download the benchmark dataset (23 papers, 4 topics, from arXiv)
+python experiments/download_papers.py
+
+# 2. Full neuro-symbolic pipeline (+ adversarial rule engine validation)
+python experiments/run_experiment.py --mode full --fresh-db
+
+# 3. Ablation H7 — without the Rule Engine validation layer
+python experiments/run_experiment.py --mode no-rule-engine --skip-ingest
+
+# 4. Ablation H6 — linear RAG+LLM baseline (single prompt, no agentic loop)
+python experiments/run_experiment.py --mode linear-baseline --skip-ingest
+
+# 5. Model comparison (e.g., 3B vs 13B)
+python experiments/run_experiment.py --mode full --model gpt-oss:latest --skip-ingest
+
+# 6. Multi-run statistics — mean ± std + Mann-Whitney U for H6/H7
+python experiments/run_multi.py --model llama3.2:latest --runs 3
+
+# 7. Negative control — topic absent from the corpus (sanity check)
+python experiments/run_experiment.py --mode full --skip-ingest \
+    --topics NONE --custom-topic "TC:quantum biology in marine ecosystems" \
+    --output experiment_negative_control.json
+
+# 8. SPO extraction precision — sample 50 facts for manual annotation
+python experiments/annotate_facts.py sample \
+    --results experiments/results/experiment_full_llama3.2_latest.json --n 50
+# ... annotate the XLSX, then:
+python experiments/annotate_facts.py score \
+    --sheet experiments/results/fact_annotation.xlsx
+```
+
+Optional: add `--nli` to any run to enable the dedicated cross-encoder NLI
+model (independent contradiction signal, decoupled from the generative LLM).
+
+Results are written to `backend/experiments/results/experiment_<mode>_<model>.json`.
+
+### Expert Evaluation (EAR, LCS, AS, FDR, SHG, REP)
+
+```bash
+# Generate the XLSX assessment form from experiment results
+python experiments/expert_eval/generate_form.py \
+    --results experiments/results/experiment_full_llama3.2_latest.json
+
+# After the expert fills the form, compute metrics + hypothesis tests (H4, H5)
+python experiments/expert_eval/compute_metrics.py \
+    --forms experiments/expert_eval/expert_form_filled.xlsx
+```
+
+See [backend/experiments/expert_eval/README.md](backend/experiments/expert_eval/README.md) for details.
+
+---
+
 ## Docker
 
 ```bash
@@ -175,9 +234,10 @@ CROSSREF_EMAIL=your_email
 
 | Layer | Technology |
 |-------|------------|
-| **Backend** | Python, FastAPI, LangGraph, ChromaDB, SciSpaCy |
+| **Backend** | Python, FastAPI, LangGraph, ChromaDB |
 | **Frontend** | React 19, Vite 5, TailwindCSS 3.4 (shadcn/ui style) |
-| **LLM** | Ollama (llama3.2 / configurable) |
+| **LLM** | Ollama (llama3.2 default; gpt-oss for model comparison) |
+| **Embeddings** | Sentence-Transformers (all-MiniLM-L6-v2) |
 | **Vector DB** | ChromaDB |
 | **APIs** | arXiv, Semantic Scholar, CORE, PubMed, CrossRef |
 
