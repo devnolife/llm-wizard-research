@@ -545,14 +545,27 @@ class FactExtractor:
         """
         attempt_prompt = prompt
         for attempt in range(max_retries + 1):
+            # Some models (e.g. reasoning models like gpt-oss) return an empty
+            # response when Ollama's structured output (format="json") is
+            # enforced. Use JSON mode on the first attempt only and fall back
+            # to an unconstrained call on retry.
+            use_json_format = attempt == 0
             try:
-                response = self.llm.generate(
-                    attempt_prompt,
-                    system_prompt=system_prompt,
-                    temperature=0.1,
-                    max_tokens=2048,
-                    format="json",
-                )
+                if use_json_format:
+                    response = self.llm.generate(
+                        attempt_prompt,
+                        system_prompt=system_prompt,
+                        temperature=0.1,
+                        max_tokens=2048,
+                        format="json",
+                    )
+                else:
+                    response = self.llm.generate(
+                        attempt_prompt,
+                        system_prompt=system_prompt,
+                        temperature=0.1,
+                        max_tokens=2048,
+                    )
             except TypeError:
                 # LLM interface without `format` kwarg (e.g., custom mocks)
                 response = self.llm.generate(
@@ -569,7 +582,7 @@ class FactExtractor:
             if attempt < max_retries:
                 logger.warning(
                     f"JSON parse failed (attempt {attempt + 1}/{max_retries + 1}), "
-                    "retrying with stricter prompt"
+                    "retrying without JSON mode and stricter prompt"
                 )
                 attempt_prompt = prompt + RETRY_SUFFIX
         

@@ -104,13 +104,13 @@ const parseRoadmap = (text) => {
 }
 
 const TABS = [
-  { id: 'overview', label: 'Ringkasan', icon: BarChart3 },
-  { id: 'topics', label: 'Topik & Analisis', icon: Tag },
-  { id: 'gaps', label: 'Gap Penelitian', icon: Search },
-  { id: 'recommendations', label: 'Rekomendasi', icon: Lightbulb },
-  { id: 'roadmap', label: 'Peta Jalan', icon: Map },
-  { id: 'knowledge-graph', label: 'Graf Pengetahuan', icon: Share2 },
-  { id: 'pipeline', label: 'Pipeline', icon: Zap },
+  { id: 'overview', label: 'Ringkasan', icon: BarChart3, desc: 'Gambaran umum hasil analisis: jumlah topik, gap, dan rekomendasi yang ditemukan dari paper Anda. Mulai dari sini.' },
+  { id: 'topics', label: 'Topik & Analisis', icon: Tag, desc: 'Topik-topik utama yang dibahas dalam paper Anda, hasil ekstraksi otomatis oleh AI dari isi dokumen.' },
+  { id: 'gaps', label: 'Gap Penelitian', icon: Search, desc: 'Celah penelitian yang belum terisi — bagian yang belum diteliti, temuan yang saling bertentangan, atau topik yang terpecah-pecah. Ini bisa jadi ide penelitian Anda berikutnya.' },
+  { id: 'recommendations', label: 'Rekomendasi', icon: Lightbulb, desc: 'Saran arah penelitian yang bisa Anda ambil berdasarkan gap yang ditemukan, lengkap dengan alasan (WHY) dan cara memulainya (HOW).' },
+  { id: 'roadmap', label: 'Peta Jalan', icon: Map, desc: 'Rencana penelitian bertahap: apa yang bisa dikerjakan dalam jangka pendek, menengah, dan panjang.' },
+  { id: 'knowledge-graph', label: 'Graf Pengetahuan', icon: Share2, desc: 'Peta visual hubungan antar konsep (metode, domain, temuan) yang diekstrak dari paper. Titik = konsep, garis = hubungan antar konsep.' },
+  { id: 'pipeline', label: 'Pipeline', icon: Zap, desc: 'Detail teknis proses analisis di belakang layar: berapa fakta yang diekstrak, hasil validasi aturan, dan skor kepercayaan. Untuk verifikasi kualitas hasil.' },
 ]
 
 const GAP_TYPES = ['FRAGMENTATION', 'INCONSISTENCY', 'INCOMPLETENESS']
@@ -1408,7 +1408,7 @@ const AnalysisResults = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="border-b mb-6">
+      <div className="border-b mb-4">
         <div className="flex gap-1 -mb-px overflow-x-auto">
           {TABS.map(tab => {
             const isActive = activeTab === tab.id
@@ -1416,6 +1416,7 @@ const AnalysisResults = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
+                title={tab.desc}
                 className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   isActive ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
                 }`}
@@ -1427,6 +1428,17 @@ const AnalysisResults = () => {
           })}
         </div>
       </div>
+
+      {/* Tab Description Banner */}
+      {(() => {
+        const tab = TABS.find(t => t.id === activeTab)
+        return tab?.desc ? (
+          <div className="flex items-start gap-2.5 mb-6 px-4 py-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
+            <tab.icon className="w-4 h-4 mt-0.5 text-blue-500 flex-shrink-0" />
+            <p className="text-sm text-muted-foreground">{tab.desc}</p>
+          </div>
+        ) : null
+      })()}
 
       <ActiveTabComponent />
     </div>

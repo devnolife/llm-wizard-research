@@ -127,123 +127,174 @@ sekadar meloloskan semua input.
 
 ## 4.3 Hasil Eksperimen
 
+Hasil yang dilaporkan pada bagian ini berasal dari eksperimen konfigurasi penuh
+(*full mode*) dengan model `llama3.2` (3B) terhadap korpus benchmark 23 paper,
+kecuali dinyatakan lain. Hasil ablasi dan komparasi model dibahas pada §4.3.6.
+
 ### 4.3.1 Hasil Ingestion dan Preprocessing (Fase 1)
 
-Seluruh 5 paper berhasil diproses dan diindeks ke dalam ChromaDB:
+Seluruh 23 paper benchmark berhasil diproses dan diindeks ke dalam ChromaDB:
 
-| Paper | Chunks | Karakter | Waktu (s) |
-|-------|--------|----------|-----------|
-| Attention Is All You Need | 86 | 39.597 | ~2.0 |
-| BERT | 139 | 64.067 | ~3.5 |
-| Generative Adversarial Nets | 63 | 28.903 | ~1.5 |
-| Deep Residual Learning | 129 | 59.288 | ~3.0 |
-| YOLO | 92 | 42.208 | ~2.5 |
-| **Total** | **509** | **234.063** | **~12.5** |
+| Metrik | Nilai |
+|--------|-------|
+| Paper diproses | 23 (4 topik: T1–T4) |
+| Total chunks terindeks | 3.146 |
+| Rata-rata chunks per paper | ~137 |
+| Model embedding | all-MiniLM-L6-v2 (384 dimensi) |
 
-Rata-rata ukuran chunk: ~460 karakter dengan overlap 50 karakter, sesuai konfigurasi `chunk_size=512`.
+Konfigurasi chunking menggunakan `chunk_size=512` dengan overlap 50 karakter.
+Basis data vektor eksperimen (`chroma_db_experiment/`) diisolasi dari basis
+data demo agar hasil tidak terkontaminasi dokumen lain.
 
-### 4.3.2 Hasil Deteksi Gap (Fase 3)
+### 4.3.2 Hasil Ekstraksi Fakta (Fase 2)
 
-Sistem berhasil mengidentifikasi **9 indikator gap** dari 3 topik query:
+| Metrik | Nilai |
+|--------|-------|
+| Total fakta SPO terekstrak | 248 |
+| Paper menghasilkan ≥1 fakta | 22 dari 23 (95,7%) |
+| Rata-rata fakta per paper | 10,8 |
+| Rentang fakta per paper | 0 – 30 |
+| Waktu total ekstraksi | 1.735 detik (~28,9 menit) |
+
+Ekstraksi fakta menggabungkan tiga metode: (a) ekstraksi LLM dengan
+*structured output* JSON, (b) *pattern matching* penanda linguistik
+(`outperforms`, `is based on`, dst.), dan (c) ko-okurensi entitas. Satu paper
+menghasilkan 0 fakta karena konten terdominasi notasi matematis yang tidak
+mengandung pola relasi SPO yang dikenali.
+
+### 4.3.3 Hasil Deteksi Gap (Fase 3)
+
+Sistem mengidentifikasi **14 indikator gap** dari 4 topik query:
 
 #### Tabel 4.1: Ringkasan Indikator Gap per Topik
 
-| Topik | Total Indikator | Fragmentasi | Inkonsistensi | Ketidaklengkapan | Waktu (s) |
-|-------|----------------|-------------|---------------|------------------|-----------|
-| T1: Deep Learning Architectures | 3 | 1 | 1 | 1 | 6.48 |
-| T2: Computer Vision | 3 | 1 | 0 | 2 | 5.92 |
-| T3: NLP & Attention | 3 | 1 | 0 | 2 | 5.31 |
-| **Total** | **9** | **3** | **1** | **5** | **17.71** |
+| Topik | Total Indikator | Fragmentasi | Inkonsistensi | Ketidaklengkapan | Avg. Confidence | Waktu (s) |
+|-------|----------------|-------------|---------------|------------------|-----------------|-----------|
+| T1: Deep Learning Architectures | 3 | 1 | 1 | 1 | 0,717 | 4,62 |
+| T2: Computer Vision | 4 | 1 | 1 | 2 | 0,688 | 6,62 |
+| T3: NLP & Attention | 4 | 1 | 1 | 2 | 0,688 | 4,63 |
+| T4: Efficient/Edge Deep Learning | 3 | 1 | 1 | 1 | 0,717 | 6,32 |
+| **Total** | **14** | **4** | **4** | **6** | **0,700** | **22,19** |
+
+Setiap topik menggunakan 10 chunk paling relevan hasil retrieval semantik.
 
 #### Distribusi Tipe Indikator
 
 ```
-Ketidaklengkapan (INCOMPLETENESS): 55.6% (5/9)
-Fragmentasi (FRAGMENTATION):      33.3% (3/9)
-Inkonsistensi (INCONSISTENCY):     11.1% (1/9)
+Ketidaklengkapan (INCOMPLETENESS): 42,9% (6/14)
+Fragmentasi (FRAGMENTATION):       28,6% (4/14)
+Inkonsistensi (INCONSISTENCY):     28,6% (4/14)
 ```
 
-Dominasi indikator ketidaklengkapan konsisten dengan definisi Cooper (1998) bahwa *synthesis gap* seringkali muncul karena aspek-aspek kritis yang belum diteliti secara kolektif oleh komunitas riset.
+Dominasi indikator ketidaklengkapan konsisten dengan definisi Cooper (1998)
+bahwa *synthesis gap* sering muncul karena aspek-aspek kritis yang belum
+diteliti secara kolektif oleh komunitas riset.
 
-#### Tabel 4.2: Detail Indikator Gap — Topik T1 (Deep Learning Architectures)
+### 4.3.4 Analisis Skor Kepercayaan dan Validasi Rule Engine (Fase 4)
 
-| # | Tipe | Deskripsi | Confidence | Verdict |
-|---|------|-----------|------------|---------|
-| 1 | FRAGMENTATION | Literatur terfragmentasi ke dalam 9 kluster pendekatan berbeda tanpa kerangka integratif | 0.850 | PASS |
-| 2 | INCOMPLETENESS | 10 aspek kritis tidak tercakup oleh seluruh paper yang dianalisis | 0.800 | PASS |
-| 3 | INCONSISTENCY | Kontradiksi terdeteksi oleh LLM yang memerlukan verifikasi manual | 0.500 | PASS |
+| Statistik Confidence | Nilai |
+|----------------------|-------|
+| Rata-rata keseluruhan | 0,700 |
+| Skor tertinggi | 0,850 |
+| Skor terendah | 0,500 |
 
-**Arah riset yang disarankan** (T1):
-- Mengembangkan kerangka integratif yang menyatukan 9 pendekatan
-- Investigasi: pilihan desain arsitektur (*layer types, activation functions, normalization*)
-- Investigasi: algoritma optimasi (*SGD, Adam, RMSprop*)
-- Investigasi: metode *hyperparameter tuning*
+Distribusi per tipe: indikator FRAGMENTATION konsisten pada 0,850 (diukur
+kuantitatif via clustering topik), INCOMPLETENESS pada 0,600–0,800, dan
+INCONSISTENCY pada 0,500 (terendah, karena bergantung pada deteksi kontradiksi
+LLM yang tidak melakukan penalaran logis sejati [Marcus, 2020]). Seluruh
+indikator INCONSISTENCY diberi label `requires_human_validation = True`.
 
-#### Tabel 4.3: Detail Indikator Gap — Topik T2 (Computer Vision)
-
-| # | Tipe | Deskripsi | Confidence | Verdict |
-|---|------|-----------|------------|---------|
-| 1 | FRAGMENTATION | Literatur terfragmentasi ke dalam 10 kluster pendekatan berbeda | 0.850 | PASS |
-| 2 | INCOMPLETENESS | 10 aspek kritis tidak tercakup (object detection, image recognition, deep architectures) | 0.800 | PASS |
-| 3 | INCOMPLETENESS | Ketidaklengkapan metodologis: seluruh 10 paper menggunakan metodologi serupa | 0.600 | PASS |
-
-#### Tabel 4.4: Detail Indikator Gap — Topik T3 (NLP & Attention)
-
-| # | Tipe | Deskripsi | Confidence | Verdict |
-|---|------|-----------|------------|---------|
-| 1 | FRAGMENTATION | Literatur terfragmentasi ke dalam 10 kluster pendekatan berbeda | 0.850 | PASS |
-| 2 | INCOMPLETENESS | 9 aspek kritis tidak tercakup (evolusi attention, tipe attention, aplikasi) | 0.800 | PASS |
-| 3 | INCOMPLETENESS | Ketidaklengkapan metodologis: pendekatan alternatif tidak ditemukan | 0.600 | PASS |
-
-### 4.3.3 Analisis Skor Kepercayaan (Confidence)
-
-| Statistik | Nilai |
-|-----------|-------|
-| Rata-rata keseluruhan | 0.739 |
-| Skor tertinggi | 0.850 |
-| Skor terendah | 0.500 |
-| Standar deviasi | ~0.126 |
-
-Distribusi confidence per tipe indikator:
-
-| Tipe Indikator | Rata-rata Confidence | Range |
-|----------------|---------------------|-------|
-| FRAGMENTATION | 0.850 | 0.850 (konsisten) |
-| INCOMPLETENESS | 0.720 | 0.600 - 0.800 |
-| INCONSISTENCY | 0.500 | 0.500 (satu data) |
-
-**Interpretasi**: Indikator fragmentasi memiliki confidence tertinggi (0.850) karena diukur secara kuantitatif melalui clustering topik. Indikator inkonsistensi memiliki confidence terendah (0.500) karena sangat bergantung pada kemampuan LLM mendeteksi kontradiksi — sesuai dengan prinsip epistemologis bahwa LLM tidak melakukan penalaran logis sejati [Marcus, 2020].
-
-### 4.3.4 Hasil Validasi Rule Engine (Fase 4)
+Hasil validasi Rule Engine terhadap 14 indikator:
 
 | Metrik | Nilai |
 |--------|-------|
-| Total indikator dievaluasi | 9 |
-| PASS | 9 (100%) |
+| Total indikator dievaluasi | 14 |
+| PASS | 14 (100%) |
 | FLAG | 0 (0%) |
 | REJECT | 0 (0%) |
+| RERR (Rule Engine Rejection Rate) | 0,0% |
+| Waktu validasi | <0,01 detik |
 
-Seluruh 9 indikator melewati validasi Rule Engine dengan verdict PASS. Ini menunjukkan:
+Tingkat PASS 100% pada korpus benchmark **bukan** indikasi lapisan validasi
+tidak bekerja, melainkan konsekuensi karakteristik input: indikator yang
+dihasilkan dari paper berkualitas tinggi memang tidak melanggar aturan
+kelayakan/kausalitas/konsistensi. Untuk membuktikan kemampuan diskriminatif
+Rule Engine, dilakukan validasi adversarial (§4.3.5).
 
-1. **Aturan Kelayakan (F1-F3)**: Seluruh indikator memiliki bukti yang cukup, skor kepercayaan di atas threshold minimum, dan relevansi topik yang memadai.
+### 4.3.5 Hasil Validasi Adversarial
 
-2. **Aturan Kausalitas (C1-C3)**: Tidak ada indikator yang mengklaim hubungan kausal tanpa bukti memadai. Sistem berhasil membatasi klaim pada level "indikator" bukan "kesimpulan".
+Enam klaim adversarial yang dirancang melanggar aturan spesifik disuntikkan ke
+FactTable terisolasi. Rule Engine diharapkan menolak/menandai klaim bermasalah
+dan meloloskan klaim kontrol:
 
-3. **Aturan Konsistensi (K1-K3)**: Tidak ada kontradiksi internal antar indikator yang terdeteksi.
+#### Tabel 4.2: Hasil Validasi Adversarial (6 Kasus)
 
-**Catatan**: Tingkat PASS 100% pada dataset benchmark ini perlu divalidasi dengan dataset lebih besar dan beragam. Pada eksperimen skala penuh, diharapkan akan muncul FLAG dan REJECT yang menunjukkan efektivitas lapisan validasi.
+| Kasus | Aturan Diuji | Verdict Diharapkan | Verdict Aktual | Cocok | Confidence (sebelum → sesudah) |
+|-------|--------------|--------------------|----------------|-------|-------------------------------|
+| ADV-F1 | F1 (Resource Compatibility) | REJECT | REJECT | ✓ | 0,90 → 0,30 |
+| ADV-F2 | F2 (Data Compatibility) | FLAG | FLAG | ✓ | 0,80 → 0,50 |
+| ADV-F3 | F3 (Scale Compatibility) | REJECT | REJECT | ✓ | 0,85 → 0,25 |
+| ADV-K1 | K1 (Internal Contradiction) | FLAG | FLAG | ✓ | 0,75 → 0,55 |
+| ADV-C1 | C1 (Causal Evidence) | FLAG | FLAG | ✓ | 0,80 → 0,65 |
+| ADV-PASS | Kontrol (tanpa pelanggaran) | PASS | PASS | ✓ | 0,70 → 0,70 |
 
-### 4.3.5 Performa Waktu Eksekusi
+**Akurasi adversarial: 6/6 (100%)**. Rule Engine secara tepat: (1) menolak
+klaim yang tidak layak secara sumber daya dan skala, (2) menandai klaim dengan
+data tidak kompatibel, kontradiksi internal, dan klaim kausal tanpa bukti,
+serta (3) meloloskan klaim kontrol yang valid — membuktikan verdict PASS pada
+§4.3.4 bukan karena Rule Engine meloloskan semua input.
+
+Hasil ini menjawab kekhawatiran kalibrasi: penurunan confidence terbesar
+terjadi pada pelanggaran kelayakan keras (F1: −0,60; F3: −0,60), sedangkan
+pelanggaran yang memerlukan tinjauan manusia diturunkan moderat (C1: −0,15;
+K1: −0,20).
+
+### 4.3.6 Hasil Ablasi dan Komparasi
+
+#### Mode Linear Baseline (RAG+LLM tanpa komponen symbolic)
+
+| Metrik | Full Mode | Linear Baseline |
+|--------|-----------|-----------------|
+| Fakta SPO terekstrak | 248 | 0 (tidak ada FactTable) |
+| Indikator gap | 14 | 20 |
+| Validasi Rule Engine | 100% tervalidasi | Tidak ada |
+| Reasoning trace | Ada (per indikator) | Tidak ada |
+| Waktu pipeline | 1.757 s | 46 s |
+
+Baseline linear menghasilkan *lebih banyak* indikator (20 vs 14) namun
+**tanpa validasi apa pun**: tidak ada fakta terstruktur, tidak ada verdict,
+dan tidak ada jejak penalaran. Pola output baseline juga seragam antar topik
+(5 indikator dengan distribusi identik untuk semua topik), mengindikasikan
+output templat LLM alih-alih analisis spesifik-topik. Ini mendukung H6:
+komponen symbolic menambah akuntabilitas — *bukan* sekadar jumlah output.
+
+#### Komparasi Model (Sensitivitas Kapasitas Model)
+
+Komparasi `llama3.2` (3B) dengan `gpt-oss` (13B, model *reasoning*)
+mengungkap temuan teknis penting: model reasoning gagal menghasilkan output
+ketika *structured output* JSON mode Ollama dipaksakan (respons kosong),
+sehingga ekstraksi fakta turun drastis. Setelah mekanisme *fallback* (JSON
+mode hanya pada percobaan pertama, percobaan ulang tanpa format constraint)
+diterapkan, eksperimen diulang. Temuan ini menunjukkan pipeline ekstraksi
+fakta sensitif terhadap perilaku decoding model — relevan sebagai catatan
+implementasi untuk reproduksibilitas.
+
+### 4.3.7 Performa Waktu Eksekusi
 
 | Fase | Waktu (s) | Persentase |
 |------|-----------|------------|
-| Ingestion & Preprocessing | 12.5 | 18.2% |
-| Fact Extraction | 38.35 | 55.9% |
-| Gap Detection (3 topik) | 17.71 | 25.8% |
-| Rule Engine Analysis | <0.01 | <0.1% |
-| **Total Pipeline** | **68.56** | **100%** |
+| Ingestion & Preprocessing | (pra-komputasi, ~3 menit) | — |
+| Fact Extraction (23 paper) | 1.735,1 | 98,7% |
+| Gap Detection (4 topik) | 22,2 | 1,3% |
+| Rule Engine + Adversarial | <0,1 | <0,1% |
+| **Total Pipeline** | **1.757,2** | **100%** |
 
-Fase Fact Extraction mendominasi waktu eksekusi (55.9%) karena setiap paper memerlukan inferensi LLM individual untuk mengekstrak entitas dan relasi. Ini konsisten dengan temuan bahwa komponen neural (LLM) merupakan *bottleneck* utama, sementara komponen symbolic (Rule Engine) beroperasi hampir instan (<0.01 detik).
+Fase Fact Extraction mendominasi waktu eksekusi (98,7%) karena setiap paper
+memerlukan beberapa inferensi LLM (ekstraksi entitas + relasi, dengan retry).
+Ini konsisten dengan temuan bahwa komponen neural (LLM) merupakan *bottleneck*
+utama, sementara komponen symbolic (Rule Engine) beroperasi hampir instan
+(<0,1 detik untuk 14 indikator + 6 kasus adversarial) — penambahan lapisan
+validasi logis praktis tanpa *overhead*.
 
 ---
 
@@ -261,13 +312,15 @@ Relation Classifier dengan mekanisme 3 lapis (penanda linguistik, analisis struk
 
 **RQ3: Bagaimana mengevaluasi kualitas indikator gap?**
 
-Framework evaluasi 6 metrik (M1-M6) berhasil diterapkan. Hasil menunjukkan:
-- M1 (Jumlah indikator): 3 per topik (konsisten)
-- M2 (Distribusi): didominasi INCOMPLETENESS (55.6%)
-- M3 (Confidence): rata-rata 0.739 (di atas threshold 0.5)
-- M4 (Rule Engine): 100% PASS
-- M5 (Waktu): 68.56 detik total
+Framework evaluasi 8 metrik (M1-M8) berhasil diterapkan. Hasil menunjukkan:
+- M1 (Jumlah indikator): 14 dari 4 topik (3–4 per topik)
+- M2 (Distribusi): INCOMPLETENESS 42,9%, FRAGMENTATION 28,6%, INCONSISTENCY 28,6%
+- M3 (Confidence): rata-rata 0,700 (di atas threshold 0,5)
+- M4 (Rule Engine): 100% PASS pada data bersih; RERR 0,0%
+- M5 (Waktu): 1.757 detik total (didominasi ekstraksi fakta 98,7%)
 - M6 (Validasi manual): 100% indikator membutuhkan validasi manusia
+- M7 (RERR baseline): baseline linear tidak memiliki mekanisme penolakan sama sekali
+- M8 (Akurasi adversarial): 6/6 (100%) — Rule Engine terbukti diskriminatif
 
 ### 4.4.2 Keunggulan Pendekatan Neuro-Symbolic
 

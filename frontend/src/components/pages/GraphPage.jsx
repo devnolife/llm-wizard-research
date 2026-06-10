@@ -169,6 +169,11 @@ const GraphPage = () => {
           <p className="text-muted-foreground mt-1">
             Peta jaringan entitas SPO ala VOSviewer — warna = cluster, ukuran = jumlah koneksi
           </p>
+          <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
+            <strong>Cara membaca:</strong> Setiap titik adalah konsep (metode, model, atau temuan) yang diekstrak dari paper.
+            Garis menghubungkan konsep yang saling berkaitan. Titik besar = konsep yang sering muncul.
+            Warna sama = kelompok topik yang sama. <strong>Klik titik</strong> untuk fokus ke konsep dan tetangganya.
+          </p>
         </div>
         {stats && (
           <div className="flex gap-3 text-sm">

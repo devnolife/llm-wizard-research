@@ -93,6 +93,26 @@ const UploadPage = () => {
         </p>
       </div>
 
+      {/* How it works */}
+      <div className="rounded-lg border bg-card p-5 mb-8">
+        <p className="text-sm font-semibold mb-3">Cara kerja — 3 langkah:</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            { step: '1', title: 'Unggah Paper', desc: 'Pilih satu atau beberapa file PDF paper penelitian, lalu klik Analisis.' },
+            { step: '2', title: 'AI Menganalisis', desc: 'Sistem membaca isi paper, mengekstrak topik & fakta, lalu mencari celah penelitian (~2-5 menit).' },
+            { step: '3', title: 'Lihat Hasil', desc: 'Hasil tampil per tab: Ringkasan → Gap Penelitian → Rekomendasi. Gap = ide penelitian baru untuk Anda.' },
+          ].map(({ step, title, desc }) => (
+            <div key={step} className="flex gap-3">
+              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold flex-shrink-0">{step}</div>
+              <div>
+                <p className="text-sm font-medium">{title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {[

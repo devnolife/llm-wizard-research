@@ -8,7 +8,7 @@ Berdasarkan hasil perancangan, implementasi, dan pengujian awal sistem Wizard Re
 
 **RQ1: Bagaimana merancang arsitektur Neuro-Symbolic Agentic yang mampu mengidentifikasi *synthesis gap* pada literatur ilmiah?**
 
-Arsitektur empat fase (Ingestion → Fact Extraction → Agentic Analysis → Logical Checker) berhasil dirancang dan diimplementasikan. Arsitektur ini mengintegrasikan komponen neural (LLM berbasis Ollama untuk ekstraksi dan deteksi) dengan komponen symbolic (Rule Engine dengan 9 aturan validasi dan Fact Table berbasis SPO). Orkestrator LangGraph dengan pola *Observe-Think-Act-Evaluate* menyediakan mekanisme agentic yang memungkinkan penalaran multi-langkah. Pengujian pada 5 paper benchmark menghasilkan 9 indikator gap yang valid dari 3 topik query, dengan rata-rata skor kepercayaan 0.739.
+Arsitektur empat fase (Ingestion → Fact Extraction → Agentic Analysis → Logical Checker) berhasil dirancang dan diimplementasikan. Arsitektur ini mengintegrasikan komponen neural (LLM berbasis Ollama untuk ekstraksi dan deteksi) dengan komponen symbolic (Rule Engine dengan 9 aturan validasi dan Fact Table berbasis SPO). Orkestrator LangGraph dengan pola *Observe-Think-Act-Evaluate* menyediakan mekanisme agentic yang memungkinkan penalaran multi-langkah. Pengujian pada 23 paper benchmark (4 topik) menghasilkan 248 fakta SPO dan 14 indikator gap yang valid, dengan rata-rata skor kepercayaan 0,700.
 
 **RQ2: Bagaimana membedakan asosiasi semantik (*semantic co-occurrence*) dari hubungan logis (*causal/contradictory*) dalam konteks deteksi gap?**
 
@@ -16,7 +16,7 @@ Relation Classifier dengan mekanisme 3 lapis berhasil diimplementasikan: (1) pen
 
 **RQ3: Bagaimana mengevaluasi kualitas indikator gap yang dihasilkan oleh sistem?**
 
-Framework evaluasi dengan 6 metrik kuantitatif berhasil diterapkan. Rule Engine dengan 3 kategori aturan (Kelayakan, Kausalitas, Konsistensi) menyediakan validasi otomatis berlapis. Pada pengujian awal, seluruh 9 indikator melewati validasi Rule Engine (100% PASS), menunjukkan konsistensi internal output. Evaluasi pakar (*Expert Acceptance Rate*) direncanakan pada fase evaluasi penuh untuk mengukur akurasi aktual.
+Framework evaluasi dengan 8 metrik kuantitatif (M1–M8) berhasil diterapkan. Rule Engine dengan 3 kategori aturan (Kelayakan, Kausalitas, Konsistensi) menyediakan validasi otomatis berlapis. Pada korpus benchmark, seluruh 14 indikator melewati validasi Rule Engine (100% PASS), sementara validasi adversarial membuktikan kemampuan diskriminatif lapisan simbolis: 6 dari 6 klaim adversarial diberi verdict sesuai harapan (akurasi 100%), termasuk penolakan klaim yang tidak layak dan pelolosan klaim kontrol. Evaluasi pakar (*Expert Acceptance Rate*) direncanakan pada fase evaluasi penuh untuk mengukur akurasi aktual.
 
 ### 5.1.2 Kontribusi Utama
 
