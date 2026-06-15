@@ -355,6 +355,18 @@ class VectorStore:
         """Get total number of documents in collection"""
         return self.collection.count()
     
+    def count_by_source(self, source: str) -> int:
+        """
+        Count how many chunks are already stored for a given source filename.
+        Used to detect duplicate uploads (paper already indexed).
+        """
+        try:
+            results = self.collection.get(where={"source": source}, include=[])
+            return len(results.get("ids", []))
+        except Exception as e:
+            logger.error(f"Failed to count by source '{source}': {e}")
+            return 0
+    
     def get_all_documents(
         self,
         limit: Optional[int] = None,

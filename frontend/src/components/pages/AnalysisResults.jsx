@@ -9,6 +9,7 @@ import {
 import { useToast } from '../../contexts/ToastContext'
 import { analysisService } from '../../services/analysisService'
 import Term from '../common/Term'
+import Markdown from '../common/Markdown'
 
 // Parse numbered text block into structured items
 const parseNumberedList = (text) => {
@@ -105,6 +106,7 @@ const parseRoadmap = (text) => {
 }
 
 const TABS = [
+  { id: 'proposal', label: 'Usulan', icon: Target, desc: 'Usulan penelitian baru hasil sintesis dari jurnal Anda: gap yang ditemukan, judul penelitian yang diusulkan, dan alur penelitiannya — dirangkai jadi satu.' },
   { id: 'overview', label: 'Ringkasan', icon: BarChart3, desc: 'Gambaran umum hasil analisis: jumlah topik, gap, dan rekomendasi yang ditemukan dari paper Anda. Mulai dari sini.' },
   { id: 'topics', label: 'Topik & Analisis', icon: Tag, desc: 'Topik-topik utama yang dibahas dalam paper Anda, hasil ekstraksi otomatis oleh AI dari isi dokumen.' },
   { id: 'gaps', label: 'Gap Penelitian', icon: Search, desc: 'Celah penelitian yang belum terisi — bagian yang belum diteliti, temuan yang saling bertentangan, atau topik yang terpecah-pecah. Ini bisa jadi ide penelitian Anda berikutnya.' },
@@ -154,7 +156,7 @@ const AnalysisResults = () => {
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [language, setLanguage] = useState('id')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState('proposal')
   const [deepAnalysis, setDeepAnalysis] = useState(null)
   const [deepLoading, setDeepLoading] = useState(false)
   const [expandedRecs, setExpandedRecs] = useState({})
@@ -167,7 +169,7 @@ const AnalysisResults = () => {
     // Try SSE first, fall back to polling
     const trySSE = () => {
       try {
-        const es = new EventSource(`${API_BASE}/api/analysis/stream/${jobId}`)
+        const es = new EventSource(`${API_BASE}/api/stream/${jobId}`)
         es.onmessage = (event) => {
           if (cancelled) { es.close(); return }
           try {
@@ -313,6 +315,28 @@ const AnalysisResults = () => {
     }
     return base
   }, [data])
+
+  // Sintesis "Usulan Penelitian Baru": gabungkan jurnal → gap utama → usulan utama → alur
+  const proposal = useMemo(() => {
+    if (!data) return null
+    const papers = data.papers || []
+    const papersInfo = data.papers_info || papers.map(t => ({ title: t, already_indexed: false }))
+    const duplicateCount = data.duplicate_papers ?? papersInfo.filter(p => p.already_indexed).length
+    // Gap utama: confidence tertinggi, fallback ke yang pertama
+    const primaryGap = [...parsedGaps].sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0] || null
+    // Usulan utama: prioritas 'high' lebih dulu, fallback ke yang pertama
+    const primaryRec = parsedRecommendations.find(r => r.priority === 'high') || parsedRecommendations[0] || null
+    if (!primaryGap && !primaryRec) return null
+    // Kelompokkan jurnal berdasarkan basis (metode/pendekatan inti)
+    const groups = {}
+    for (const g of (data.paper_groups || [])) {
+      const basis = (g.basis || 'Lainnya').trim()
+      if (!groups[basis]) groups[basis] = []
+      groups[basis].push(g.title)
+    }
+    const paperGroups = Object.entries(groups).map(([basis, titles]) => ({ basis, titles }))
+    return { papersInfo, duplicateCount, paperGroups, intro: data.proposal_intro || '', primaryGap, primaryRec, flow: parsedRoadmap }
+  }, [data, parsedGaps, parsedRecommendations, parsedRoadmap])
 
   // Jika pindah ke mode Sederhana saat berada di tab khusus-Lanjutan, kembali ke Ringkasan
   useEffect(() => {
@@ -469,8 +493,8 @@ const AnalysisResults = () => {
                         )}
                         {gi.rule_engine_verdict && (
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${gi.rule_engine_verdict === 'PASS' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
-                              gi.rule_engine_verdict === 'FLAG' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                                'bg-red-500/10 text-red-600 dark:text-red-400'
+                            gi.rule_engine_verdict === 'FLAG' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
+                              'bg-red-500/10 text-red-600 dark:text-red-400'
                             }`}>
                             <Shield className="w-3 h-3 inline mr-1" />{verdictLabel(gi.rule_engine_verdict)}
                           </span>
@@ -479,7 +503,7 @@ const AnalysisResults = () => {
                     </div>
 
                     {gi.title && <h5 className="font-medium text-sm mb-2">{gi.title}</h5>}
-                    <p className="text-sm text-muted-foreground leading-relaxed">{gi.description}</p>
+                    <Markdown content={gi.description} />
 
                     {/* Confidence Bar */}
                     {gi.confidence > 0 && (
@@ -556,6 +580,213 @@ const AnalysisResults = () => {
 
   // ── Tab Content Components ─────────────────────────────
 
+  const ProposalTab = () => {
+    if (!proposal) {
+      return (
+        <div className="text-center py-12 text-muted-foreground">
+          <Target className="w-10 h-10 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">Belum ada usulan penelitian. Jalankan analisis terlebih dahulu.</p>
+        </div>
+      )
+    }
+    const { papersInfo, duplicateCount, paperGroups, intro, primaryGap, primaryRec, flow } = proposal
+    const gapType = primaryGap?.type || GAP_TYPES[0]
+    const gapColors = GAP_COLORS[gapType] || GAP_COLORS.FRAGMENTATION
+    const recPrio = PRIORITY_COLORS[primaryRec?.priority] || PRIORITY_COLORS.high
+    const phaseIcons = { zap: Zap, trending: TrendingUp, target: Target, clock: Clock }
+
+    return (
+      <div className="space-y-6">
+        {/* Hero: AI intro + sumber jurnal */}
+        <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Target className="w-5 h-5 text-primary" />
+            <h3 className="text-lg font-semibold">Usulan Penelitian Baru</h3>
+          </div>
+          {intro && <p className="text-sm leading-relaxed mb-4">{intro}</p>}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1.5">
+              Disintesis dari {papersInfo.length || data?.files_processed || 0} jurnal:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {papersInfo.length > 0 ? papersInfo.map((p, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-card border text-xs">
+                  <FileText className="w-3 h-3 text-primary flex-shrink-0" />
+                  <span className="max-w-[260px] truncate" title={p.title}>{p.title}</span>
+                  {p.already_indexed && (
+                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-medium" title="Paper ini sudah ada di database, tidak diindeks ulang">
+                      <Database className="w-2.5 h-2.5" /> Sudah ada
+                    </span>
+                  )}
+                </span>
+              )) : (
+                <span className="text-xs text-muted-foreground">{data?.files_processed || 0} dokumen diproses</span>
+              )}
+            </div>
+            {duplicateCount > 0 && (
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                <Database className="w-3 h-3 flex-shrink-0" />
+                {duplicateCount} dari {papersInfo.length} jurnal sudah ada di database — dipakai ulang tanpa pengindeksan ganda.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Pengelompokan jurnal berdasarkan basis */}
+        {paperGroups.length > 0 && (
+          <div className="rounded-lg border bg-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Tag className="w-5 h-5 text-purple-500" />
+              <h4 className="font-semibold text-sm">Pengelompokan Jurnal</h4>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Jurnal yang Anda unggah dikelompokkan berdasarkan basisnya (metode/pendekatan inti).
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {paperGroups.map((g, i) => (
+                <div key={i} className="rounded-lg border bg-secondary/30 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                      {g.basis}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">{g.titles.length} jurnal</span>
+                  </div>
+                  <ul className="space-y-1">
+                    {g.titles.map((t, j) => (
+                      <li key={j} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                        <FileText className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" />
+                        <span>{t}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Flow: Jurnal → Gap → Usulan → Alur */}
+        <div className="flex items-center justify-center gap-2 flex-wrap text-xs font-medium">
+          {[
+            { icon: FileText, label: `${papersInfo.length || data?.files_processed || 0} Jurnal`, color: 'text-blue-500 bg-blue-500/10' },
+            { icon: Search, label: 'Gap', color: 'text-amber-500 bg-amber-500/10' },
+            { icon: Lightbulb, label: 'Usulan', color: 'text-primary bg-primary/10' },
+            { icon: Map, label: 'Alur', color: 'text-emerald-500 bg-emerald-500/10' },
+          ].map((step, i, arr) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full ${step.color}`}>
+                <step.icon className="w-3.5 h-3.5" />{step.label}
+              </span>
+              {i < arr.length - 1 && <ArrowRight className="w-4 h-4 text-muted-foreground" />}
+            </div>
+          ))}
+        </div>
+
+        {/* ① Gap yang Ditemukan */}
+        {primaryGap && (
+          <div className={`rounded-lg border bg-card overflow-hidden border-l-4 ${gapColors.border}`}>
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+                <h4 className="font-semibold text-sm">Gap yang Ditemukan</h4>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${gapColors.bg} ${gapColors.text}`}>{gapColors.label}</span>
+                {primaryGap.confidence != null && primaryGap.confidence > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
+                    Keyakinan: {(primaryGap.confidence * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+              {primaryGap.title && <p className="font-medium text-sm mb-1">{primaryGap.title}</p>}
+              <Markdown content={primaryGap.description} className="text-foreground" />
+            </div>
+          </div>
+        )}
+
+        {/* ② Usulan Penelitian */}
+        {primaryRec && (
+          <div className={`rounded-lg border bg-card overflow-hidden border-l-4 ${primaryRec.priority === 'high' ? 'border-l-red-500' : primaryRec.priority === 'medium' ? 'border-l-amber-500' : 'border-l-green-500'
+            }`}>
+            <div className="p-5">
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+                <h4 className="font-semibold text-sm">Usulan Penelitian</h4>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${recPrio.bg} ${recPrio.text}`}>{recPrio.label}</span>
+              </div>
+              {primaryRec.title && <p className="font-semibold text-sm mb-1">{primaryRec.title}</p>}
+              <Markdown content={primaryRec.description} className="text-foreground" />
+              {(primaryRec.why || primaryRec.how) && (
+                <div className="mt-3 space-y-3 pt-3 border-t">
+                  {primaryRec.why && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
+                        <Target className="w-3 h-3" /> Mengapa Ini Penting
+                      </p>
+                      <Markdown content={primaryRec.why} className="text-muted-foreground pl-4" />
+                    </div>
+                  )}
+                  {primaryRec.how && (
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
+                        <Zap className="w-3 h-3" /> Pendekatan yang Disarankan
+                      </p>
+                      <Markdown content={primaryRec.how} className="text-muted-foreground pl-4" />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ③ Alur Penelitian */}
+        {flow.length > 0 && (
+          <div className="rounded-lg border bg-card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
+              <h4 className="font-semibold text-sm">Alur Penelitian</h4>
+            </div>
+            <div className="relative">
+              {flow.map((phase, phaseIdx) => {
+                const Icon = phaseIcons[phase.icon] || Clock
+                return (
+                  <div key={phaseIdx} className="relative flex gap-4 pb-6 last:pb-0">
+                    {phaseIdx < flow.length - 1 && (
+                      <div className="absolute left-4 top-9 bottom-0 w-0.5 bg-border" />
+                    )}
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Icon className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm mb-2">{phase.label}</p>
+                      <div className="space-y-1.5">
+                        {phase.items.map((item, idx) => (
+                          <div key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
+                            <ArrowRight className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                            <span>{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* CTA ke detail */}
+        <div className="flex items-center justify-center gap-4 text-xs">
+          <button onClick={() => setActiveTab('gaps')} className="text-primary hover:underline flex items-center gap-1">
+            Lihat semua gap <ArrowRight className="w-3 h-3" />
+          </button>
+          <button onClick={() => setActiveTab('recommendations')} className="text-primary hover:underline flex items-center gap-1">
+            Lihat semua rekomendasi <ArrowRight className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const OverviewTab = () => (
     <div className="space-y-6">
       {/* Summary Card */}
@@ -564,9 +795,9 @@ const AnalysisResults = () => {
           <BookOpen className="w-5 h-5 text-primary" />
           <h3 className="text-lg font-semibold">Ringkasan Penelitian</h3>
         </div>
-        <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
-          {data?.summary || 'Ringkasan tidak tersedia.'}
-        </p>
+        {data?.summary
+          ? <Markdown content={data.summary} />
+          : <p className="text-sm text-muted-foreground">Ringkasan tidak tersedia.</p>}
       </div>
 
       {/* Research Directions — prominent section linking gaps to recommendations */}
@@ -718,7 +949,7 @@ const AnalysisResults = () => {
             <BookOpen className="w-5 h-5 text-primary" />
             <h3 className="font-semibold">Ringkasan Analisis Komparatif</h3>
           </div>
-          <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">{data.summary}</p>
+          <Markdown content={data.summary} />
         </div>
       )}
     </div>
@@ -775,8 +1006,8 @@ const AnalysisResults = () => {
                     )}
                     {gap.rule_engine_verdict && (
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${gap.rule_engine_verdict === 'ACCEPT' ? 'bg-green-500/10 text-green-600' :
-                          gap.rule_engine_verdict === 'REVIEW' ? 'bg-amber-500/10 text-amber-600' :
-                            'bg-red-500/10 text-red-600'
+                        gap.rule_engine_verdict === 'REVIEW' ? 'bg-amber-500/10 text-amber-600' :
+                          'bg-red-500/10 text-red-600'
                         }`}>
                         {verdictLabel(gap.rule_engine_verdict)}
                       </span>
@@ -784,7 +1015,7 @@ const AnalysisResults = () => {
                   </div>
                 </div>
                 {gap.title && <h4 className="font-medium text-sm mb-2">{gap.title}</h4>}
-                <p className="text-sm text-foreground leading-relaxed">{gap.description}</p>
+                <Markdown content={gap.description} className="text-foreground" />
                 {gap.evidence?.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-border">
                     <p className="text-xs font-medium text-muted-foreground mb-1">Bukti:</p>
@@ -796,11 +1027,22 @@ const AnalysisResults = () => {
                 {gap.suggested_directions?.length > 0 && (
                   <div className="mt-2">
                     <p className="text-xs font-medium text-muted-foreground mb-1">Arah yang Disarankan:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {gap.suggested_directions.map((dir, i) => (
-                        <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">{dir}</span>
-                      ))}
-                    </div>
+                    {gap.suggested_directions.some(d => String(d).length > 40) ? (
+                      <ul className="space-y-1">
+                        {gap.suggested_directions.map((dir, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                            <Compass className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
+                            <span>{dir}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {gap.suggested_directions.map((dir, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">{dir}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -892,7 +1134,7 @@ const AnalysisResults = () => {
                       </span>
                       {rec.title && <span className="font-semibold text-sm">{rec.title}</span>}
                     </div>
-                    <p className="text-sm text-foreground leading-relaxed">{rec.description}</p>
+                    <Markdown content={rec.description} className="text-foreground" />
 
                     {/* Expandable details */}
                     {hasDetails && (
@@ -912,7 +1154,7 @@ const AnalysisResults = () => {
                                 <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
                                   <Target className="w-3 h-3" /> Mengapa Ini Penting
                                 </p>
-                                <p className="text-sm text-muted-foreground pl-4">{rec.why}</p>
+                                <Markdown content={rec.why} className="text-muted-foreground pl-4" />
                               </div>
                             )}
                             {rec.how && (
@@ -920,7 +1162,7 @@ const AnalysisResults = () => {
                                 <p className="text-xs font-semibold text-muted-foreground mb-1 flex items-center gap-1">
                                   <Zap className="w-3 h-3" /> Pendekatan yang Disarankan
                                 </p>
-                                <p className="text-sm text-muted-foreground pl-4">{rec.how}</p>
+                                <Markdown content={rec.how} className="text-muted-foreground pl-4" />
                               </div>
                             )}
                           </div>
@@ -1039,8 +1281,8 @@ const AnalysisResults = () => {
 
         {/* Execution Mode Banner */}
         <div className={`rounded-lg border p-4 flex items-center gap-3 ${mode === 'langgraph' ? 'border-green-500/30 bg-green-500/5' :
-            mode === 'sequential' ? 'border-amber-500/30 bg-amber-500/5' :
-              'border-border bg-card'
+          mode === 'sequential' ? 'border-amber-500/30 bg-amber-500/5' :
+            'border-border bg-card'
           }`}>
           <Zap className={`w-5 h-5 ${mode === 'langgraph' ? 'text-green-500' : mode === 'sequential' ? 'text-amber-500' : 'text-muted-foreground'
             }`} />
@@ -1248,7 +1490,7 @@ const AnalysisResults = () => {
 
     useEffect(() => {
       import('../../services/api').then(({ default: api }) => {
-        api.get('/api/analysis/kg/graph')
+        api.get('/api/kg/graph')
           .then(res => setKgData(res.data))
           .catch(() => setKgData({ nodes: [], edges: [], stats: { total_nodes: 0, total_edges: 0 } }))
           .finally(() => setKgLoading(false))
@@ -1360,7 +1602,7 @@ const AnalysisResults = () => {
     )
   }
 
-  const tabComponents = { overview: OverviewTab, topics: TopicsTab, gaps: GapsTab, recommendations: RecommendationsTab, roadmap: RoadmapTab, 'knowledge-graph': KnowledgeGraphTab, pipeline: PipelineTab }
+  const tabComponents = { proposal: ProposalTab, overview: OverviewTab, topics: TopicsTab, gaps: GapsTab, recommendations: RecommendationsTab, roadmap: RoadmapTab, 'knowledge-graph': KnowledgeGraphTab, pipeline: PipelineTab }
   const ActiveTabComponent = tabComponents[activeTab]
 
   // ── Main Render ────────────────────────────────────────
@@ -1378,8 +1620,8 @@ const AnalysisResults = () => {
               Insight penelitian berbasis AI dari paper yang Anda unggah
               {data?.execution_mode && (
                 <span className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${data.execution_mode === 'langgraph' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
-                    data.execution_mode === 'sequential' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                      'bg-secondary text-muted-foreground'
+                  data.execution_mode === 'sequential' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
+                    'bg-secondary text-muted-foreground'
                   }`}>
                   <Zap className="w-3 h-3" />{data.execution_mode}
                 </span>

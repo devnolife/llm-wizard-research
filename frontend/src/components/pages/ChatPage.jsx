@@ -5,6 +5,7 @@ import { analysisService } from '../../services/analysisService'
 import EmptyState from '../common/EmptyState'
 import PageHelp from '../common/PageHelp'
 import Term from '../common/Term'
+import Markdown from '../common/Markdown'
 
 const ChatPage = () => {
   const toast = useToast()
@@ -114,7 +115,9 @@ const ChatPage = () => {
                     ? 'bg-destructive/10 border border-destructive/30 text-destructive'
                     : 'bg-secondary text-foreground'
                   }`}>
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                  {msg.role === 'assistant' && !msg.isError
+                    ? <Markdown content={msg.content} className="text-current" />
+                    : <p className="whitespace-pre-wrap">{msg.content}</p>}
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-border/50">
                       <p className="text-xs font-medium opacity-70 mb-1">Sumber:</p>

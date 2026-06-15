@@ -520,6 +520,34 @@ def _parse_recommendations_text(text: str) -> list:
     return recs
 
 
+def _parse_paper_groups_json(raw: str) -> list:
+    """Parse LLM JSON output classifying each paper by its basis/approach."""
+    import json as _json
+    import re as _re
+    text = raw.strip()
+    match = _re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, _re.DOTALL)
+    if match:
+        text = match.group(1)
+    elif not text.startswith('['):
+        match = _re.search(r'(\[.*\])', text, _re.DOTALL)
+        if match:
+            text = match.group(1)
+    try:
+        items = _json.loads(text)
+        if isinstance(items, list):
+            result = []
+            for item in items:
+                if isinstance(item, dict):
+                    result.append({
+                        "title": item.get("title", item.get("paper", "")),
+                        "basis": item.get("basis", item.get("category", "Lainnya")),
+                    })
+            return result
+    except (_json.JSONDecodeError, ValueError):
+        pass
+    return []
+
+
 def _parse_roadmap_json(raw: str) -> list:
     """Parse LLM JSON output for roadmap phases."""
     import json as _json
@@ -609,25 +637,39 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
         # ── Step 1: Ingest PDFs into vector store ──────────────
         total_chunks = 0
         paper_contents = []
+        new_papers = 0
+        duplicate_papers = 0
         for i, pdf_path in enumerate(pdf_paths):
-            _analysis_jobs[job_id]["message"] = f"Processing {pdf_path.name}..."
+            # Temp files are named "{uuid}_{original}"; recover the original name
+            # so duplicate detection & metadata use the real filename, not the UUID.
+            source_name = pdf_path.name.split('_', 1)[-1]
+            _analysis_jobs[job_id]["message"] = f"Processing {source_name}..."
             _analysis_jobs[job_id]["progress"] = 5 + (i / len(pdf_paths)) * 15
 
             processed_doc = document_processor.process_pdf(str(pdf_path))
 
-            for chunk in processed_doc.chunks:
-                metadata = {
-                    "source": pdf_path.name,
-                    "title": processed_doc.title or pdf_path.name,
-                    "chunk_index": chunk.chunk_index,
-                }
-                vector_store.add_document(chunk.content, metadata)
-                total_chunks += 1
+            # Skip re-indexing if this file is already in the vector store
+            already_indexed = vector_store.count_by_source(source_name) > 0
+            if already_indexed:
+                duplicate_papers += 1
+                _analysis_jobs[job_id]["message"] = f"{source_name} sudah ada di database — melewati pengindeksan."
+                logger.info(f"Skipping ingestion for already-indexed paper: {source_name}")
+            else:
+                for chunk in processed_doc.chunks:
+                    metadata = {
+                        "source": source_name,
+                        "title": processed_doc.title or source_name,
+                        "chunk_index": chunk.chunk_index,
+                    }
+                    vector_store.add_document(chunk.content, metadata)
+                    total_chunks += 1
+                new_papers += 1
 
             paper_contents.append({
-                "source": pdf_path.name,
-                "title": processed_doc.title or pdf_path.name,
+                "source": source_name,
+                "title": processed_doc.title or source_name,
                 "content": " ".join(c.content for c in processed_doc.chunks[:10]),
+                "already_indexed": already_indexed,
             })
             pdf_path.unlink()
 
@@ -651,6 +693,27 @@ Topik:"""
             for line in topics_text.strip().split("\n")
             if line.strip() and line.strip()[0].isdigit()
         ]
+
+        # ── Step 2b: Classify each paper by its basis/approach ──
+        paper_groups = []
+        try:
+            paper_list = "\n".join(
+                f"- {p['title']}: {p['content'][:300]}" for p in paper_contents
+            )
+            group_prompt = (
+                "Klasifikasikan setiap jurnal berikut berdasarkan BASIS utamanya "
+                "(metode, algoritma, model, atau pendekatan inti yang digunakan). "
+                "Gunakan label basis yang singkat dan konsisten dalam Bahasa Indonesia "
+                "(mis. 'Algoritma Greedy', 'Deep Learning / CNN', 'Optimasi Metaheuristik'). "
+                "Jurnal dengan basis serupa harus memakai label yang sama persis.\n\n"
+                f"Daftar jurnal:\n{paper_list}\n\n"
+                "Kembalikan HANYA JSON array (tanpa teks lain): "
+                '[{"title": "judul jurnal", "basis": "label basis"}]'
+            )
+            raw_groups = glm.generate(group_prompt, max_tokens=400).strip()
+            paper_groups = _parse_paper_groups_json(raw_groups)
+        except Exception as group_err:
+            logger.warning(f"Paper grouping failed: {group_err}")
 
         # ── Step 3: Run Coordinator (full neuro-symbolic pipeline) ──
         _analysis_jobs[job_id]["progress"] = 30
@@ -875,6 +938,23 @@ JSON:"""
         raw_roadmap = glm.generate(roadmap_prompt, max_tokens=500).strip()
         roadmap = _parse_roadmap_json(raw_roadmap)
 
+        # ── Step 8: Proposal intro (1-sentence AI synthesis) ────
+        proposal_intro = ""
+        try:
+            if recommendations:
+                top_gap_desc = gaps[0].get("description", "") if gaps else ""
+                top_rec = recommendations[0]
+                rec_title = top_rec.get("title", "") if isinstance(top_rec, dict) else str(top_rec)
+                intro_prompt = (
+                    f"Tulis SATU kalimat ringkas (maksimal 40 kata) dalam Bahasa Indonesia yang "
+                    f"merangkum usulan penelitian baru hasil sintesis dari {len(paper_contents)} jurnal. "
+                    f"Gap utama: {top_gap_desc}. Usulan penelitian: {rec_title}. "
+                    f"Tulis sebagai kalimat pembuka yang mengalir, tanpa awalan 'Berikut' atau label."
+                )
+                proposal_intro = glm.generate(intro_prompt, max_tokens=120).strip()
+        except Exception as intro_err:
+            logger.warning(f"Proposal intro generation failed: {intro_err}")
+
         # ── Assemble final results ──────────────────────────────
         if not fact_table_stats:
             try:
@@ -934,6 +1014,15 @@ JSON:"""
                 "roadmap": roadmap,
                 "total_chunks": total_chunks,
                 "files_processed": len(pdf_paths),
+                "papers": [p["title"] for p in paper_contents],
+                "papers_info": [
+                    {"title": p["title"], "source": p["source"], "already_indexed": p["already_indexed"]}
+                    for p in paper_contents
+                ],
+                "new_papers": new_papers,
+                "duplicate_papers": duplicate_papers,
+                "paper_groups": paper_groups,
+                "proposal_intro": proposal_intro,
                 "execution_mode": execution_mode,
                 "gap_indicators": gap_indicators,
                 "rule_engine_report": rule_engine_report,

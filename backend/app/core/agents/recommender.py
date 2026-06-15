@@ -184,8 +184,10 @@ class RecommenderAgent:
         # Gap-based reasons
         if context and "gaps" in context:
             gaps = context["gaps"]
-            unexplored = gaps.get("unexplored_areas", [])
-            if unexplored:
+            if isinstance(gaps, dict):
+                if gaps.get("unexplored_areas"):
+                    reasons.append("Addresses identified research gaps")
+            elif isinstance(gaps, list) and gaps:
                 reasons.append("Addresses identified research gaps")
         
         return "; ".join(reasons) if reasons else "Relevant to your query"
