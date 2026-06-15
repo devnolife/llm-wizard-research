@@ -4,6 +4,7 @@ import { useToast } from '../../contexts/ToastContext'
 import { paperService } from '../../services/paperService'
 import Badge from '../common/Badge'
 import EmptyState from '../common/EmptyState'
+import PageHelp from '../common/PageHelp'
 
 const SOURCES = [
   { id: 'arxiv', label: 'arXiv' },
@@ -36,7 +37,7 @@ const SearchPage = () => {
     e.preventDefault()
     if (!query.trim()) return
     if (selectedSources.length === 0) {
-      toast.warning('Please select at least one source')
+      toast.warning('Pilih minimal satu sumber')
       return
     }
 
@@ -50,9 +51,9 @@ const SearchPage = () => {
         year_to: yearTo ? parseInt(yearTo) : undefined,
       })
       setResults(response.papers || response.results || [])
-      toast.success(`Found ${(response.papers || response.results || []).length} papers`)
+      toast.success(`Menemukan ${(response.papers || response.results || []).length} paper`)
     } catch (err) {
-      toast.error(err.userMessage || 'Search failed')
+      toast.error(err.userMessage || 'Pencarian gagal')
       setResults([])
     } finally {
       setLoading(false)
@@ -62,21 +63,32 @@ const SearchPage = () => {
   const handleIngest = async (paper) => {
     try {
       await paperService.ingestExternalPaper(paper.id || paper.paper_id, paper.source)
-      toast.success(`"${paper.title}" ingested successfully`)
+      toast.success(`"${paper.title}" berhasil disimpan`)
     } catch (err) {
-      toast.error(err.userMessage || 'Failed to ingest paper')
+      toast.error(err.userMessage || 'Gagal menyimpan paper')
     }
   }
 
   return (
     <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Search Papers</h1>
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold tracking-tight mb-2">Cari Paper</h1>
         <p className="text-muted-foreground">
-          Search across arXiv, Semantic Scholar, CORE, PubMed, CrossRef, and Europe PMC
+          Cari paper dari database eksternal untuk menambah bahan literatur Anda.
         </p>
       </div>
+
+      <PageHelp
+        icon={Search}
+        title="Yang akan Anda lihat di sini"
+        description="Hasil berupa daftar paper dari database eksternal (bukan koleksi Anda)."
+        items={[
+          'Tiap hasil menampilkan judul, penulis, tahun, abstrak, dan tautan sumber.',
+          'Filter berdasarkan sumber (arXiv, Semantic Scholar, CORE, CrossRef, PubMed, Europe PMC) dan rentang tahun.',
+        ]}
+        className="mb-8"
+      />
 
       {/* Search Form */}
       <form onSubmit={handleSearch} className="mb-8">
@@ -85,7 +97,7 @@ const SearchPage = () => {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search for research papers..."
+            placeholder="Cari paper penelitian..."
             className="flex-1 px-4 py-3 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
           />
           <button
@@ -94,7 +106,7 @@ const SearchPage = () => {
             className="px-6 py-3 bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            Search
+            Cari
           </button>
         </div>
 
@@ -105,7 +117,7 @@ const SearchPage = () => {
           className="mt-3 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <Filter className="w-4 h-4" />
-          Filters
+          Filter
           <ChevronDown className={`w-3 h-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
         </button>
 
@@ -113,18 +125,17 @@ const SearchPage = () => {
         {showFilters && (
           <div className="mt-3 p-5 rounded-lg border bg-card">
             <div className="mb-5">
-              <label className="block text-sm font-medium mb-2">Sources</label>
+              <label className="block text-sm font-medium mb-2">Sumber</label>
               <div className="flex flex-wrap gap-2">
                 {SOURCES.map(source => (
                   <button
                     key={source.id}
                     type="button"
                     onClick={() => toggleSource(source.id)}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                      selectedSources.includes(source.id)
-                        ? 'bg-secondary text-foreground border-border'
-                        : 'text-muted-foreground border-transparent hover:bg-secondary/50'
-                    }`}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${selectedSources.includes(source.id)
+                      ? 'bg-secondary text-foreground border-border'
+                      : 'text-muted-foreground border-transparent hover:bg-secondary/50'
+                      }`}
                   >
                     {source.label}
                   </button>
@@ -134,27 +145,27 @@ const SearchPage = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1.5">Year From</label>
+                <label className="block text-sm font-medium mb-1.5">Dari Tahun</label>
                 <input
                   type="number"
                   value={yearFrom}
                   onChange={e => setYearFrom(e.target.value)}
-                  placeholder="e.g. 2020"
+                  placeholder="mis. 2020"
                   className="w-full px-3 py-2 rounded-md border bg-background text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1.5">Year To</label>
+                <label className="block text-sm font-medium mb-1.5">Sampai Tahun</label>
                 <input
                   type="number"
                   value={yearTo}
                   onChange={e => setYearTo(e.target.value)}
-                  placeholder="e.g. 2024"
+                  placeholder="mis. 2024"
                   className="w-full px-3 py-2 rounded-md border bg-background text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1.5">Max Results</label>
+                <label className="block text-sm font-medium mb-1.5">Jumlah Hasil</label>
                 <select
                   value={maxResults}
                   onChange={e => setMaxResults(parseInt(e.target.value))}
@@ -181,15 +192,15 @@ const SearchPage = () => {
       {!loading && hasSearched && results.length === 0 && (
         <EmptyState
           icon={Search}
-          title="No papers found"
-          description="Try adjusting your search query or filters"
+          title="Tidak ada paper ditemukan"
+          description="Coba ubah kata kunci atau filter pencarian"
         />
       )}
 
       {!loading && results.length > 0 && (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground mb-4">
-            Found {results.length} papers
+            Menemukan {results.length} paper
           </p>
 
           {results.map((paper, idx) => (
@@ -227,7 +238,7 @@ const SearchPage = () => {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                      title="Open paper"
+                      title="Buka paper"
                     >
                       <ExternalLink className="w-4 h-4" />
                     </a>
@@ -235,7 +246,7 @@ const SearchPage = () => {
                   <button
                     onClick={() => handleIngest(paper)}
                     className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                    title="Ingest paper"
+                    title="Simpan ke koleksi"
                   >
                     <BookOpen className="w-4 h-4" />
                   </button>

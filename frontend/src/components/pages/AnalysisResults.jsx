@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '../../contexts/ToastContext'
 import { analysisService } from '../../services/analysisService'
+import Term from '../common/Term'
 
 // Parse numbered text block into structured items
 const parseNumberedList = (text) => {
@@ -110,7 +111,7 @@ const TABS = [
   { id: 'recommendations', label: 'Rekomendasi', icon: Lightbulb, desc: 'Saran arah penelitian yang bisa Anda ambil berdasarkan gap yang ditemukan, lengkap dengan alasan (WHY) dan cara memulainya (HOW).' },
   { id: 'roadmap', label: 'Peta Jalan', icon: Map, desc: 'Rencana penelitian bertahap: apa yang bisa dikerjakan dalam jangka pendek, menengah, dan panjang.' },
   { id: 'knowledge-graph', label: 'Graf Pengetahuan', icon: Share2, desc: 'Peta visual hubungan antar konsep (metode, domain, temuan) yang diekstrak dari paper. Titik = konsep, garis = hubungan antar konsep.' },
-  { id: 'pipeline', label: 'Pipeline', icon: Zap, desc: 'Detail teknis proses analisis di belakang layar: berapa fakta yang diekstrak, hasil validasi aturan, dan skor kepercayaan. Untuk verifikasi kualitas hasil.' },
+  { id: 'pipeline', label: 'Pipeline', icon: Zap, advanced: true, desc: 'Detail teknis proses analisis di belakang layar: berapa fakta yang diekstrak, hasil validasi aturan, dan skor kepercayaan. Untuk verifikasi kualitas hasil.' },
 ]
 
 const GAP_TYPES = ['FRAGMENTATION', 'INCONSISTENCY', 'INCOMPLETENESS']
@@ -124,6 +125,15 @@ const PRIORITY_COLORS = {
   high: { bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Prioritas Tinggi' },
   medium: { bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', label: 'Prioritas Sedang' },
   low: { bg: 'bg-green-500/10', text: 'text-green-600 dark:text-green-400', label: 'Prioritas Rendah' },
+}
+
+// Ubah verdict rule-engine (PASS/FLAG/REJECT atau ACCEPT/REVIEW/REJECT) jadi label ramah
+const verdictLabel = (v) => {
+  const key = String(v || '').toUpperCase()
+  if (key === 'PASS' || key === 'ACCEPT') return 'Lolos'
+  if (key === 'FLAG' || key === 'REVIEW') return 'Perlu Ditinjau'
+  if (key === 'REJECT') return 'Ditolak'
+  return v || ''
 }
 
 const LOADING_STEPS = [
@@ -148,6 +158,7 @@ const AnalysisResults = () => {
   const [deepAnalysis, setDeepAnalysis] = useState(null)
   const [deepLoading, setDeepLoading] = useState(false)
   const [expandedRecs, setExpandedRecs] = useState({})
+  const [advancedMode, setAdvancedMode] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -165,15 +176,15 @@ const AnalysisResults = () => {
               setData(payload.results)
               setProgress(100)
               setLoading(false)
-              toast.success('Analysis complete!')
+              toast.success('Analisis selesai!')
               es.close()
             } else if (payload.type === 'error') {
-              setError(payload.error || payload.message || 'Analysis failed')
+              setError(payload.error || payload.message || 'Analisis gagal')
               setLoading(false)
               es.close()
             } else {
               setProgress(payload.progress || 0)
-              setProgressMsg(payload.message || 'Processing...')
+              setProgressMsg(payload.message || 'Memproses...')
             }
           } catch { /* ignore parse errors */ }
         }
@@ -196,18 +207,18 @@ const AnalysisResults = () => {
             setData(response.results)
             setProgress(100)
             setLoading(false)
-            toast.success('Analysis complete!')
+            toast.success('Analisis selesai!')
           } else if (response.status === 'processing') {
             setProgress(response.progress || 0)
-            setProgressMsg(response.message || 'Processing...')
+            setProgressMsg(response.message || 'Memproses...')
             setTimeout(fetchResults, 2000)
           } else if (response.status === 'failed') {
-            setError(response.error || 'Analysis failed')
+            setError(response.error || 'Analisis gagal')
             setLoading(false)
           }
         } catch (err) {
           if (cancelled) return
-          setError(err.userMessage || 'Failed to fetch results')
+          setError(err.userMessage || 'Gagal memuat hasil')
           setLoading(false)
         }
       }
@@ -295,13 +306,20 @@ const AnalysisResults = () => {
       { label: 'Gap Terdeteksi', value: data.gaps?.length || 0, icon: AlertTriangle, color: 'text-amber-500' },
     ]
     if (data.fact_table_stats?.total_entities) {
-      base.push({ label: 'Entitas KG', value: data.fact_table_stats.total_entities, icon: Database, color: 'text-cyan-500' })
+      base.push({ label: <>Entitas <Term k="KG">KG</Term></>, value: data.fact_table_stats.total_entities, icon: Database, color: 'text-cyan-500' })
     }
     if (data.fact_table_stats?.total_facts) {
-      base.push({ label: 'Fakta SPO', value: data.fact_table_stats.total_facts, icon: Shield, color: 'text-indigo-500' })
+      base.push({ label: <>Fakta <Term k="SPO">SPO</Term></>, value: data.fact_table_stats.total_facts, icon: Shield, color: 'text-indigo-500' })
     }
     return base
   }, [data])
+
+  // Jika pindah ke mode Sederhana saat berada di tab khusus-Lanjutan, kembali ke Ringkasan
+  useEffect(() => {
+    if (!advancedMode && TABS.find(t => t.id === activeTab)?.advanced) {
+      setActiveTab('overview')
+    }
+  }, [advancedMode, activeTab])
 
   const downloadResults = () => {
     const exportData = { ...data }
@@ -317,7 +335,7 @@ const AnalysisResults = () => {
 
   const exportPdf = async () => {
     try {
-      toast.info('Generating PDF...')
+      toast.info('Membuat PDF...')
       const { default: html2canvas } = await import('html2canvas')
       const { default: jsPDF } = await import('jspdf')
       const el = document.getElementById('analysis-content')
@@ -339,9 +357,9 @@ const AnalysisResults = () => {
         y = margin
       }
       pdf.save(`analysis-${jobId}.pdf`)
-      toast.success('PDF exported!')
+      toast.success('PDF berhasil diekspor!')
     } catch (e) {
-      toast.error('PDF export failed: ' + e.message)
+      toast.error('Gagal ekspor PDF: ' + e.message)
     }
   }
 
@@ -354,9 +372,9 @@ const AnalysisResults = () => {
         { max_results: 10, strategy: 'hybrid' }
       )
       setDeepAnalysis(result)
-      toast.success('Deep analysis complete!')
+      toast.success('Analisis mendalam selesai!')
     } catch (err) {
-      toast.error('Deep analysis failed: ' + (err.userMessage || err.message))
+      toast.error('Analisis mendalam gagal: ' + (err.userMessage || err.message))
     } finally {
       setDeepLoading(false)
     }
@@ -370,7 +388,7 @@ const AnalysisResults = () => {
           <div className="text-center mb-8">
             <Loader className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-1">Menganalisis Penelitian Anda</h2>
-            <p className="text-sm text-muted-foreground">{progressMsg || 'Preparing analysis pipeline...'}</p>
+            <p className="text-sm text-muted-foreground">{progressMsg || 'Menyiapkan analisis...'}</p>
           </div>
           <div className="w-full bg-secondary rounded-full h-2 mb-6">
             <div className="bg-primary h-2 rounded-full transition-all duration-500" style={{ width: `${Math.max(progress, 5)}%` }} />
@@ -404,7 +422,7 @@ const AnalysisResults = () => {
           <h2 className="text-xl font-bold mb-2">Analisis Gagal</h2>
           <p className="text-sm text-muted-foreground mb-6">{error}</p>
           <button onClick={() => navigate('/')} className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors">
-            Try Again
+            Coba Lagi
           </button>
         </div>
       </div>
@@ -446,16 +464,15 @@ const AnalysisResults = () => {
                         </span>
                         {gi.confidence > 0 && (
                           <span className="text-xs text-muted-foreground">
-                            Confidence: {(gi.confidence * 100).toFixed(0)}%
+                            Keyakinan: {(gi.confidence * 100).toFixed(0)}%
                           </span>
                         )}
                         {gi.rule_engine_verdict && (
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            gi.rule_engine_verdict === 'PASS' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
-                            gi.rule_engine_verdict === 'FLAG' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                            'bg-red-500/10 text-red-600 dark:text-red-400'
-                          }`}>
-                            <Shield className="w-3 h-3 inline mr-1" />{gi.rule_engine_verdict}
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${gi.rule_engine_verdict === 'PASS' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+                              gi.rule_engine_verdict === 'FLAG' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
+                                'bg-red-500/10 text-red-600 dark:text-red-400'
+                            }`}>
+                            <Shield className="w-3 h-3 inline mr-1" />{verdictLabel(gi.rule_engine_verdict)}
                           </span>
                         )}
                       </div>
@@ -468,9 +485,8 @@ const AnalysisResults = () => {
                     {gi.confidence > 0 && (
                       <div className="mt-3 flex items-center gap-2">
                         <div className="flex-1 bg-secondary rounded-full h-1.5">
-                          <div className={`h-1.5 rounded-full ${
-                            gi.confidence > 0.7 ? 'bg-green-500' : gi.confidence > 0.4 ? 'bg-amber-500' : 'bg-red-500'
-                          }`} style={{ width: `${gi.confidence * 100}%` }} />
+                          <div className={`h-1.5 rounded-full ${gi.confidence > 0.7 ? 'bg-green-500' : gi.confidence > 0.4 ? 'bg-amber-500' : 'bg-red-500'
+                            }`} style={{ width: `${gi.confidence * 100}%` }} />
                         </div>
                         <span className="text-xs text-muted-foreground w-8">{(gi.confidence * 100).toFixed(0)}%</span>
                       </div>
@@ -479,7 +495,7 @@ const AnalysisResults = () => {
                     {/* Evidence */}
                     {gi.evidence?.length > 0 && (
                       <div className="mt-3 pt-3 border-t">
-                        <p className="text-xs font-medium text-muted-foreground mb-2">Supporting Evidence</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Bukti Pendukung</p>
                         <div className="space-y-1">
                           {gi.evidence.slice(0, 3).map((ev, i) => (
                             <p key={i} className="text-xs text-muted-foreground/80 pl-3 border-l-2 border-border">{ev}</p>
@@ -491,7 +507,7 @@ const AnalysisResults = () => {
                     {/* Suggested Directions */}
                     {gi.suggested_directions?.length > 0 && (
                       <div className="mt-3 pt-3 border-t">
-                        <p className="text-xs font-medium text-muted-foreground mb-2">Suggested Research Directions</p>
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Arah Penelitian yang Disarankan</p>
                         <div className="space-y-1">
                           {gi.suggested_directions.map((dir, i) => (
                             <div key={i} className="flex items-start gap-2">
@@ -512,21 +528,21 @@ const AnalysisResults = () => {
         {/* Structured Recommendations from Deep Analysis */}
         {recs.length > 0 && (
           <div className="space-y-3">
-            <h4 className="font-semibold text-sm">Paper Recommendations</h4>
+            <h4 className="font-semibold text-sm">Rekomendasi Paper</h4>
             {recs.map((rec, idx) => (
               <div key={idx} className="rounded-lg border bg-card p-4 flex items-start gap-3">
                 <div className="w-7 h-7 rounded bg-primary/10 text-primary flex items-center justify-center flex-shrink-0 text-xs font-bold">
                   {rec.rank || idx + 1}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h5 className="font-medium text-sm">{rec.title || 'Untitled'}</h5>
+                  <h5 className="font-medium text-sm">{rec.title || 'Tanpa Judul'}</h5>
                   <p className="text-xs text-muted-foreground mt-1">{rec.reason || rec.reasons?.join('; ') || ''}</p>
                   {rec.relevance_score > 0 && (
                     <div className="flex items-center gap-2 mt-2">
                       <div className="flex-1 bg-secondary rounded-full h-1 max-w-[120px]">
                         <div className="bg-primary h-1 rounded-full" style={{ width: `${Math.min(rec.relevance_score * 100, 100)}%` }} />
                       </div>
-                      <span className="text-xs text-muted-foreground">{(rec.relevance_score * 100).toFixed(0)}% match</span>
+                      <span className="text-xs text-muted-foreground">{(rec.relevance_score * 100).toFixed(0)}% cocok</span>
                     </div>
                   )}
                 </div>
@@ -682,7 +698,7 @@ const AnalysisResults = () => {
     <div className="space-y-4">
       <div className="mb-2">
         <h3 className="text-lg font-semibold">Topik Penelitian yang Diekstrak</h3>
-        <p className="text-sm text-muted-foreground">Topics identified from comparative analysis of your uploaded papers.</p>
+        <p className="text-sm text-muted-foreground">Topik yang teridentifikasi dari analisis perbandingan antar-paper yang Anda unggah.</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {(data?.topics || []).map((topic, idx) => (
@@ -754,16 +770,15 @@ const AnalysisResults = () => {
                     </span>
                     {gap.confidence != null && (
                       <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-                        Confidence: {(gap.confidence * 100).toFixed(0)}%
+                        Keyakinan: {(gap.confidence * 100).toFixed(0)}%
                       </span>
                     )}
                     {gap.rule_engine_verdict && (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        gap.rule_engine_verdict === 'ACCEPT' ? 'bg-green-500/10 text-green-600' :
-                        gap.rule_engine_verdict === 'REVIEW' ? 'bg-amber-500/10 text-amber-600' :
-                        'bg-red-500/10 text-red-600'
-                      }`}>
-                        {gap.rule_engine_verdict}
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${gap.rule_engine_verdict === 'ACCEPT' ? 'bg-green-500/10 text-green-600' :
+                          gap.rule_engine_verdict === 'REVIEW' ? 'bg-amber-500/10 text-amber-600' :
+                            'bg-red-500/10 text-red-600'
+                        }`}>
+                        {verdictLabel(gap.rule_engine_verdict)}
                       </span>
                     )}
                   </div>
@@ -863,9 +878,8 @@ const AnalysisResults = () => {
           const hasDetails = rec.why || rec.how
 
           return (
-            <div key={idx} className={`rounded-lg border bg-card overflow-hidden hover:border-primary/30 transition-colors border-l-4 ${
-              rec.priority === 'high' ? 'border-l-red-500' : rec.priority === 'medium' ? 'border-l-amber-500' : 'border-l-green-500'
-            }`}>
+            <div key={idx} className={`rounded-lg border bg-card overflow-hidden hover:border-primary/30 transition-colors border-l-4 ${rec.priority === 'high' ? 'border-l-red-500' : rec.priority === 'medium' ? 'border-l-amber-500' : 'border-l-green-500'
+              }`}>
               <div className="p-5">
                 <div className="flex items-start gap-4">
                   <div className={`w-8 h-8 rounded-lg ${prio.bg} flex items-center justify-center flex-shrink-0`}>
@@ -924,7 +938,7 @@ const AnalysisResults = () => {
       {parsedRecommendations.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <Lightbulb className="w-10 h-10 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No recommendations available.</p>
+          <p className="text-sm">Belum ada rekomendasi.</p>
         </div>
       )}
 
@@ -994,7 +1008,7 @@ const AnalysisResults = () => {
         {parsedRoadmap.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <Map className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">No roadmap available.</p>
+            <p className="text-sm">Belum ada peta jalan.</p>
           </div>
         )}
       </div>
@@ -1017,29 +1031,27 @@ const AnalysisResults = () => {
     return (
       <div className="space-y-6">
         <div className="mb-2">
-          <h3 className="text-lg font-semibold">Pipeline Neuro-Simbolik</h3>
+          <h3 className="text-lg font-semibold">Pipeline <Term k="Neuro-Simbolik">Neuro-Simbolik</Term></h3>
           <p className="text-sm text-muted-foreground">
-            Execution details from the Observe → Think → Act → Evaluate agentic loop.
+            Rincian eksekusi dari siklus agen Observasi → Berpikir → Aksi → Evaluasi.
           </p>
         </div>
 
         {/* Execution Mode Banner */}
-        <div className={`rounded-lg border p-4 flex items-center gap-3 ${
-          mode === 'langgraph' ? 'border-green-500/30 bg-green-500/5' :
-          mode === 'sequential' ? 'border-amber-500/30 bg-amber-500/5' :
-          'border-border bg-card'
-        }`}>
-          <Zap className={`w-5 h-5 ${
-            mode === 'langgraph' ? 'text-green-500' : mode === 'sequential' ? 'text-amber-500' : 'text-muted-foreground'
-          }`} />
+        <div className={`rounded-lg border p-4 flex items-center gap-3 ${mode === 'langgraph' ? 'border-green-500/30 bg-green-500/5' :
+            mode === 'sequential' ? 'border-amber-500/30 bg-amber-500/5' :
+              'border-border bg-card'
+          }`}>
+          <Zap className={`w-5 h-5 ${mode === 'langgraph' ? 'text-green-500' : mode === 'sequential' ? 'text-amber-500' : 'text-muted-foreground'
+            }`} />
           <div>
             <p className="text-sm font-medium">
-              Execution Mode: <span className="font-bold uppercase">{mode}</span>
+              Mode Eksekusi: <span className="font-bold uppercase">{mode}</span>
             </p>
             <p className="text-xs text-muted-foreground">
-              {mode === 'langgraph' ? 'Full LangGraph StateGraph with conditional edges and self-critique loop.' :
-               mode === 'sequential' ? 'Sequential fallback pipeline (LangGraph unavailable).' :
-               'LLM-only fallback (coordinator unavailable).'}
+              {mode === 'langgraph' ? 'LangGraph StateGraph penuh dengan percabangan kondisional dan loop kritik-mandiri.' :
+                mode === 'sequential' ? 'Pipeline cadangan berurutan (LangGraph tidak tersedia).' :
+                  'Cadangan LLM-saja (koordinator tidak tersedia).'}
             </p>
           </div>
         </div>
@@ -1048,11 +1060,11 @@ const AnalysisResults = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-cyan-500">{factStats.total_entities || 0}</p>
-            <p className="text-xs text-muted-foreground">Entitas KG</p>
+            <p className="text-xs text-muted-foreground">Entitas <Term k="KG">KG</Term></p>
           </div>
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-indigo-500">{factStats.total_facts || 0}</p>
-            <p className="text-xs text-muted-foreground">Fakta SPO</p>
+            <p className="text-xs text-muted-foreground">Fakta <Term k="SPO">SPO</Term></p>
           </div>
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold text-green-500">{ruleReport.passed || 0}</p>
@@ -1069,20 +1081,20 @@ const AnalysisResults = () => {
           <div className="rounded-lg border bg-card p-6">
             <div className="flex items-center gap-2 mb-4">
               <Shield className="w-5 h-5 text-primary" />
-              <h4 className="font-semibold">Rule Engine Validation</h4>
+              <h4 className="font-semibold">Validasi <Term k="Rule Engine">Rule Engine</Term></h4>
             </div>
             <div className="flex items-center gap-6 mb-4">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-green-500" />
-                <span className="text-sm">{ruleReport.passed || 0} Passed</span>
+                <span className="text-sm">{ruleReport.passed || 0} Lolos</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-amber-500" />
-                <span className="text-sm">{ruleReport.flagged || 0} Flagged</span>
+                <span className="text-sm">{ruleReport.flagged || 0} Ditandai</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-red-500" />
-                <span className="text-sm">{ruleReport.rejected || 0} Rejected</span>
+                <span className="text-sm">{ruleReport.rejected || 0} Ditolak</span>
               </div>
             </div>
             <div className="w-full bg-secondary rounded-full h-2.5 flex overflow-hidden">
@@ -1102,9 +1114,9 @@ const AnalysisResults = () => {
           <div className="rounded-lg border bg-card p-6">
             <div className="flex items-center gap-2 mb-4">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
-              <h4 className="font-semibold">Validated Gap Indicators</h4>
+              <h4 className="font-semibold">Indikator Gap Tervalidasi</h4>
               <span className="ml-auto text-xs text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">
-                {indicators.length} indicators
+                {indicators.length} indikator
               </span>
             </div>
             <div className="space-y-3">
@@ -1120,11 +1132,11 @@ const AnalysisResults = () => {
                         {gapColor.label}
                       </span>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium border ${vColors}`}>
-                        <Shield className="w-3 h-3 inline mr-1" />{verdict}
+                        <Shield className="w-3 h-3 inline mr-1" />{verdictLabel(verdict)}
                       </span>
                       {gi.confidence > 0 && (
                         <span className="text-xs text-muted-foreground">
-                          {(gi.confidence * 100).toFixed(0)}% confidence
+                          {(gi.confidence * 100).toFixed(0)}% keyakinan
                         </span>
                       )}
                     </div>
@@ -1141,7 +1153,7 @@ const AnalysisResults = () => {
           <div className="rounded-lg border bg-card p-6">
             <div className="flex items-center gap-2 mb-4">
               <Clock className="w-5 h-5 text-primary" />
-              <h4 className="font-semibold">Reasoning Trace</h4>
+              <h4 className="font-semibold">Jejak Penalaran</h4>
             </div>
             <div className="space-y-4">
               {trace.map((entry, idx) => {
@@ -1157,7 +1169,7 @@ const AnalysisResults = () => {
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm font-semibold capitalize">{entry.phase}</span>
                       {entry.iteration !== undefined && (
-                        <span className="text-xs text-muted-foreground">Iteration {entry.iteration}</span>
+                        <span className="text-xs text-muted-foreground">Iterasi {entry.iteration}</span>
                       )}
                       {entry.timestamp && (
                         <span className="text-xs text-muted-foreground ml-auto">
@@ -1176,7 +1188,7 @@ const AnalysisResults = () => {
                       </ul>
                     )}
                     {entry.error && (
-                      <p className="text-xs text-red-500 mt-1">Error: {entry.error}</p>
+                      <p className="text-xs text-red-500 mt-1">Galat: {entry.error}</p>
                     )}
                   </div>
                 )
@@ -1188,7 +1200,7 @@ const AnalysisResults = () => {
         {trace.length === 0 && !ruleReport.total && indicators.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <Zap className="w-10 h-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">No pipeline data available. The analysis may have used LLM-only mode.</p>
+            <p className="text-sm">Belum ada data pipeline. Analisis mungkin memakai mode LLM-saja.</p>
           </div>
         )}
 
@@ -1197,14 +1209,14 @@ const AnalysisResults = () => {
           <div className="rounded-lg border bg-card p-6">
             <div className="flex items-center gap-2 mb-4">
               <TrendingUp className="w-5 h-5 text-primary" />
-              <h4 className="font-semibold">Evaluation Metrics</h4>
+              <h4 className="font-semibold">Metrik Evaluasi</h4>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               {[
-                { label: 'Pipeline Score', value: data.eval_metrics.pipeline_score, color: 'text-green-500' },
-                { label: 'Topic Coverage', value: data.eval_metrics.topic_coverage, color: 'text-blue-500' },
-                { label: 'Rec. Completeness', value: data.eval_metrics.recommendation_completeness, color: 'text-purple-500' },
-                { label: 'KG Density', value: data.eval_metrics.kg_density, color: 'text-amber-500' },
+                { label: 'Skor Pipeline', value: data.eval_metrics.pipeline_score, color: 'text-green-500' },
+                { label: 'Cakupan Topik', value: data.eval_metrics.topic_coverage, color: 'text-blue-500' },
+                { label: 'Kelengkapan Rekomendasi', value: data.eval_metrics.recommendation_completeness, color: 'text-purple-500' },
+                { label: 'Kepadatan KG', value: data.eval_metrics.kg_density, color: 'text-amber-500' },
               ].map((m, i) => (
                 <div key={i} className="text-center">
                   <p className={`text-2xl font-bold ${m.color}`}>{(m.value * 100).toFixed(0)}%</p>
@@ -1216,11 +1228,11 @@ const AnalysisResults = () => {
               ))}
             </div>
             <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-t pt-3">
-              <span>Topics: {data.eval_metrics.total_topics}</span>
-              <span>Gaps: {data.eval_metrics.total_gaps}</span>
-              <span>Recommendations: {data.eval_metrics.total_recommendations}</span>
-              <span>Facts: {data.eval_metrics.total_facts}</span>
-              <span>Entities: {data.eval_metrics.total_entities}</span>
+              <span>Topik: {data.eval_metrics.total_topics}</span>
+              <span>Gap: {data.eval_metrics.total_gaps}</span>
+              <span>Rekomendasi: {data.eval_metrics.total_recommendations}</span>
+              <span>Fakta: {data.eval_metrics.total_facts}</span>
+              <span>Entitas: {data.eval_metrics.total_entities}</span>
             </div>
           </div>
         )}
@@ -1302,29 +1314,29 @@ const AnalysisResults = () => {
 
     useEffect(() => { drawGraph() }, [drawGraph])
 
-    if (kgLoading) return <div className="flex items-center gap-2 p-8"><Loader className="w-5 h-5 animate-spin" /> Loading graph...</div>
+    if (kgLoading) return <div className="flex items-center gap-2 p-8"><Loader className="w-5 h-5 animate-spin" /> Memuat graf...</div>
 
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-3 gap-4">
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold">{kgData?.stats?.total_nodes || 0}</p>
-            <p className="text-xs text-muted-foreground">Nodes</p>
+            <p className="text-xs text-muted-foreground">Node</p>
           </div>
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold">{kgData?.stats?.total_edges || 0}</p>
-            <p className="text-xs text-muted-foreground">Edges</p>
+            <p className="text-xs text-muted-foreground">Relasi</p>
           </div>
           <div className="rounded-lg border bg-card p-4 text-center">
             <p className="text-2xl font-bold">{new Set((kgData?.nodes || []).map(n => n.entity_type || n.node_type || 'unknown')).size}</p>
-            <p className="text-xs text-muted-foreground">Entity Types</p>
+            <p className="text-xs text-muted-foreground">Jenis Entitas</p>
           </div>
         </div>
 
         <div className="rounded-lg border bg-card overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2">
             <Share2 className="w-4 h-4" />
-            <span className="font-medium text-sm">Knowledge Graph Visualization</span>
+            <span className="font-medium text-sm">Visualisasi Graf Pengetahuan</span>
           </div>
           {kgData?.nodes?.length ? (
             <div className="p-2">
@@ -1340,7 +1352,7 @@ const AnalysisResults = () => {
             </div>
           ) : (
             <div className="p-8 text-center text-muted-foreground">
-              <p className="text-sm">No knowledge graph data yet. Run an analysis first.</p>
+              <p className="text-sm">Belum ada data graf pengetahuan. Jalankan analisis dulu.</p>
             </div>
           )}
         </div>
@@ -1365,17 +1377,20 @@ const AnalysisResults = () => {
             <p className="text-sm text-muted-foreground">
               Insight penelitian berbasis AI dari paper yang Anda unggah
               {data?.execution_mode && (
-                <span className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                  data.execution_mode === 'langgraph' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
-                  data.execution_mode === 'sequential' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
-                  'bg-secondary text-muted-foreground'
-                }`}>
+                <span className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${data.execution_mode === 'langgraph' ? 'bg-green-500/10 text-green-600 dark:text-green-400' :
+                    data.execution_mode === 'sequential' ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' :
+                      'bg-secondary text-muted-foreground'
+                  }`}>
                   <Zap className="w-3 h-3" />{data.execution_mode}
                 </span>
               )}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border overflow-hidden">
+              <button onClick={() => setAdvancedMode(false)} title="Tampilan ringkas tanpa detail teknis" className={`px-3 py-1.5 text-xs font-medium transition-colors ${!advancedMode ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}>Sederhana</button>
+              <button onClick={() => setAdvancedMode(true)} title="Tampilkan tab teknis (Pipeline) untuk verifikasi" className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${advancedMode ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}>Lanjutan</button>
+            </div>
             <div className="flex rounded-lg border overflow-hidden">
               <button onClick={() => setLanguage('en')} className={`px-3 py-1.5 text-xs font-medium transition-colors ${language === 'en' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}>EN</button>
               <button onClick={() => setLanguage('id')} className={`px-3 py-1.5 text-xs font-medium transition-colors border-l ${language === 'id' ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50'}`}>ID</button>
@@ -1410,16 +1425,15 @@ const AnalysisResults = () => {
       {/* Tab Navigation */}
       <div className="border-b mb-4">
         <div className="flex gap-1 -mb-px overflow-x-auto">
-          {TABS.map(tab => {
+          {TABS.filter(tab => advancedMode || !tab.advanced).map(tab => {
             const isActive = activeTab === tab.id
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 title={tab.desc}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  isActive ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${isActive ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                  }`}
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}

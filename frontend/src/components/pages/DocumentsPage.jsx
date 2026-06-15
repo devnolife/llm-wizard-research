@@ -4,6 +4,7 @@ import { useToast } from '../../contexts/ToastContext'
 import { documentService } from '../../services/documentService'
 import EmptyState from '../common/EmptyState'
 import Badge from '../common/Badge'
+import PageHelp from '../common/PageHelp'
 
 const DocumentsPage = () => {
   const toast = useToast()
@@ -19,7 +20,7 @@ const DocumentsPage = () => {
       const data = await documentService.getStats()
       setStats(data)
     } catch (err) {
-      toast.error(err.userMessage || 'Failed to fetch stats')
+      toast.error(err.userMessage || 'Gagal memuat statistik')
     } finally {
       setLoading(false)
     }
@@ -36,7 +37,7 @@ const DocumentsPage = () => {
       const data = await documentService.search(searchQuery)
       setSearchResults(data.results || [])
     } catch (err) {
-      toast.error(err.userMessage || 'Search failed')
+      toast.error(err.userMessage || 'Pencarian gagal')
       setSearchResults([])
     } finally {
       setSearching(false)
@@ -44,24 +45,35 @@ const DocumentsPage = () => {
   }
 
   const handleDelete = async (docId, title) => {
-    if (!confirm(`Delete "${title || docId}"?`)) return
+    if (!confirm(`Hapus "${title || docId}"?`)) return
     try {
       await documentService.deleteDocument(docId)
-      toast.success('Document deleted')
+      toast.success('Dokumen dihapus')
       fetchStats()
       if (hasSearched) setSearchResults(prev => prev.filter(r => r.id !== docId))
     } catch (err) {
-      toast.error(err.userMessage || 'Failed to delete document')
+      toast.error(err.userMessage || 'Gagal menghapus dokumen')
     }
   }
 
   return (
     <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Dokumen</h1>
         <p className="text-muted-foreground">Kelola koleksi dokumen penelitian dan vector store Anda</p>
       </div>
+
+      <PageHelp
+        icon={Database}
+        title="Yang akan Anda lihat di sini"
+        description="Daftar dan statistik seluruh paper yang tersimpan di database Anda."
+        items={[
+          'Statistik: total dokumen, total chunk, dan jumlah entri vector store.',
+          'Cari isi dokumen, lihat detailnya, atau hapus dokumen dari koleksi.',
+        ]}
+        className="mb-8"
+      />
 
       {/* Stats */}
       {loading ? (
@@ -100,7 +112,7 @@ const DocumentsPage = () => {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search your documents..."
+            placeholder="Cari dokumen Anda..."
             className="flex-1 px-4 py-3 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
           />
           <button
@@ -109,19 +121,19 @@ const DocumentsPage = () => {
             className="px-6 py-3 bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {searching ? <Loader className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-            Search
+            Cari
           </button>
         </div>
       </form>
 
       {/* Results */}
       {!searching && hasSearched && searchResults.length === 0 && (
-        <EmptyState icon={Search} title="No results found" description="Try a different search query" />
+        <EmptyState icon={Search} title="Tidak ada hasil" description="Coba kata kunci lain" />
       )}
 
       {searchResults.length > 0 && (
         <div className="space-y-3">
-          <p className="text-sm text-muted-foreground mb-4">Found {searchResults.length} results</p>
+          <p className="text-sm text-muted-foreground mb-4">Menemukan {searchResults.length} hasil</p>
           {searchResults.map((result, idx) => (
             <div key={result.id || idx} className="p-4 rounded-lg border bg-card">
               <div className="flex items-start justify-between gap-4">
@@ -129,20 +141,20 @@ const DocumentsPage = () => {
                   <div className="flex items-center gap-2 mb-1.5">
                     <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
                     <h4 className="font-semibold truncate">
-                      {result.metadata?.title || result.metadata?.source || 'Untitled'}
+                      {result.metadata?.title || result.metadata?.source || 'Tanpa Judul'}
                     </h4>
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-3">
                     {result.content || result.text || result.page_content || ''}
                   </p>
                   {result.score !== undefined && (
-                    <Badge variant="info" className="mt-2">Score: {(result.score * 100).toFixed(1)}%</Badge>
+                    <Badge variant="info" className="mt-2">Skor: {(result.score * 100).toFixed(1)}%</Badge>
                   )}
                 </div>
                 <button
                   onClick={() => handleDelete(result.id, result.metadata?.title)}
                   className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors flex-shrink-0"
-                  title="Delete document"
+                  title="Hapus dokumen"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

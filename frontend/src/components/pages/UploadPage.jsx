@@ -26,7 +26,7 @@ const UploadPage = () => {
           chunks: d.total_chunks ?? '-',
         })
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   const handleDragOver = useCallback((e) => {
@@ -77,8 +77,8 @@ const UploadPage = () => {
       )
       navigate(`/results/${response.job_id}`)
     } catch (err) {
-      setError(err.userMessage || 'Upload failed. Please try again.')
-      toast.error(err.userMessage || 'Upload failed')
+      setError(err.userMessage || 'Unggah gagal. Silakan coba lagi.')
+      toast.error(err.userMessage || 'Unggah gagal')
       setUploading(false)
     }
   }
@@ -132,11 +132,10 @@ const UploadPage = () => {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative rounded-lg border-2 border-dashed p-12 text-center transition-colors ${
-          isDragging
+        className={`relative rounded-lg border-2 border-dashed p-12 text-center transition-colors ${isDragging
             ? 'border-foreground/50 bg-secondary'
             : 'border-border hover:border-foreground/30 hover:bg-secondary/50'
-        }`}
+          }`}
       >
         <input
           type="file"
@@ -201,7 +200,7 @@ const UploadPage = () => {
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-medium flex items-center gap-2">
               <Loader className="w-4 h-4 animate-spin" />
-              {progress < 100 ? 'Uploading...' : 'Processing & Analyzing...'}
+              {progress < 100 ? 'Mengunggah...' : 'Memproses & Menganalisis...'}
             </span>
             <span className="text-sm font-mono">{progress}%</span>
           </div>
@@ -213,7 +212,7 @@ const UploadPage = () => {
           </div>
           {progress === 100 && (
             <p className="text-xs text-muted-foreground mt-3">
-              Extracting topics and generating insights... This may take a minute.
+              Mengekstrak topik dan menghasilkan insight... Mungkin perlu satu menit.
             </p>
           )}
         </div>
@@ -222,7 +221,7 @@ const UploadPage = () => {
       {/* Error */}
       {error && (
         <div className="mt-4 p-4 rounded-lg border border-destructive/50 bg-destructive/10 text-sm">
-          <p className="font-medium text-destructive">Upload Failed</p>
+          <p className="font-medium text-destructive">Unggah Gagal</p>
           <p className="text-destructive/80 mt-1">{error}</p>
         </div>
       )}
@@ -230,9 +229,9 @@ const UploadPage = () => {
       {/* Features */}
       <div className="mt-12 grid gap-4 md:grid-cols-3">
         {[
-          { title: 'Topic Extraction', desc: 'AI identifies research directions per paper automatically.' },
-          { title: 'Gap Detection', desc: 'Surface understudied angles and unanswered questions.' },
-          { title: 'Recommendations', desc: 'Turn insights into clear next steps with evidence.' },
+          { title: 'Ekstraksi Topik', desc: 'AI mengidentifikasi arah penelitian tiap paper secara otomatis.' },
+          { title: 'Deteksi Gap', desc: 'Menyingkap sudut yang kurang diteliti dan pertanyaan yang belum terjawab.' },
+          { title: 'Rekomendasi', desc: 'Mengubah insight menjadi langkah berikutnya yang jelas dan berbukti.' },
         ].map((feature, idx) => (
           <div key={idx} className="rounded-lg border bg-card p-5">
             <h4 className="font-medium mb-1">{feature.title}</h4>

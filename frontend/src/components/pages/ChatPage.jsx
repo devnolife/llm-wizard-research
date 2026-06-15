@@ -3,6 +3,8 @@ import { Send, Bot, User, Loader, Trash2, MessageSquare } from 'lucide-react'
 import { useToast } from '../../contexts/ToastContext'
 import { analysisService } from '../../services/analysisService'
 import EmptyState from '../common/EmptyState'
+import PageHelp from '../common/PageHelp'
+import Term from '../common/Term'
 
 const ChatPage = () => {
   const toast = useToast()
@@ -42,10 +44,10 @@ const ChatPage = () => {
       }
       setMessages(prev => [...prev, botMsg])
     } catch (err) {
-      toast.error(err.userMessage || 'Failed to get response')
+      toast.error(err.userMessage || 'Gagal mendapat jawaban')
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: 'Maaf, terjadi kesalahan. Silakan coba lagi.',
         timestamp: new Date(),
         isError: true,
       }])
@@ -57,7 +59,7 @@ const ChatPage = () => {
 
   const clearChat = () => {
     setMessages([])
-    toast.info('Chat cleared')
+    toast.info('Chat dibersihkan')
   }
 
   return (
@@ -79,6 +81,13 @@ const ChatPage = () => {
         )}
       </div>
 
+      <PageHelp
+        icon={MessageSquare}
+        title="Yang akan Anda lihat di sini"
+        description={<>Tanya-jawab dengan AI tentang paper yang sudah tersimpan (berbasis <Term k="RAG">RAG</Term>). Jawaban disertai daftar sumber paper yang dirujuk.</>}
+        className="mb-4"
+      />
+
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto rounded-lg border bg-card p-4 mb-4">
         {messages.length === 0 ? (
@@ -99,17 +108,16 @@ const ChatPage = () => {
                   </div>
                 )}
 
-                <div className={`max-w-[75%] px-4 py-3 rounded-lg text-sm leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : msg.isError
-                      ? 'bg-destructive/10 border border-destructive/30 text-destructive'
-                      : 'bg-secondary text-foreground'
-                }`}>
+                <div className={`max-w-[75%] px-4 py-3 rounded-lg text-sm leading-relaxed ${msg.role === 'user'
+                  ? 'bg-primary text-primary-foreground'
+                  : msg.isError
+                    ? 'bg-destructive/10 border border-destructive/30 text-destructive'
+                    : 'bg-secondary text-foreground'
+                  }`}>
                   <p className="whitespace-pre-wrap">{msg.content}</p>
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-border/50">
-                      <p className="text-xs font-medium opacity-70 mb-1">Sources:</p>
+                      <p className="text-xs font-medium opacity-70 mb-1">Sumber:</p>
                       {msg.sources.map((src, i) => (
                         <p key={i} className="text-xs opacity-60">• {src}</p>
                       ))}

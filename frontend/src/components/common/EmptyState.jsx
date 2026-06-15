@@ -13,7 +13,7 @@ const EmptyState = ({ icon: Icon, title, description, action, actionLabel }) => 
           onClick={action}
           className="px-5 py-2.5 bg-primary text-primary-foreground font-medium rounded-lg hover:bg-primary/90 transition-colors"
         >
-          {actionLabel || 'Get Started'}
+          {actionLabel || 'Mulai'}
         </button>
       )}
     </div>
