@@ -31,6 +31,12 @@ class ModelConfig:
     max_tokens: int = 2048
     timeout: int = 120
     num_ctx: int = 4096  # Context window size
+    # Keep the model resident in VRAM between calls so we don't pay reload
+    # latency on every request (critical when firing many parallel calls).
+    keep_alive: str = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
+    # Max worker threads for generate_batch(). Should be <= Ollama's
+    # OLLAMA_NUM_PARALLEL so requests actually run concurrently server-side.
+    max_parallel: int = int(os.getenv("OLLAMA_NUM_PARALLEL", "4"))
 
 
 @dataclass
@@ -259,6 +265,68 @@ class GLMInterface:
             logger.error(f"Generation failed: {e}")
             raise
     
+    def generate_batch(
+        self,
+        prompts: List[str],
+        system_prompt: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        format: Optional[str] = None,
+        max_workers: Optional[int] = None,
+    ) -> List[str]:
+        """
+        Generate responses for many prompts CONCURRENTLY.
+
+        Fires the prompts at Ollama in parallel via a thread pool. The ollama
+        HTTP client releases the GIL during the request, so threads give real
+        concurrency. Effective speed-up depends on the server's
+        OLLAMA_NUM_PARALLEL setting (see config.max_parallel / README).
+
+        Results are returned in the SAME ORDER as `prompts`. A failed prompt
+        yields an empty string in its slot instead of raising, so one bad call
+        never sinks the whole batch.
+        """
+        if not prompts:
+            return []
+
+        # Single prompt — skip the pool overhead.
+        if len(prompts) == 1:
+            try:
+                return [self.generate(
+                    prompts[0], system_prompt=system_prompt,
+                    temperature=temperature, max_tokens=max_tokens, format=format,
+                )]
+            except Exception as e:
+                logger.error(f"generate_batch single call failed: {e}")
+                return [""]
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        workers = max_workers or self.config.max_parallel
+        workers = max(1, min(workers, len(prompts)))
+
+        def _one(p: str) -> str:
+            try:
+                return self.generate(
+                    p, system_prompt=system_prompt,
+                    temperature=temperature, max_tokens=max_tokens, format=format,
+                )
+            except Exception as e:
+                logger.error(f"generate_batch item failed: {e}")
+                return ""
+
+        results: List[str] = [""] * len(prompts)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_one, p): i for i, p in enumerate(prompts)}
+            for future in futures:
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    logger.error(f"generate_batch future failed: {e}")
+                    results[idx] = ""
+        return results
+    
     def _generate_complete(self, messages: List[Dict], options: Dict, format: Optional[str] = None) -> str:
         """Generate complete response (non-streaming)"""
         start_time = time.time()
@@ -267,13 +335,24 @@ class GLMInterface:
         if format:
             kwargs["format"] = format
         
-        response = self.client.chat(
-            model=self.config.model_name,
-            messages=messages,
-            options=options,
-            stream=False,
-            **kwargs
-        )
+        try:
+            response = self.client.chat(
+                model=self.config.model_name,
+                messages=messages,
+                options=options,
+                stream=False,
+                keep_alive=self.config.keep_alive,
+                **kwargs
+            )
+        except TypeError:
+            # Older ollama clients may not accept `keep_alive` — retry without it.
+            response = self.client.chat(
+                model=self.config.model_name,
+                messages=messages,
+                options=options,
+                stream=False,
+                **kwargs
+            )
         
         elapsed = time.time() - start_time
         content = response['message']['content']

@@ -10,6 +10,10 @@ llm:
   timeout: 120
   context_window: 8192
   top_p: 0.9
+  # Performance: keep model resident + parallel request budget.
+  # OLLAMA_KEEP_ALIVE / OLLAMA_NUM_PARALLEL env vars override these (see .env).
+  keep_alive: "30m"
+  num_parallel: 4
 
 # Vector Database Configuration
 vector_db:
@@ -58,7 +62,7 @@ gap_detection:
 agents:
   enabled: true
   max_task_history: 100
-  parallel_execution: false
+  parallel_execution: true
   retry_failed_tasks: true
   max_retries: 2
 

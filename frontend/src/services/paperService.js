@@ -34,6 +34,12 @@ export const paperService = {
     })
     return response.data
   },
+
+  // Analyze user-marked papers: shared keywords + suggestions
+  async analyzeSelection(papers, query) {
+    const response = await api.post('/api/analyze-selection', { papers, query })
+    return response.data
+  },
 }
 
 export default paperService

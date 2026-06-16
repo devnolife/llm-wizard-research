@@ -104,6 +104,40 @@ Respond with ONLY a valid JSON array starting with [ and ending with ].
 No explanations, no markdown, no code fences."""
 
 
+# Combined entity + relation extraction in a SINGLE LLM call (perf optimization).
+# Halves LLM round-trips per paper vs. the 2-step (entities then relations) pipeline.
+COMBINED_EXTRACTION_PROMPT = """You are a scientific knowledge extraction system. From the research paper text below, extract BOTH entities AND the relations between them in ONE pass.
+
+ENTITY types: METHOD, CONCEPT, DOMAIN, FINDING, DATASET, METRIC, PAPER, CONSTRAINT
+RELATION predicates: USES_METHOD, PROPOSES, APPLIES_TO, ACHIEVES, REQUIRES_RESOURCE, REQUIRES_DATA, IMPROVES, CONTRADICTS, EXTENDS, EVALUATED_ON, HAS_CONSTRAINT, DISCUSSES
+
+Rules:
+- Each relation's "subject" and "object" MUST be names present in your "entities" list.
+- Keep entity names short and canonical.
+
+TEXT:
+{text}
+
+Respond ONLY with a single JSON object (no markdown, no code fences), shaped exactly like:
+{{
+  "entities": [
+    {{"name": "CNN", "type": "METHOD", "properties": {{"resource_requirement": "high"}}}},
+    {{"name": "Medical Image Segmentation", "type": "DOMAIN", "properties": {{}}}}
+  ],
+  "relations": [
+    {{"subject": "CNN", "predicate": "APPLIES_TO", "object": "Medical Image Segmentation", "confidence": 0.95, "evidence": "using CNN for medical image segmentation"}}
+  ]
+}}
+
+JSON:"""
+
+COMBINED_RETRY_SUFFIX = """
+
+IMPORTANT: Your previous response could not be parsed as JSON.
+Respond with ONLY a valid JSON object starting with {{ and ending with }}.
+No explanations, no markdown, no code fences."""
+
+
 # ---------------------------------------------------------------------------
 # Linguistic markers for pattern-based relation detection
 # (revisi.md Section 6 - Penanda Linguistik)
@@ -179,13 +213,22 @@ class FactExtractor:
         # Truncate text if needed
         text_chunk = text[:max_text_length]
         
-        # Step 1: Extract entities
-        entities = self._extract_entities(text_chunk, paper_id, fact_table)
-        logger.info(f"Extracted {len(entities)} entities from paper {paper_id}")
-        
-        # Step 2: Extract relations  
-        facts = self._extract_relations(text_chunk, entities, paper_id, fact_table)
-        logger.info(f"Extracted {len(facts)} facts from paper {paper_id}")
+        # Fast path: extract entities AND relations in a SINGLE LLM call.
+        # Falls back to the 2-call pipeline if the combined call yields nothing.
+        entities, facts = self._extract_combined(text_chunk, paper_id, fact_table)
+        if entities or facts:
+            logger.info(
+                f"Extracted {len(entities)} entities and {len(facts)} facts "
+                f"from paper {paper_id} (combined call)"
+            )
+        else:
+            # Step 1: Extract entities
+            entities = self._extract_entities(text_chunk, paper_id, fact_table)
+            logger.info(f"Extracted {len(entities)} entities from paper {paper_id}")
+
+            # Step 2: Extract relations
+            facts = self._extract_relations(text_chunk, entities, paper_id, fact_table)
+            logger.info(f"Extracted {len(facts)} facts from paper {paper_id}")
         
         # Step 3: Pattern-based relation detection (supplement LLM)
         pattern_facts = self._extract_pattern_relations(text_chunk, entities, paper_id, fact_table)
@@ -220,28 +263,55 @@ class FactExtractor:
             "total_facts": 0,
             "per_paper": [],
         }
-        
+
+        # Collect valid papers first (skip empties), pre-creating the PAPER entity.
+        valid_papers = []
         for paper in papers:
             paper_id = paper.get("doc_id", paper.get("id", str(uuid.uuid4())[:8]))
             content = paper.get("content", "")
-            
             if not content:
                 logger.warning(f"Skipping paper {paper_id}: no content")
                 continue
-            
             # Add the paper itself as an entity
             paper_title = paper.get("metadata", {}).get("title", "Unknown")
-            paper_entity = fact_table.get_or_create_entity(
+            fact_table.get_or_create_entity(
                 name=paper_title,
                 entity_type=EntityType.PAPER,
                 source_paper=paper_id,
                 properties=paper.get("metadata", {}),
             )
-            
-            stats = self.extract_from_text(content, paper_id, fact_table)
+            valid_papers.append((paper_id, content))
+
+        # PERF: extract papers concurrently. The slow part is the LLM call; the
+        # FactTable is lock-protected so parallel writes are safe. Falls back to
+        # sequential automatically when there's 0/1 paper.
+        def _do(item):
+            pid, content = item
+            return self.extract_from_text(content, pid, fact_table)
+
+        if len(valid_papers) > 1:
+            from concurrent.futures import ThreadPoolExecutor
+            import os as _os
+            workers = max(1, min(len(valid_papers), int(_os.getenv("OLLAMA_NUM_PARALLEL", "4"))))
+            per_paper_stats = [None] * len(valid_papers)
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {pool.submit(_do, vp): i for i, vp in enumerate(valid_papers)}
+                for fut in futures:
+                    idx = futures[fut]
+                    try:
+                        per_paper_stats[idx] = fut.result()
+                    except Exception as e:
+                        logger.error(f"Paper extraction failed: {e}")
+                        per_paper_stats[idx] = {"entities_extracted": 0, "total_facts": 0}
+        else:
+            per_paper_stats = [_do(vp) for vp in valid_papers]
+
+        for stats in per_paper_stats:
+            if not stats:
+                continue
             total_stats["papers_processed"] += 1
-            total_stats["total_entities"] += stats["entities_extracted"]
-            total_stats["total_facts"] += stats["total_facts"]
+            total_stats["total_entities"] += stats.get("entities_extracted", 0)
+            total_stats["total_facts"] += stats.get("total_facts", 0)
             total_stats["per_paper"].append(stats)
         
         logger.info(
@@ -250,6 +320,98 @@ class FactExtractor:
             f"{total_stats['total_facts']} facts"
         )
         return total_stats
+
+    # -----------------------------------------------------------------------
+    # Combined entity + relation extraction (single LLM call)
+    # -----------------------------------------------------------------------
+
+    def _extract_combined(
+        self,
+        text: str,
+        paper_id: str,
+        fact_table: FactTable,
+    ) -> Tuple[List[Entity], List[Fact]]:
+        """
+        Extract entities AND relations in ONE LLM call.
+
+        Returns (entities, facts). Returns ([], []) on any failure so the caller
+        can fall back to the slower 2-call pipeline.
+        """
+        if not self.llm:
+            return [], []
+
+        prompt = COMBINED_EXTRACTION_PROMPT.format(text=text)
+        try:
+            data = self._generate_json_object(
+                prompt,
+                system_prompt=(
+                    "You are a precise scientific knowledge extractor. "
+                    "Respond only with a single valid JSON object."
+                ),
+            )
+        except Exception as e:
+            logger.debug(f"Combined extraction call failed: {e}")
+            return [], []
+
+        if not isinstance(data, dict):
+            return [], []
+
+        entities_data = data.get("entities", [])
+        relations_data = data.get("relations", [])
+        if not entities_data:
+            return [], []
+
+        # Build entities
+        entities: List[Entity] = []
+        for item in entities_data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                entity_type = EntityType(item.get("type", "CONCEPT"))
+            except (ValueError, KeyError):
+                entity_type = EntityType.CONCEPT
+            try:
+                entity = fact_table.get_or_create_entity(
+                    name=item.get("name", "unknown"),
+                    entity_type=entity_type,
+                    source_paper=paper_id,
+                    properties=item.get("properties", {}) or {},
+                )
+                entities.append(entity)
+            except Exception as e:
+                logger.debug(f"Skipping invalid entity: {e}")
+                continue
+
+        if not entities:
+            return [], []
+
+        # Build facts from relations
+        facts: List[Fact] = []
+        for item in relations_data:
+            if not isinstance(item, dict):
+                continue
+            try:
+                predicate = PredicateType(item.get("predicate", "DISCUSSES"))
+                subject_entity = self._resolve_entity(item.get("subject", ""), entities)
+                object_entity = self._resolve_entity(item.get("object", ""), entities)
+                if not subject_entity or not object_entity:
+                    continue
+                fact = Fact(
+                    subject_id=subject_entity.entity_id,
+                    predicate=predicate,
+                    object_id=object_entity.entity_id,
+                    source=item.get("evidence", ""),
+                    source_paper=paper_id,
+                    confidence=float(item.get("confidence", 0.7)),
+                    metadata={"extraction_method": "llm_combined"},
+                )
+                fact_table.add_fact(fact)
+                facts.append(fact)
+            except (ValueError, KeyError) as e:
+                logger.debug(f"Skipping invalid relation: {e}")
+                continue
+
+        return entities, facts
 
     # -----------------------------------------------------------------------
     # Step 1: Entity Extraction
@@ -588,6 +750,84 @@ class FactExtractor:
         
         logger.error("All JSON extraction attempts failed")
         return []
+
+    def _generate_json_object(
+        self,
+        prompt: str,
+        system_prompt: str,
+        max_retries: int = 1,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Call the LLM expecting a JSON OBJECT response (e.g. {"entities": [...],
+        "relations": [...]}). Retries once with a stricter prompt on parse
+        failure. Returns None when nothing parseable was produced.
+        """
+        attempt_prompt = prompt
+        for attempt in range(max_retries + 1):
+            use_json_format = attempt == 0
+            try:
+                if use_json_format:
+                    response = self.llm.generate(
+                        attempt_prompt,
+                        system_prompt=system_prompt,
+                        temperature=0.1,
+                        max_tokens=2048,
+                        format="json",
+                    )
+                else:
+                    response = self.llm.generate(
+                        attempt_prompt,
+                        system_prompt=system_prompt,
+                        temperature=0.1,
+                        max_tokens=2048,
+                    )
+            except TypeError:
+                response = self.llm.generate(
+                    attempt_prompt,
+                    system_prompt=system_prompt,
+                    temperature=0.1,
+                    max_tokens=2048,
+                )
+
+            parsed = self._parse_json_object_response(response)
+            if parsed is not None:
+                return parsed
+
+            if attempt < max_retries:
+                logger.warning(
+                    f"JSON object parse failed (attempt {attempt + 1}/"
+                    f"{max_retries + 1}), retrying with stricter prompt"
+                )
+                attempt_prompt = prompt + COMBINED_RETRY_SUFFIX
+
+        return None
+
+    def _parse_json_object_response(self, response: str) -> Optional[Dict[str, Any]]:
+        """Parse a JSON object from an LLM response, tolerating fences/extra text."""
+        if not response:
+            return None
+        try:
+            parsed = json.loads(response)
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            pass
+        # Markdown code block
+        code_block_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response, re.DOTALL)
+        if code_block_match:
+            try:
+                parsed = json.loads(code_block_match.group(1))
+                return parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                pass
+        # Bare object
+        obj_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if obj_match:
+            try:
+                parsed = json.loads(obj_match.group())
+                return parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                pass
+        return None
 
     def _parse_json_response(self, response: str) -> Optional[List[Any]]:
         """

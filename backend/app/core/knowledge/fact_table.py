@@ -15,6 +15,7 @@ References:
 
 from __future__ import annotations
 
+import threading
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
@@ -158,6 +159,11 @@ class FactTable:
         self._by_predicate: Dict[PredicateType, Set[str]] = {}  # predicate → {fact_ids}
         self._by_object: Dict[str, Set[str]] = {}    # object_id → {fact_ids}
         self._by_paper: Dict[str, Set[str]] = {}     # paper_id → {fact_ids}
+
+        # Guards all mutations so the table can be populated from multiple
+        # extraction threads safely. Reentrant because get_or_create_entity
+        # calls add_entity while already holding the lock.
+        self._lock = threading.RLock()
         
         logger.info("FactTable initialized")
 
@@ -167,7 +173,8 @@ class FactTable:
 
     def add_entity(self, entity: Entity) -> str:
         """Add an entity to the table. Returns entity_id."""
-        self._entities[entity.entity_id] = entity
+        with self._lock:
+            self._entities[entity.entity_id] = entity
         logger.debug(f"Added entity: {entity.entity_id} ({entity.entity_type.value}): {entity.name}")
         return entity.entity_id
 
@@ -202,22 +209,23 @@ class FactTable:
         properties: Optional[Dict[str, Any]] = None,
     ) -> Entity:
         """Find existing entity by name+type or create a new one."""
-        # Check for existing with same name and type
-        for e in self._entities.values():
-            if e.name.lower() == name.lower() and e.entity_type == entity_type:
-                return e
+        with self._lock:
+            # Check for existing with same name and type
+            for e in self._entities.values():
+                if e.name.lower() == name.lower() and e.entity_type == entity_type:
+                    return e
 
-        # Create new
-        entity_id = f"{entity_type.value.lower()}_{name.lower().replace(' ', '_')[:30]}_{uuid.uuid4().hex[:6]}"
-        entity = Entity(
-            entity_id=entity_id,
-            entity_type=entity_type,
-            name=name,
-            properties=properties or {},
-            source_paper=source_paper,
-        )
-        self.add_entity(entity)
-        return entity
+            # Create new
+            entity_id = f"{entity_type.value.lower()}_{name.lower().replace(' ', '_')[:30]}_{uuid.uuid4().hex[:6]}"
+            entity = Entity(
+                entity_id=entity_id,
+                entity_type=entity_type,
+                name=name,
+                properties=properties or {},
+                source_paper=source_paper,
+            )
+            self.add_entity(entity)
+            return entity
 
     # -----------------------------------------------------------------------
     # Fact CRUD
@@ -228,14 +236,15 @@ class FactTable:
         Add a fact (SPO triple) to the table.
         Updates all indexes. Returns fact_id.
         """
-        self._facts[fact.fact_id] = fact
+        with self._lock:
+            self._facts[fact.fact_id] = fact
 
-        # Update indexes
-        self._by_subject.setdefault(fact.subject_id, set()).add(fact.fact_id)
-        self._by_predicate.setdefault(fact.predicate, set()).add(fact.fact_id)
-        self._by_object.setdefault(fact.object_id, set()).add(fact.fact_id)
-        if fact.source_paper:
-            self._by_paper.setdefault(fact.source_paper, set()).add(fact.fact_id)
+            # Update indexes
+            self._by_subject.setdefault(fact.subject_id, set()).add(fact.fact_id)
+            self._by_predicate.setdefault(fact.predicate, set()).add(fact.fact_id)
+            self._by_object.setdefault(fact.object_id, set()).add(fact.fact_id)
+            if fact.source_paper:
+                self._by_paper.setdefault(fact.source_paper, set()).add(fact.fact_id)
 
         logger.debug(
             f"Added fact [{fact.fact_id}]: "

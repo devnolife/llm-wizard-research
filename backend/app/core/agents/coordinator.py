@@ -214,13 +214,44 @@ class CoordinatorAgent:
         # 2. Fact extraction
         if self.fact_extractor and self.fact_table and retrieved_papers:
             try:
+                seen_signatures = set()
+                to_extract = []
                 for paper in retrieved_papers[:5]:  # Limit for performance
                     content = paper.get("content", "")
                     paper_id = paper.get("doc_id", paper.get("id", "unknown"))
-                    if content:
-                        self.fact_extractor.extract_from_text(
-                            content, paper_id, self.fact_table
-                        )
+                    if not content:
+                        continue
+                    # PERF: skip identical chunks (RAG often returns near-duplicate
+                    # passages from the same source) — re-extracting them is wasted
+                    # LLM work that yields no new facts.
+                    signature = (paper_id, content[:200])
+                    if signature in seen_signatures:
+                        continue
+                    seen_signatures.add(signature)
+                    to_extract.append((paper_id, content))
+
+                # Extract concurrently — LLM calls dominate; FactTable is lock-safe.
+                if len(to_extract) > 1:
+                    from concurrent.futures import ThreadPoolExecutor
+                    import os as _os
+                    workers = max(1, min(len(to_extract), int(_os.getenv("OLLAMA_NUM_PARALLEL", "4"))))
+                    with ThreadPoolExecutor(max_workers=workers) as _pool:
+                        _futs = [
+                            _pool.submit(
+                                self.fact_extractor.extract_from_text,
+                                content, pid, self.fact_table,
+                            )
+                            for pid, content in to_extract
+                        ]
+                        for _f in _futs:
+                            try:
+                                _f.result()
+                            except Exception as e:
+                                logger.error(f"Fact extraction (parallel) failed: {e}")
+                else:
+                    for pid, content in to_extract:
+                        self.fact_extractor.extract_from_text(content, pid, self.fact_table)
+
                 fact_stats = self.fact_table.get_statistics()
                 trace_entry["actions"].append(
                     f"Extracted facts: {fact_stats.get('total_facts', 0)} facts, "

@@ -106,10 +106,10 @@ const parseRoadmap = (text) => {
 }
 
 const TABS = [
-  { id: 'proposal', label: 'Usulan', icon: Target, desc: 'Usulan penelitian baru hasil sintesis dari jurnal Anda: gap yang ditemukan, judul penelitian yang diusulkan, dan alur penelitiannya — dirangkai jadi satu.' },
+  { id: 'proposal', label: 'Usulan', icon: Target, desc: 'Indikator usulan penelitian hasil sintesis jurnal Anda, berbasis indikator synthesis gap (Cooper, 1998): gap yang terdeteksi, arah penelitian yang diusulkan, dan alurnya. Bersifat alat bantu keputusan — perlu divalidasi peneliti.' },
   { id: 'overview', label: 'Ringkasan', icon: BarChart3, desc: 'Gambaran umum hasil analisis: jumlah topik, gap, dan rekomendasi yang ditemukan dari paper Anda. Mulai dari sini.' },
   { id: 'topics', label: 'Topik & Analisis', icon: Tag, desc: 'Topik-topik utama yang dibahas dalam paper Anda, hasil ekstraksi otomatis oleh AI dari isi dokumen.' },
-  { id: 'gaps', label: 'Gap Penelitian', icon: Search, desc: 'Celah penelitian yang belum terisi — bagian yang belum diteliti, temuan yang saling bertentangan, atau topik yang terpecah-pecah. Ini bisa jadi ide penelitian Anda berikutnya.' },
+  { id: 'gaps', label: 'Gap Penelitian', icon: Search, desc: 'Indikator synthesis gap (Cooper/Booth): fragmentasi (topik terpecah tak terintegrasi), inkonsistensi (temuan bertentangan), atau ketidaklengkapan kolektif. Indikatif — perlu ditinjau peneliti.' },
   { id: 'recommendations', label: 'Rekomendasi', icon: Lightbulb, desc: 'Saran arah penelitian yang bisa Anda ambil berdasarkan gap yang ditemukan, lengkap dengan alasan (WHY) dan cara memulainya (HOW).' },
   { id: 'roadmap', label: 'Peta Jalan', icon: Map, desc: 'Rencana penelitian bertahap: apa yang bisa dikerjakan dalam jangka pendek, menengah, dan panjang.' },
   { id: 'knowledge-graph', label: 'Graf Pengetahuan', icon: Share2, desc: 'Peta visual hubungan antar konsep (metode, domain, temuan) yang diekstrak dari paper. Titik = konsep, garis = hubungan antar konsep.' },
@@ -121,6 +121,22 @@ const GAP_COLORS = {
   FRAGMENTATION: { border: 'border-blue-500', bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400', label: 'Fragmentasi', desc: 'Paper membahas topik yang sama dari sudut berbeda tanpa integrasi' },
   INCONSISTENCY: { border: 'border-amber-500', bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', label: 'Inkonsistensi', desc: 'Temuan yang bertentangan antar paper' },
   INCOMPLETENESS: { border: 'border-red-500', bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Ketidaklengkapan', desc: 'Aspek kritis yang belum tercakup dalam literatur' },
+}
+
+// Penjelasan "cara menemukan" tiap jenis gap — untuk transparansi metode deteksi
+const GAP_METHOD = {
+  FRAGMENTATION: {
+    look: 'Mencari jurnal yang membahas fenomena sama tetapi dari sudut/teori berbeda dan tidak saling mengaitkan temuannya.',
+    how: 'Sistem mengelompokkan topik antar-paper lalu memeriksa keterhubungannya di Knowledge Graph. Bila antar-kelompok nyaris tidak ada keterkaitan, itu tanda fragmentasi.',
+  },
+  INCONSISTENCY: {
+    look: 'Mencari temuan atau klaim yang saling bertentangan antar paper tanpa ada yang merekonsiliasi.',
+    how: 'Sistem membandingkan klaim (fakta Subjek–Predikat–Objek) antar paper dan mengecek kontradiksi. Bila ada dua klaim berlawanan tentang hal yang sama, itu tanda inkonsistensi.',
+  },
+  INCOMPLETENESS: {
+    look: 'Mencari aspek penting dari fenomena yang belum tercakup secara kolektif oleh kumpulan paper.',
+    how: 'Sistem memetakan cakupan aspek/konsep di Knowledge Graph lalu mengidentifikasi aspek yang jarang atau tidak pernah muncul. Aspek yang kosong itulah celah ketidaklengkapan.',
+  },
 }
 
 const PRIORITY_COLORS = {
@@ -161,6 +177,7 @@ const AnalysisResults = () => {
   const [deepLoading, setDeepLoading] = useState(false)
   const [expandedRecs, setExpandedRecs] = useState({})
   const [advancedMode, setAdvancedMode] = useState(false)
+  const [showFullAnalysis, setShowFullAnalysis] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -239,6 +256,7 @@ const AnalysisResults = () => {
           return {
             title: rec.title || '',
             description: rec.description || '',
+            gap_type: (rec.gap_type || rec.type || '').toUpperCase() || null,
             why: rec.why || '',
             how: rec.how || '',
             priority: rec.priority || (idx < 2 ? 'high' : idx < 4 ? 'medium' : 'low'),
@@ -281,18 +299,27 @@ const AnalysisResults = () => {
 
   const parsedRoadmap = useMemo(() => {
     const roadmap = data?.roadmap
+    // Bersihkan sisa markdown (**), penomoran, dan bullet dari tiap item
+    const cleanItem = (s) => String(s)
+      .replace(/\*\*/g, '')
+      .replace(/^\s*[-•*]\s*/, '')
+      .replace(/^\s*\d+[.)]\s*/, '')
+      .trim()
+    const pickIcon = (name, idx) => {
+      const n = (name || '').toLowerCase()
+      if (n.includes('short') || n.includes('pendek')) return 'zap'
+      if (n.includes('medium') || n.includes('menengah')) return 'trending'
+      if (n.includes('long') || n.includes('panjang')) return 'target'
+      return ['zap', 'trending', 'target', 'clock'][idx] || 'clock'
+    }
     if (Array.isArray(roadmap)) {
       return roadmap.map((phase, idx) => {
         if (typeof phase === 'object' && phase !== null) {
-          const phaseName = (phase.phase || `Phase ${idx + 1}`).toLowerCase()
-          let label = phase.phase || `Phase ${idx + 1}`
-          let icon = 'clock'
-          if (phaseName.includes('short') || phaseName.includes('pendek') || phaseName.includes('1')) { label = label || 'Short Term'; icon = 'zap' }
-          else if (phaseName.includes('medium') || phaseName.includes('menengah') || phaseName.includes('2')) { label = label || 'Medium Term'; icon = 'trending' }
-          else if (phaseName.includes('long') || phaseName.includes('panjang') || phaseName.includes('3')) { label = label || 'Long Term'; icon = 'target' }
-          return { label, icon, items: phase.items || [] }
+          const label = phase.phase || `Tahap ${idx + 1}`
+          const items = (phase.items || []).map(cleanItem).filter(Boolean)
+          return { label, icon: pickIcon(label, idx), items }
         }
-        return { label: `Phase ${idx + 1}`, icon: 'clock', items: [String(phase)] }
+        return { label: `Tahap ${idx + 1}`, icon: pickIcon('', idx), items: [cleanItem(phase)].filter(Boolean) }
       })
     }
     // Legacy: plain text
@@ -335,8 +362,41 @@ const AnalysisResults = () => {
       groups[basis].push(g.title)
     }
     const paperGroups = Object.entries(groups).map(([basis, titles]) => ({ basis, titles }))
-    return { papersInfo, duplicateCount, paperGroups, intro: data.proposal_intro || '', primaryGap, primaryRec, flow: parsedRoadmap }
+    const relatedRefs = data.related_paper_refs || []
+    return { papersInfo, duplicateCount, paperGroups, intro: data.proposal_intro || '', primaryGap, primaryRec, flow: parsedRoadmap, relatedRefs }
   }, [data, parsedGaps, parsedRecommendations, parsedRoadmap])
+
+  // Data untuk tampilan ringkas awal: kategori + persamaan dari jurnal terunggah
+  const simpleData = useMemo(() => {
+    if (!data) return null
+    const papersInfo = data.papers_info || (data.papers || []).map(t => ({ title: t, already_indexed: false }))
+    const groups = {}
+    for (const g of (data.paper_groups || [])) {
+      const basis = (g.basis || 'Lainnya').trim()
+      if (!groups[basis]) groups[basis] = []
+      groups[basis].push(g.title)
+    }
+    const categories = Object.entries(groups).map(([basis, titles]) => ({ basis, titles }))
+    const sim = data.paper_similarity || {}
+    // Kekurangan per jurnal: tersurat (ditulis eksplisit) & tersirat (disimpulkan)
+    const weaknesses = (data.paper_weaknesses || []).filter(
+      w => (w.tersurat?.length || 0) > 0 || (w.tersirat?.length || 0) > 0
+    )
+    // Usulan utama (indikator) + gap yang dijawab, untuk langkah ④
+    const primaryGap = [...parsedGaps].sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0] || null
+    const primaryRec = parsedRecommendations.find(r => r.priority === 'high') || parsedRecommendations[0] || null
+    return {
+      papersInfo,
+      categories,
+      keywords: sim.common_keywords || [],
+      themes: sim.shared_themes || [],
+      summary: sim.summary || '',
+      weaknesses,
+      primaryGap,
+      primaryRec,
+      intro: data.proposal_intro || '',
+    }
+  }, [data, parsedGaps, parsedRecommendations])
 
   // Jika pindah ke mode Sederhana saat berada di tab khusus-Lanjutan, kembali ke Ringkasan
   useEffect(() => {
@@ -589,7 +649,7 @@ const AnalysisResults = () => {
         </div>
       )
     }
-    const { papersInfo, duplicateCount, paperGroups, intro, primaryGap, primaryRec, flow } = proposal
+    const { papersInfo, duplicateCount, paperGroups, intro, primaryGap, primaryRec, flow, relatedRefs } = proposal
     const gapType = primaryGap?.type || GAP_TYPES[0]
     const gapColors = GAP_COLORS[gapType] || GAP_COLORS.FRAGMENTATION
     const recPrio = PRIORITY_COLORS[primaryRec?.priority] || PRIORITY_COLORS.high
@@ -604,6 +664,16 @@ const AnalysisResults = () => {
             <h3 className="text-lg font-semibold">Usulan Penelitian Baru</h3>
           </div>
           {intro && <p className="text-sm leading-relaxed mb-4">{intro}</p>}
+
+          {/* Disclaimer: posisi sistem sebagai alat bantu keputusan (sesuai revisi penguji) */}
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 mb-4">
+            <Shield className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+              <strong>Indikator, bukan kesimpulan.</strong> Usulan ini dihasilkan sebagai <em>alat bantu keputusan</em>{' '}
+              (decision-support) berbasis indikator <Term k="synthesis gap">synthesis gap</Term>.
+              Keputusan akhir tetap berada di tangan peneliti — semua usulan <strong>perlu divalidasi</strong> secara manual.
+            </p>
+          </div>
           <div>
             <p className="text-xs font-medium text-muted-foreground mb-1.5">
               Disintesis dari {papersInfo.length || data?.files_processed || 0} jurnal:
@@ -695,9 +765,23 @@ const AnalysisResults = () => {
                     Keyakinan: {(primaryGap.confidence * 100).toFixed(0)}%
                   </span>
                 )}
+                {primaryGap.rule_engine_verdict && (
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${String(primaryGap.rule_engine_verdict).toUpperCase() === 'PASS' || String(primaryGap.rule_engine_verdict).toUpperCase() === 'ACCEPT' ? 'bg-green-500/10 text-green-600 dark:text-green-400' : String(primaryGap.rule_engine_verdict).toUpperCase() === 'REJECT' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}`} title="Hasil validasi Rule Engine (simbolik)">
+                    <Term k="Rule Engine">Rule Engine</Term>: {verdictLabel(primaryGap.rule_engine_verdict)}
+                  </span>
+                )}
               </div>
               {primaryGap.title && <p className="font-medium text-sm mb-1">{primaryGap.title}</p>}
               <Markdown content={primaryGap.description} className="text-foreground" />
+              {GAP_METHOD[gapType] && (
+                <div className={`mt-3 rounded-md border-l-2 ${gapColors.border} ${gapColors.bg} p-3`}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Search className={`w-3.5 h-3.5 ${gapColors.text}`} />
+                    <p className={`text-xs font-semibold ${gapColors.text}`}>Bagaimana gap ini ditemukan?</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{GAP_METHOD[gapType].how}</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -711,9 +795,18 @@ const AnalysisResults = () => {
                 <span className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
                 <h4 className="font-semibold text-sm">Usulan Penelitian</h4>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${recPrio.bg} ${recPrio.text}`}>{recPrio.label}</span>
+                {primaryRec.gap_type && GAP_COLORS[primaryRec.gap_type] && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${GAP_COLORS[primaryRec.gap_type].bg} ${GAP_COLORS[primaryRec.gap_type].text}`} title="Indikator synthesis gap yang dijawab usulan ini">
+                    Menjawab: {GAP_COLORS[primaryRec.gap_type].label}
+                  </span>
+                )}
               </div>
               {primaryRec.title && <p className="font-semibold text-sm mb-1">{primaryRec.title}</p>}
               <Markdown content={primaryRec.description} className="text-foreground" />
+              <p className="mt-2 text-[11px] text-muted-foreground italic flex items-center gap-1">
+                <Shield className="w-3 h-3 flex-shrink-0" />
+                Bersifat indikatif — perlu ditinjau & divalidasi peneliti sebelum dijadikan judul final.
+              </p>
               {(primaryRec.why || primaryRec.how) && (
                 <div className="mt-3 space-y-3 pt-3 border-t">
                   {primaryRec.why && (
@@ -771,6 +864,30 @@ const AnalysisResults = () => {
                 )
               })}
             </div>
+          </div>
+        )}
+
+        {/* Paper rujukan pendukung (dari korpus) */}
+        {relatedRefs?.length > 0 && (
+          <div className="rounded-lg border bg-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen className="w-5 h-5 text-cyan-500" />
+              <h4 className="font-semibold text-sm">Paper Rujukan Pendukung</h4>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Paper relevan dari koleksi yang dapat memperkuat usulan ini (bahan bacaan awal — bukan bagian dari usulan).
+            </p>
+            <ul className="space-y-2">
+              {relatedRefs.slice(0, 5).map((ref, i) => (
+                <li key={i} className="flex items-start gap-2.5 text-sm">
+                  <span className="w-5 h-5 rounded bg-secondary flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                  <div className="min-w-0">
+                    <p className="font-medium leading-snug">{ref.title}</p>
+                    {ref.reason && <p className="text-xs text-muted-foreground mt-0.5">{ref.reason}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -983,6 +1100,69 @@ const AnalysisResults = () => {
         })}
       </div>
 
+      {/* Bagaimana cara menemukan gap — metodologi pipeline (data nyata) */}
+      {(() => {
+        const nPapers = data?.files_processed || data?.papers_info?.length || data?.papers?.length || 0
+        const nChunks = data?.total_chunks || 0
+        const nFacts = data?.fact_table_stats?.total_facts || 0
+        const nEntities = data?.fact_table_stats?.total_entities || 0
+        const rr = data?.rule_engine_report || {}
+        const ruleTotal = rr.total ?? parsedGaps.filter(g => g.rule_engine_verdict).length
+        const steps = [
+          {
+            icon: FileText, color: 'text-blue-500',
+            title: 'Baca & pecah jurnal',
+            desc: `Sistem membaca ${nPapers || 'beberapa'} jurnal${nChunks ? ` dan memecahnya menjadi ${nChunks} potongan teks` : ''} agar bisa dianalisis mendetail.`,
+          },
+          {
+            icon: Database, color: 'text-emerald-500',
+            title: 'Ekstraksi fakta (SPO)',
+            desc: `Tiap kalimat penting diubah jadi fakta Subjek–Predikat–Objek${(nFacts || nEntities) ? ` — terkumpul ${nFacts} fakta dari ${nEntities} entitas` : ''}.`,
+          },
+          {
+            icon: Share2, color: 'text-purple-500',
+            title: 'Bangun Knowledge Graph',
+            desc: 'Fakta-fakta dirangkai jadi peta keterhubungan antar-konsep & antar-paper, sehingga celah antar-jurnal terlihat.',
+          },
+          {
+            icon: Search, color: 'text-amber-500',
+            title: 'Bandingkan antar-paper',
+            desc: 'Sistem mencari 3 sinyal gap: Fragmentasi (tak terintegrasi), Inkonsistensi (saling bertentangan), dan Ketidaklengkapan (aspek belum tercakup).',
+          },
+          {
+            icon: Shield, color: 'text-green-500',
+            title: 'Validasi Rule Engine',
+            desc: `Tiap calon gap diuji 9 aturan logika${ruleTotal ? ` (${ruleTotal} indikator diperiksa)` : ''} lalu diberi status Lolos / Perlu Ditinjau / Ditolak.`,
+          },
+        ]
+        return (
+          <div className="rounded-lg border bg-card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <Compass className="w-5 h-5 text-primary" />
+              <h4 className="font-semibold text-sm">Bagaimana Cara Sistem Menemukan Gap Ini?</h4>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Gap tidak ditebak — diperoleh lewat 5 langkah berikut, mengikuti model 3 indikator Cooper (1998).
+            </p>
+            <ol className="space-y-3">
+              {steps.map((s, i) => {
+                const Icon = s.icon
+                return (
+                  <li key={i} className="flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                    <Icon className={`w-4 h-4 ${s.color} flex-shrink-0 mt-1`} />
+                    <div>
+                      <p className="text-sm font-medium leading-snug">{s.title}</p>
+                      <p className="text-xs text-muted-foreground">{s.desc}</p>
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          </div>
+        )
+      })()}
+
       {/* Gap Cards */}
       <div className="space-y-4">
         {parsedGaps.map((gap, idx) => {
@@ -1016,6 +1196,32 @@ const AnalysisResults = () => {
                 </div>
                 {gap.title && <h4 className="font-medium text-sm mb-2">{gap.title}</h4>}
                 <Markdown content={gap.description} className="text-foreground" />
+
+                {/* Cara menemukan gap ini — metode deteksi per jenis */}
+                {GAP_METHOD[typeKey] && (
+                  <div className={`mt-3 rounded-md border-l-2 ${colors.border} ${colors.bg} p-3`}>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Search className={`w-3.5 h-3.5 ${colors.text}`} />
+                      <p className={`text-xs font-semibold ${colors.text}`}>Cara menemukan gap ini</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      <span className="font-medium text-foreground">Yang dicari:</span> {GAP_METHOD[typeKey].look}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Cara deteksi:</span> {GAP_METHOD[typeKey].how}
+                    </p>
+                    {(gap.confidence != null || gap.rule_engine_verdict) && (
+                      <p className="text-xs text-muted-foreground mt-1.5 pt-1.5 border-t border-border/60">
+                        <span className="font-medium text-foreground">Hasil:</span>{' '}
+                        {gap.confidence != null && `tingkat keyakinan ${(gap.confidence * 100).toFixed(0)}%`}
+                        {gap.confidence != null && gap.rule_engine_verdict && ', '}
+                        {gap.rule_engine_verdict && `divalidasi Rule Engine → ${verdictLabel(gap.rule_engine_verdict)}`}
+                        .
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {gap.evidence?.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-border">
                     <p className="text-xs font-medium text-muted-foreground mb-1">Bukti:</p>
@@ -1605,6 +1811,275 @@ const AnalysisResults = () => {
   const tabComponents = { proposal: ProposalTab, overview: OverviewTab, topics: TopicsTab, gaps: GapsTab, recommendations: RecommendationsTab, roadmap: RoadmapTab, 'knowledge-graph': KnowledgeGraphTab, pipeline: PipelineTab }
   const ActiveTabComponent = tabComponents[activeTab]
 
+  // ── Tampilan Ringkas Awal (default) ────────────────────
+  // Fokus: dari jurnal yang diunggah, apa KATEGORI dan PERSAMAANNYA.
+  if (!showFullAnalysis) {
+    const sd = simpleData
+    const catColors = ['text-blue-500 bg-blue-500/10', 'text-purple-500 bg-purple-500/10', 'text-emerald-500 bg-emerald-500/10', 'text-amber-500 bg-amber-500/10', 'text-pink-500 bg-pink-500/10']
+    return (
+      <div className="w-full px-6 lg:px-10 py-8 max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-center gap-3 mb-1">
+            <CheckCircle className="w-6 h-6 text-green-500" />
+            <h1 className="text-2xl font-bold tracking-tight">Hasil Awal</h1>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Dari {sd?.papersInfo?.length || data?.files_processed || 0} jurnal yang Anda unggah — ini <strong>kategori</strong>, <strong>persamaan</strong>, <strong>kekurangan</strong>, dan <strong>usulannya</strong>.
+          </p>
+        </div>
+
+        {/* Daftar jurnal */}
+        <div className="rounded-lg border bg-card p-5 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <FileText className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold text-sm">Jurnal yang Dianalisis</h3>
+          </div>
+          <div className="space-y-2">
+            {(sd?.papersInfo || []).map((p, i) => (
+              <div key={i} className="flex items-start gap-2.5 text-sm">
+                <span className="w-5 h-5 rounded bg-secondary flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                <span className="flex-1">{p.title}</span>
+                {p.already_indexed && (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-medium flex-shrink-0" title="Sudah ada di database">
+                    <Database className="w-2.5 h-2.5" /> Sudah ada
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ① Kategori */}
+        <div className="rounded-lg border bg-card p-5 mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+            <Tag className="w-5 h-5 text-purple-500" />
+            <h3 className="font-semibold text-sm">Kategori — Jurnal Ini Berbasis Apa</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4 pl-8">Tiap jurnal dikelompokkan berdasarkan basisnya (metode/pendekatan inti).</p>
+          {sd?.categories?.length > 0 ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {sd.categories.map((c, i) => (
+                <div key={i} className="rounded-lg border bg-secondary/30 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${catColors[i % catColors.length]}`}>{c.basis}</span>
+                    <span className="text-[10px] text-muted-foreground">{c.titles.length} jurnal</span>
+                  </div>
+                  <ul className="space-y-1">
+                    {c.titles.map((t, j) => (
+                      <li key={j} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                        <FileText className="w-3 h-3 text-primary flex-shrink-0 mt-0.5" /><span>{t}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground pl-8">Kategori belum tersedia untuk analisis ini.</p>
+          )}
+        </div>
+
+        {/* ② Persamaan */}
+        <div className="rounded-lg border bg-card p-5 mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+            <Sparkles className="w-5 h-5 text-amber-500" />
+            <h3 className="font-semibold text-sm">Persamaan — Apa yang Sama dari Jurnal-Jurnal Ini</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4 pl-8">Kata kunci dan tema yang berulang di seluruh jurnal.</p>
+
+          {sd?.summary && <p className="text-sm text-muted-foreground mb-4 pl-8">{sd.summary}</p>}
+
+          {sd?.keywords?.length > 0 && (
+            <div className="mb-4 pl-8">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Kata Kunci yang Sama</p>
+              <div className="flex flex-wrap gap-2">
+                {sd.keywords.map((kw, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400">{kw}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sd?.themes?.length > 0 && (
+            <div className="pl-8">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Tema Bersama</p>
+              <ul className="space-y-1">
+                {sd.themes.map((t, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+                    <span className="text-amber-500 mt-0.5">•</span><span>{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(!sd?.keywords?.length && !sd?.themes?.length && !sd?.summary) && (
+            <p className="text-sm text-muted-foreground pl-8">Persamaan belum tersedia untuk analisis ini.</p>
+          )}
+        </div>
+
+        {/* ③ Kekurangan */}
+        <div className="rounded-lg border bg-card p-5 mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
+            <AlertTriangle className="w-5 h-5 text-rose-500" />
+            <h3 className="font-semibold text-sm">Kekurangan — Apa yang Kurang dari Tiap Jurnal</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4 pl-8">
+            Dibagi dua: <strong className="text-amber-600 dark:text-amber-400">tersurat</strong> (ditulis langsung oleh penulis) dan{' '}
+            <strong className="text-rose-600 dark:text-rose-400">tersirat</strong> (tidak ditulis, tapi disimpulkan dari isi). Tiap poin disertai <strong>dasar</strong> dari jurnal — bukan tebakan.
+          </p>
+
+          {sd?.weaknesses?.length > 0 ? (
+            <div className="space-y-4 pl-8">
+              {sd.weaknesses.map((w, i) => (
+                <div key={i} className="rounded-lg border bg-secondary/30 p-4">
+                  <div className="flex items-start gap-2 mb-3">
+                    <FileText className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                    <span className="text-sm font-medium leading-snug">{w.title}</span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {/* Tersurat */}
+                    <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                        <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">Tersurat</span>
+                        <span className="text-[10px] text-muted-foreground">(ditulis eksplisit)</span>
+                      </div>
+                      {w.tersurat?.length > 0 ? (
+                        <ul className="space-y-2">
+                          {w.tersurat.map((t, j) => {
+                            const poin = typeof t === 'object' ? t.poin : t
+                            const dasar = typeof t === 'object' ? t.dasar : ''
+                            return (
+                              <li key={j} className="flex items-start gap-1.5 text-xs">
+                                <span className="text-amber-500 mt-0.5">•</span>
+                                <div>
+                                  <span className="text-muted-foreground">{poin}</span>
+                                  {dasar && (
+                                    <p className="text-[11px] text-amber-700/80 dark:text-amber-300/70 mt-0.5">
+                                      <span className="font-medium">Dasar:</span> {dasar}
+                                    </p>
+                                  )}
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">Tidak ada kekurangan yang ditulis eksplisit.</p>
+                      )}
+                    </div>
+                    {/* Tersirat */}
+                    <div className="rounded-md border border-rose-500/20 bg-rose-500/5 p-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Search className="w-3.5 h-3.5 text-rose-500" />
+                        <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">Tersirat</span>
+                        <span className="text-[10px] text-muted-foreground">(disimpulkan)</span>
+                      </div>
+                      {w.tersirat?.length > 0 ? (
+                        <ul className="space-y-2">
+                          {w.tersirat.map((t, j) => {
+                            const poin = typeof t === 'object' ? t.poin : t
+                            const dasar = typeof t === 'object' ? t.dasar : ''
+                            return (
+                              <li key={j} className="flex items-start gap-1.5 text-xs">
+                                <span className="text-rose-500 mt-0.5">•</span>
+                                <div>
+                                  <span className="text-muted-foreground">{poin}</span>
+                                  {dasar && (
+                                    <p className="text-[11px] text-rose-700/80 dark:text-rose-300/70 mt-0.5">
+                                      <span className="font-medium">Dasar (dari isi jurnal):</span> {dasar}
+                                    </p>
+                                  )}
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">Tidak terdeteksi kekurangan tersirat.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground pl-8">Kekurangan belum tersedia untuk analisis ini.</p>
+          )}
+        </div>
+
+        {/* ④ Usulan Penelitian */}
+        <div className="rounded-lg border bg-card p-5 mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">4</span>
+            <Target className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold text-sm">Usulan — Arah Penelitian dari Kekurangan Ini</h3>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4 pl-8">
+            Dari gap & kekurangan di atas, ini indikator arah penelitian yang bisa Anda kembangkan.
+          </p>
+
+          {/* Disclaimer decision-support */}
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 mb-4 ml-8">
+            <Shield className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+              <strong>Indikator, bukan kesimpulan.</strong> Usulan ini <em>alat bantu keputusan</em> berbasis{' '}
+              indikator <Term k="synthesis gap">synthesis gap</Term> — <strong>perlu Anda validasi</strong> sebelum dijadikan judul.
+            </p>
+          </div>
+
+          {sd?.primaryRec ? (
+            <div className="pl-8 space-y-3">
+              {sd.intro && <p className="text-sm leading-relaxed">{sd.intro}</p>}
+              <div className="rounded-lg border bg-secondary/30 p-4">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <Lightbulb className="w-4 h-4 text-primary flex-shrink-0" />
+                  {sd.primaryRec.gap_type && GAP_COLORS[sd.primaryRec.gap_type] && (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${GAP_COLORS[sd.primaryRec.gap_type].bg} ${GAP_COLORS[sd.primaryRec.gap_type].text}`} title="Indikator synthesis gap yang dijawab">
+                      Menjawab: {GAP_COLORS[sd.primaryRec.gap_type].label}
+                    </span>
+                  )}
+                </div>
+                {sd.primaryRec.title && <p className="font-semibold text-sm mb-1">{sd.primaryRec.title}</p>}
+                {sd.primaryRec.description && <Markdown content={sd.primaryRec.description} className="text-muted-foreground" />}
+                {sd.primaryRec.why && (
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <p className="text-xs font-semibold text-muted-foreground mb-0.5 flex items-center gap-1">
+                      <Target className="w-3 h-3" /> Mengapa penting
+                    </p>
+                    <Markdown content={sd.primaryRec.why} className="text-muted-foreground text-xs" />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground pl-8">Usulan belum tersedia untuk analisis ini.</p>
+          )}
+        </div>
+
+        {/* CTA ke detail lengkap (banyak tab dibungkus di sini) */}
+        <div className="rounded-lg border-2 border-dashed border-primary/30 p-6 text-center">
+          <p className="text-sm text-muted-foreground mb-3">
+            Cukup sampai sini untuk gambaran utama. Kalau ingin menelusuri lebih dalam — semua gap, rekomendasi, peta jalan, graf & pipeline — buka <strong>Detail</strong>.
+          </p>
+          <button
+            onClick={() => setShowFullAnalysis(true)}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Compass className="w-4 h-4" />
+            Lihat Detail
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ── Main Render ────────────────────────────────────────
   return (
     <div id="analysis-content" className="w-full px-6 lg:px-10 py-8">
@@ -1612,9 +2087,15 @@ const AnalysisResults = () => {
       <div className="mb-8">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
+            <button
+              onClick={() => setShowFullAnalysis(false)}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground mb-2 transition-colors"
+            >
+              <ArrowRight className="w-3.5 h-3.5 rotate-180" /> Kembali ke Hasil Awal
+            </button>
             <div className="flex items-center gap-3 mb-1">
               <CheckCircle className="w-6 h-6 text-green-500" />
-              <h1 className="text-2xl font-bold tracking-tight">Analisis Selesai</h1>
+              <h1 className="text-2xl font-bold tracking-tight">Detail Analisis</h1>
             </div>
             <p className="text-sm text-muted-foreground">
               Insight penelitian berbasis AI dari paper yang Anda unggah

@@ -22,7 +22,8 @@ import json
 from ...models.requests import (
     RecommendationRequest,
     GapDetectionRequest,
-    ChatRequest
+    ChatRequest,
+    MarkedPapersRequest
 )
 from ...models.responses import (
     AnalysisResponseModel,
@@ -267,6 +268,135 @@ def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _parse_selection_json(raw: str) -> dict:
+    """Parse LLM JSON output for the marked-papers analysis."""
+    import json as _json
+    import re as _re
+    text = raw.strip()
+    match = _re.search(r'```(?:json)?\s*(\{.*\})\s*```', text, _re.DOTALL)
+    if match:
+        text = match.group(1)
+    elif not text.startswith('{'):
+        match = _re.search(r'(\{.*\})', text, _re.DOTALL)
+        if match:
+            text = match.group(1)
+    try:
+        data = _json.loads(text)
+        if isinstance(data, dict):
+            sugg = []
+            for s in data.get("suggestions", []):
+                if isinstance(s, dict):
+                    sugg.append({
+                        "title": s.get("title", s.get("judul", "")),
+                        "rationale": s.get("rationale", s.get("alasan", "")),
+                    })
+                elif isinstance(s, str):
+                    sugg.append({"title": s, "rationale": ""})
+            return {
+                "common_keywords": [str(k) for k in data.get("common_keywords", data.get("kata_kunci", []))],
+                "shared_themes": [str(t) for t in data.get("shared_themes", data.get("tema", []))],
+                "suggestions": sugg,
+                "summary": data.get("summary", data.get("ringkasan", "")),
+            }
+    except (_json.JSONDecodeError, ValueError):
+        pass
+    return {"common_keywords": [], "shared_themes": [], "suggestions": [], "summary": text[:500]}
+
+
+def _parse_weaknesses_json(raw: str) -> dict:
+    """Parse LLM JSON output for per-paper weaknesses (tersurat & tersirat)."""
+    import json as _json
+    import re as _re
+    text = (raw or "").strip()
+    match = _re.search(r'```(?:json)?\s*(\{.*\})\s*```', text, _re.DOTALL)
+    if match:
+        text = match.group(1)
+    elif not text.startswith('{'):
+        match = _re.search(r'(\{.*\})', text, _re.DOTALL)
+        if match:
+            text = match.group(1)
+
+    def _clean(items):
+        """Normalise weakness items to {poin, dasar} objects (handles legacy strings)."""
+        out = []
+        for it in items if isinstance(items, list) else []:
+            if isinstance(it, dict):
+                poin = str(
+                    it.get("poin", it.get("point", it.get("kelemahan", it.get("kekurangan", ""))))
+                ).strip().lstrip('-•* ').strip()
+                dasar = str(
+                    it.get("dasar", it.get("basis", it.get("alasan", it.get("bukti", ""))))
+                ).strip()
+                if poin:
+                    out.append({"poin": poin, "dasar": dasar})
+            else:
+                s = str(it).strip().lstrip('-•* ').strip()
+                if s:
+                    out.append({"poin": s, "dasar": ""})
+        return out[:3]
+
+    try:
+        data = _json.loads(text)
+        if isinstance(data, dict):
+            return {
+                "tersurat": _clean(data.get("tersurat", data.get("explicit", []))),
+                "tersirat": _clean(data.get("tersirat", data.get("implicit", []))),
+            }
+    except (_json.JSONDecodeError, ValueError):
+        pass
+    return {"tersurat": [], "tersirat": []}
+
+
+@router.post("/analyze-selection")
+async def analyze_selection(request: MarkedPapersRequest):
+    """
+    Analyze a small set of user-marked papers: find shared keywords/themes
+    and suggest new research directions. Designed for the 'mark 3-5 papers' flow.
+    """
+    papers = request.papers or []
+    if len(papers) < 2:
+        raise HTTPException(status_code=400, detail="Tandai minimal 2 paper (disarankan 3-5).")
+
+    try:
+        glm = get_glm_interface()
+
+        paper_block = "\n\n".join([
+            f"Paper {i + 1}:\n"
+            f"Judul: {p.get('title', 'Tanpa Judul')}\n"
+            f"Tahun: {p.get('year', '-')}\n"
+            f"Abstrak: {str(p.get('abstract', '') or '')[:500]}"
+            for i, p in enumerate(papers)
+        ])
+
+        topic_line = f"Topik/kata kunci pencarian awal: {request.query}\n\n" if request.query else ""
+
+        prompt = (
+            "Anda adalah asisten peneliti. Pengguna telah menandai beberapa paper secara manual. "
+            "Analisis paper-paper berikut dan temukan benang merahnya. Gunakan Bahasa Indonesia.\n\n"
+            f"{topic_line}{paper_block}\n\n"
+            "Tugas:\n"
+            "1. common_keywords: daftar 5-8 kata kunci/konsep/metode yang SAMA atau berulang di paper-paper tersebut.\n"
+            "2. shared_themes: 2-4 tema bersama (apa yang sama-sama dikerjakan paper-paper ini).\n"
+            "3. suggestions: 3-5 saran arah penelitian baru yang bisa dikembangkan dari gabungan paper ini, "
+            "masing-masing dengan 'title' (judul singkat) dan 'rationale' (alasan singkat).\n"
+            "4. summary: ringkasan 1-2 kalimat.\n\n"
+            "Kembalikan HANYA JSON (tanpa teks lain) dengan struktur: "
+            '{"common_keywords": [...], "shared_themes": [...], '
+            '"suggestions": [{"title": "...", "rationale": "..."}], "summary": "..."}'
+        )
+
+        raw = glm.generate(prompt, max_tokens=800, format="json")
+        result = _parse_selection_json(raw if isinstance(raw, str) else str(raw))
+        result["paper_count"] = len(papers)
+        result["papers"] = [p.get("title", "Tanpa Judul") for p in papers]
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Selection analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/upload-and-analyze")
 async def upload_and_analyze(
     background_tasks: BackgroundTasks,
@@ -484,14 +614,23 @@ def _parse_recommendations_json(raw: str) -> list:
         items = _json.loads(text)
         if isinstance(items, list):
             result = []
-            for item in items:
+            for idx, item in enumerate(items):
                 if isinstance(item, dict):
+                    title = _clean_rec_field(item.get("title", ""))
+                    description = _clean_rec_field(item.get("description", ""))
+                    # Skip degenerate items (e.g. title/desc that is just "[INCOMPLETENESS]")
+                    if _is_degenerate_text(title) and _is_degenerate_text(description):
+                        continue
+                    # Priority by rank when the model doesn't supply one, so the
+                    # frontend can pick a sensible primary proposal.
+                    default_priority = "high" if idx < 2 else "medium" if idx < 4 else "low"
                     result.append({
-                        "title": item.get("title", "Untitled"),
-                        "description": item.get("description", ""),
+                        "title": title or "Usulan penelitian",
+                        "description": description,
+                        "gap_type": str(item.get("gap_type", item.get("type", ""))).upper(),
                         "why": item.get("why", ""),
                         "how": item.get("how", ""),
-                        "priority": item.get("priority", "medium"),
+                        "priority": item.get("priority", default_priority),
                     })
             return result
     except (_json.JSONDecodeError, ValueError):
@@ -510,12 +649,90 @@ def _parse_recommendations_text(text: str) -> list:
             continue
         title = item.split('\n')[0].strip().rstrip(':')
         desc = '\n'.join(item.split('\n')[1:]).strip() or title
+        # Skip bare gap-type tags like "[INCOMPLETENESS]".
+        if _is_degenerate_text(title) and _is_degenerate_text(desc):
+            continue
         recs.append({
             "title": title[:200],
             "description": desc,
             "why": "",
             "how": "",
             "priority": "medium",
+        })
+    return recs
+
+
+def _is_degenerate_text(s: str) -> bool:
+    """True if a string is just a bare gap-type tag / placeholder (e.g. "[INCOMPLETENESS]")."""
+    import re as _re
+    t = (s or "").strip()
+    if len(t) < 6:
+        return True
+    return bool(_re.match(
+        r'^\[?\s*(FRAGMENTATION|INCONSISTENCY|INCOMPLETENESS|UNKNOWN|NULL|N/?A|NONE)\s*\]?$',
+        t, _re.IGNORECASE,
+    ))
+
+
+def _clean_rec_field(s: str) -> str:
+    """Strip a leading bare gap-type tag like "[INCOMPLETENESS] " from a field."""
+    import re as _re
+    return _re.sub(
+        r'^\s*\[\s*(FRAGMENTATION|INCONSISTENCY|INCOMPLETENESS|UNKNOWN)\s*\]\s*',
+        '', (s or ''), flags=_re.IGNORECASE,
+    ).strip()
+
+
+def _build_recommendations_from_gaps(gaps: list) -> list:
+    """
+    Deterministic fallback: synthesise gap-anchored research proposals directly
+    from detected gap indicators. Used when the LLM proposal output is empty or
+    degenerate (small models sometimes just echo "[INCOMPLETENESS]"). Keeps the
+    output anchored to the Cooper/Booth indicators without another LLM round-trip.
+    """
+    type_meta = {
+        "FRAGMENTATION": {
+            "verb": "Mengintegrasikan",
+            "why": "Menjawab indikator fragmentasi: jurnal membahas fenomena serupa dari sudut berbeda tetapi belum saling terintegrasi.",
+        },
+        "INCONSISTENCY": {
+            "verb": "Merekonsiliasi",
+            "why": "Menjawab indikator inkonsistensi: terdapat temuan antar-jurnal yang saling bertentangan dan belum direkonsiliasi.",
+        },
+        "INCOMPLETENESS": {
+            "verb": "Melengkapi",
+            "why": "Menjawab indikator ketidaklengkapan kolektif: ada aspek penting yang belum dicakup bersama oleh jurnal-jurnal yang dianalisis.",
+        },
+    }
+    recs = []
+    for idx, g in enumerate(gaps[:5]):
+        gtype = str(g.get("type") or "INCOMPLETENESS").upper()
+        meta = type_meta.get(gtype, type_meta["INCOMPLETENESS"])
+        dirs = [
+            str(d).replace("Investigate:", "").strip().rstrip(".")
+            for d in (g.get("suggested_directions") or [])
+            if str(d).strip()
+        ]
+        focus = dirs[0] if dirs else (g.get("title") or "")
+        if focus:
+            title = f"{meta['verb']} aspek: {focus}"[:200]
+            desc = (
+                f"Penelitian yang {meta['verb'].lower()} {focus[0].lower() + focus[1:] if focus else focus} "
+                f"berdasarkan jurnal-jurnal yang dianalisis."
+            )
+        else:
+            title = f"{meta['verb']} literatur pada topik ini"
+            desc = g.get("description", "")
+        how = ""
+        if len(dirs) > 1:
+            how = "Tinjau dan bandingkan secara sistematis: " + "; ".join(dirs[:3]) + "."
+        recs.append({
+            "title": title,
+            "description": desc,
+            "gap_type": gtype,
+            "why": meta["why"],
+            "how": how,
+            "priority": "high" if idx < 2 else "medium" if idx < 4 else "low",
         })
     return recs
 
@@ -578,28 +795,46 @@ def _parse_roadmap_json(raw: str) -> list:
 
 
 def _parse_roadmap_text(text: str) -> list:
-    """Parse plain text roadmap into structured phases."""
+    """Parse plain text roadmap into structured phases (robust fallback)."""
     import re as _re
+    # Strip stray markdown bold/italic markers that LLMs often leave behind
+    text = text.replace('**', '').replace('__', '')
     phases = []
-    # Split by phase headers like "Phase 1:" or "### Phase 1"
-    parts = _re.split(r'\n\s*(?:#{1,3}\s*)?(?:Phase|Fase|Tahap)\s*\d+[:\s]', text, flags=_re.IGNORECASE)
-    for i, part in enumerate(parts):
-        part = part.strip()
-        if not part:
-            continue
-        items = []
-        for line in part.split('\n'):
-            line = line.strip().lstrip('-•* ').strip()
-            if line and len(line) > 3:
-                items.append(line)
-        if items:
-            phases.append({
-                "phase": f"Phase {len(phases)+1}",
-                "items": items,
-            })
-    if not phases and text.strip():
-        phases.append({"phase": "Phase 1", "items": [text.strip()]})
-    return phases
+    # Match phase headers AND capture the phase title after it:
+    #   "Fase 1: Penelitian Teori", "Phase 2 - Build", "Tahap 3 Pengujian"
+    pattern = _re.compile(
+        r'(?:^|\n)\s*(?:#{1,3}\s*)?(?:Phase|Fase|Tahap)\s*\d+\s*[:\-.]?\s*([^\n]*)',
+        _re.IGNORECASE,
+    )
+    matches = list(pattern.finditer(text))
+    if matches:
+        for i, m in enumerate(matches):
+            title = m.group(1).strip().rstrip(':').strip()
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            body = text[start:end]
+            items = []
+            for line in body.split('\n'):
+                line = line.strip().lstrip('-•* ').strip()
+                line = _re.sub(r'^\d+[.)]\s*', '', line)
+                if line and len(line) > 3:
+                    items.append(line)
+            label = title if title else f"Tahap {len(phases) + 1}"
+            if items:
+                phases.append({"phase": label, "items": items})
+        if phases:
+            return phases
+    # No phase headers: treat as a flat numbered/bulleted list, dropping preamble
+    items = []
+    for line in text.split('\n'):
+        line = line.strip().lstrip('-•* ').strip()
+        line = _re.sub(r'^\d+[.)]\s*', '', line)
+        low = line.lower()
+        if line and len(line) > 3 and not low.startswith(('berikut', 'peta jalan', 'here', 'roadmap')):
+            items.append(line)
+    if items:
+        return [{"phase": "Rencana Penelitian", "items": items}]
+    return []
 
 
 def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
@@ -694,9 +929,13 @@ Topik:"""
             if line.strip() and line.strip()[0].isdigit()
         ]
 
-        # ── Step 2b: Classify each paper by its basis/approach ──
-        paper_groups = []
-        try:
+        # ── Steps 2b/2c/2d run CONCURRENTLY (they are independent) ──────────
+        # 2b: classify papers by basis · 2c: shared keywords/themes ·
+        # 2d: per-paper weaknesses. Each is defined as a closure and executed in
+        # parallel threads; the ollama client releases the GIL during requests.
+        _analysis_jobs[job_id]["message"] = "Menganalisis basis, persamaan & kekurangan jurnal..."
+
+        def _compute_groups():
             paper_list = "\n".join(
                 f"- {p['title']}: {p['content'][:300]}" for p in paper_contents
             )
@@ -711,9 +950,90 @@ Topik:"""
                 '[{"title": "judul jurnal", "basis": "label basis"}]'
             )
             raw_groups = glm.generate(group_prompt, max_tokens=400).strip()
-            paper_groups = _parse_paper_groups_json(raw_groups)
-        except Exception as group_err:
-            logger.warning(f"Paper grouping failed: {group_err}")
+            return _parse_paper_groups_json(raw_groups)
+
+        def _compute_similarity():
+            sim_block = "\n\n".join(
+                f"Paper {i + 1}:\nJudul: {p['title']}\nKonten: {p['content'][:400]}"
+                for i, p in enumerate(paper_contents)
+            )
+            sim_prompt = (
+                "Analisis jurnal-jurnal berikut dan temukan PERSAMAANNYA. Gunakan Bahasa Indonesia.\n\n"
+                f"{sim_block}\n\n"
+                "Tugas:\n"
+                "1. common_keywords: 5-8 kata kunci/konsep/metode yang SAMA atau berulang di jurnal-jurnal ini.\n"
+                "2. shared_themes: 2-4 tema bersama (apa yang sama-sama dikerjakan jurnal-jurnal ini).\n"
+                "3. summary: ringkasan 1-2 kalimat tentang benang merah jurnal-jurnal ini.\n\n"
+                "Kembalikan HANYA JSON (tanpa teks lain): "
+                '{"common_keywords": [...], "shared_themes": [...], "summary": "..."}'
+            )
+            raw_sim = glm.generate(sim_prompt, max_tokens=500, format="json")
+            parsed_sim = _parse_selection_json(raw_sim if isinstance(raw_sim, str) else str(raw_sim))
+            return {
+                "common_keywords": parsed_sim.get("common_keywords", []),
+                "shared_themes": parsed_sim.get("shared_themes", []),
+                "summary": parsed_sim.get("summary", ""),
+            }
+
+        def _compute_weaknesses():
+            def _weak_prompt(p):
+                return (
+                    "Anda adalah reviewer jurnal ilmiah. Analisis SATU jurnal berikut dan temukan "
+                    "KEKURANGAN/keterbatasannya secara KONKRET berdasarkan isinya (bukan tebakan umum).\n\n"
+                    "Bedakan dua jenis. Untuk SETIAP poin WAJIB sertakan 'dasar' (bukti/alasan dari isi jurnal):\n"
+                    "- tersurat: kelemahan yang DITULIS EKSPLISIT oleh penulis. 'dasar' = parafrase/kutipan "
+                    "bagian teks yang menyebutkannya (mis. bagian keterbatasan, saran, atau future work).\n"
+                    "- tersirat: kelemahan yang TIDAK ditulis tapi DISIMPULKAN dari isi. 'dasar' = fakta "
+                    "spesifik di jurnal yang jadi alasannya (mis. 'hanya menguji 1 dataset', 'tidak ada "
+                    "perbandingan dengan metode lain', 'tidak ada uji statistik', 'ruang lingkup hanya 1 kasus').\n\n"
+                    "LARANGAN: jangan memakai kata ragu seperti 'mungkin', 'sepertinya', 'kemungkinan', "
+                    "'bisa jadi'. Nyatakan observasi + simpulan secara tegas. Jika tidak ada dasar nyata di "
+                    "teks, JANGAN mengarang poin (kembalikan array kosong saja).\n\n"
+                    f"Judul: {p['title']}\n"
+                    f"Konten: {p['content'][:1800]}\n\n"
+                    "Aturan: maksimal 3 poin per kategori; 'poin' = 1 kalimat singkat & spesifik, "
+                    "'dasar' = 1 kalimat berisi bukti dari jurnal. Gunakan Bahasa Indonesia.\n"
+                    "Kembalikan HANYA JSON (tanpa teks lain): "
+                    '{"tersurat": [{"poin": "...", "dasar": "..."}], '
+                    '"tersirat": [{"poin": "...", "dasar": "..."}]}'
+                )
+
+            prompts = [_weak_prompt(p) for p in paper_contents]
+            raws = glm.generate_batch(prompts, max_tokens=600, format="json")
+            out = []
+            for p, raw_weak in zip(paper_contents, raws):
+                parsed_weak = _parse_weaknesses_json(
+                    raw_weak if isinstance(raw_weak, str) else str(raw_weak)
+                )
+                out.append({
+                    "title": p["title"],
+                    "source": p["source"],
+                    "tersurat": parsed_weak["tersurat"],
+                    "tersirat": parsed_weak["tersirat"],
+                })
+            return out
+
+        paper_groups = []
+        paper_similarity = {"common_keywords": [], "shared_themes": [], "summary": ""}
+        paper_weaknesses = []
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=3) as _stage_pool:
+            _f_groups = _stage_pool.submit(_compute_groups)
+            _f_sim = _stage_pool.submit(_compute_similarity)
+            _f_weak = _stage_pool.submit(_compute_weaknesses)
+            try:
+                paper_groups = _f_groups.result()
+            except Exception as group_err:
+                logger.warning(f"Paper grouping failed: {group_err}")
+            try:
+                paper_similarity = _f_sim.result()
+            except Exception as sim_err:
+                logger.warning(f"Paper similarity analysis failed: {sim_err}")
+            try:
+                paper_weaknesses = _f_weak.result()
+            except Exception as weak_err:
+                logger.warning(f"Paper weakness analysis failed: {weak_err}")
 
         # ── Step 3: Run Coordinator (full neuro-symbolic pipeline) ──
         _analysis_jobs[job_id]["progress"] = 30
@@ -820,15 +1140,23 @@ Ringkasan:"""
                     [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
                 )
 
-                gap_prompt = f"""Berdasarkan paper penelitian di bawah ini, identifikasi SATU gap sintesis penelitian spesifik untuk topik: {topic}
+                gap_prompt = f"""Identifikasi SATU indikator SYNTHESIS GAP untuk topik: {topic}. Gunakan Bahasa Indonesia.
 
-Gap sintesis adalah peluang penelitian yang muncul dari membandingkan beberapa paper. Gunakan Bahasa Indonesia.
+Definisi (Cooper, 1998; Booth et al., 2012) — synthesis gap HANYA salah satu dari 3 ini:
+- FRAGMENTATION: paper membahas fenomena sama dari sudut berbeda tetapi tidak terintegrasi.
+- INCONSISTENCY: temuan empiris antar-paper saling bertentangan dan belum direkonsiliasi.
+- INCOMPLETENESS: aspek kritis fenomena belum dicakup bersama oleh paper-paper yang ada.
+
+BUKAN synthesis gap (JANGAN keluarkan ini):
+- kombinasi "Metode A + Domain B" yang belum ada (itu sekadar penerapan/belum diterapkan).
+- topik yang sama sekali belum diteliti (itu knowledge gap).
+- saran "future work" yang ditulis penulis paper (itu explicit gap).
 
 Konteks dari paper:
 {context[:2000]}
 
 Kembalikan gap dalam format JSON TEPAT ini (tanpa teks tambahan):
-{{"title": "Judul gap singkat", "description": "2-3 kalimat menjelaskan gap", "type": "FRAGMENTATION atau INCONSISTENCY atau INCOMPLETENESS"}}
+{{"title": "Judul gap singkat", "description": "2-3 kalimat menjelaskan indikator gap berbasis perbandingan antar-paper", "type": "FRAGMENTATION atau INCONSISTENCY atau INCOMPLETENESS"}}
 
 JSON:"""
                 raw = glm.generate(gap_prompt, max_tokens=300).strip()
@@ -873,51 +1201,82 @@ JSON:"""
                 if verdict != "REJECT":
                     gaps.append(gap_dict)
 
-        # ── Step 6: Recommendations (coordinator result or LLM fallback) ──
+        # ── Step 6: Usulan penelitian (SELALU berlabuh ke indikator synthesis gap) ──
+        # Sesuai revisi penguji: usulan harus mengacu pada 3 indikator Cooper/Booth
+        # (fragmentasi, inkonsistensi, ketidaklengkapan kolektif), BUKAN kombinasi
+        # metode+domain dangkal atau pengulangan "future work". Diposisikan sebagai
+        # INDIKATOR usulan (decision-support) yang tetap perlu validasi peneliti.
         _analysis_jobs[job_id]["progress"] = 85
-        _analysis_jobs[job_id]["message"] = "Generating recommendations..."
+        _analysis_jobs[job_id]["message"] = "Menyusun usulan penelitian (berbasis indikator synthesis gap)..."
 
-        recommendations = []
-        if coordinator_result and coordinator_result.get("recommendations"):
-            raw_recs = coordinator_result["recommendations"]
-            if isinstance(raw_recs, list):
-                for i, r in enumerate(raw_recs):
-                    if isinstance(r, dict):
-                        recommendations.append({
-                            "title": r.get("title", f"Recommendation {i+1}"),
-                            "description": r.get("description", r.get("reason", "")),
-                            "why": r.get("reason", r.get("why", "")),
-                            "how": r.get("methodology", r.get("how", "")),
-                            "priority": "high" if i < 2 else "medium" if i < 4 else "low",
-                        })
-                    else:
-                        recommendations.append({
-                            "title": str(r)[:80],
-                            "description": str(r),
-                            "why": "",
-                            "how": "",
-                            "priority": "high" if i < 2 else "medium" if i < 4 else "low",
-                        })
-            elif isinstance(raw_recs, str):
-                recommendations = _parse_recommendations_text(raw_recs)
-        else:
-            gaps_context = "\n".join([
-                f"Gap {i+1}: [{g.get('type','UNKNOWN')}] {g.get('title','')} — {g.get('description','')}"
-                for i, g in enumerate(gaps)
-            ])
-            rec_prompt = f"""Anda adalah penasihat penelitian. Berdasarkan topik penelitian dan gap yang teridentifikasi berikut, berikan 5 rekomendasi penelitian yang dapat ditindaklanjuti. Gunakan Bahasa Indonesia.
+        # Rekomendasi paper relevan dari coordinator disimpan terpisah sebagai rujukan,
+        # bukan sebagai "usulan penelitian baru".
+        related_paper_refs = []
+        if coordinator_result and isinstance(coordinator_result.get("recommendations"), list):
+            for r in coordinator_result["recommendations"]:
+                if isinstance(r, dict) and r.get("title"):
+                    related_paper_refs.append({
+                        "title": r.get("title", ""),
+                        "reason": r.get("reason", r.get("description", "")),
+                    })
 
-Topik: {', '.join(topics[:3])}
+        gaps_context = "\n".join([
+            f"- [{g.get('type','UNKNOWN')}] {g.get('title','')}: {g.get('description','')}"
+            for i, g in enumerate(gaps)
+        ]) or "(indikator gap belum terdeteksi secara eksplisit)"
 
-Gap yang Teridentifikasi:
+        rec_prompt = f"""Anda membantu menyusun USULAN PENELITIAN BARU dari hasil sintesis beberapa jurnal.
+Gunakan Bahasa Indonesia.
+
+PENTING — kerangka synthesis gap (Cooper, 1998; Booth et al., 2012). Setiap usulan WAJIB
+menjawab salah satu dari 3 indikator berikut:
+1. FRAGMENTASI — jurnal membahas fenomena sama dari sudut berbeda tetapi tidak terintegrasi.
+2. INKONSISTENSI — temuan antar-jurnal saling bertentangan dan belum direkonsiliasi.
+3. KETIDAKLENGKAPAN KOLEKTIF — aspek kritis fenomena belum tercakup bersama oleh jurnal-jurnal itu.
+
+LARANGAN KERAS (usulan seperti ini DITOLAK penguji):
+- JANGAN mengusulkan sekadar "kombinasi Metode A + Domain B" (itu penerapan, bukan sintesis).
+- JANGAN mengulang kalimat "future work"/saran yang sudah ditulis penulis jurnal (itu explicit gap).
+- JANGAN mengusulkan topik yang sama sekali belum diteliti (itu knowledge gap, bukan synthesis gap).
+
+Topik dari jurnal: {', '.join(topics[:3])}
+
+Indikator synthesis gap yang terdeteksi:
 {gaps_context}
 
-Kembalikan sebagai JSON array (tanpa teks tambahan):
-[{{"title": "Judul rekomendasi", "description": "Apa yang perlu diteliti", "why": "Mengapa ini penting", "how": "Metodologi yang disarankan"}}]
+Buat 5 usulan. Untuk tiap usulan:
+- "title": judul usulan penelitian yang spesifik.
+- "description": apa yang diteliti, dirumuskan sebagai upaya MENGINTEGRASIKAN / MEREKONSILIASI /
+  MELENGKAPI literatur (sesuai indikator gap-nya).
+- "gap_type": salah satu dari FRAGMENTATION / INCONSISTENCY / INCOMPLETENESS.
+- "why": mengapa penting — sebutkan indikator gap mana yang dijawab.
+- "how": metodologi yang disarankan secara ringkas.
+
+Catatan: usulan ini bersifat INDIKATIF (alat bantu keputusan) dan tetap memerlukan
+penilaian peneliti — jangan menyatakannya sebagai temuan yang pasti.
+
+Kembalikan HANYA JSON array (tanpa teks tambahan):
+[{{"title": "...", "description": "...", "gap_type": "FRAGMENTATION", "why": "...", "how": "..."}}]
 
 JSON:"""
-            raw = glm.generate(rec_prompt, max_tokens=600).strip()
+        try:
+            raw = glm.generate(rec_prompt, max_tokens=800, format="json").strip()
             recommendations = _parse_recommendations_json(raw)
+        except Exception as rec_err:
+            logger.warning(f"Recommendation generation failed: {rec_err}")
+            recommendations = []
+
+        # Drop any leftover degenerate entries (e.g. "[INCOMPLETENESS]").
+        recommendations = [
+            r for r in recommendations
+            if not (_is_degenerate_text(r.get("title", "")) and _is_degenerate_text(r.get("description", "")))
+        ]
+
+        # Robust fallback: if the (small) model produced nothing usable, synthesise
+        # gap-anchored proposals deterministically from the detected gap indicators.
+        if not recommendations and gaps:
+            logger.info("LLM recommendations empty/degenerate — building deterministically from gaps.")
+            recommendations = _build_recommendations_from_gaps(gaps)
 
         # ── Step 7: Roadmap (always via LLM) ────────────────────
         _analysis_jobs[job_id]["progress"] = 95
@@ -935,21 +1294,24 @@ Kembalikan sebagai JSON array fase (tanpa teks tambahan):
 ]
 
 JSON:"""
-        raw_roadmap = glm.generate(roadmap_prompt, max_tokens=500).strip()
+        raw_roadmap = glm.generate(roadmap_prompt, max_tokens=500, format="json").strip()
         roadmap = _parse_roadmap_json(raw_roadmap)
 
-        # ── Step 8: Proposal intro (1-sentence AI synthesis) ────
+        # ── Step 8: Proposal intro (1-sentence AI synthesis, decision-support) ──
         proposal_intro = ""
         try:
             if recommendations:
                 top_gap_desc = gaps[0].get("description", "") if gaps else ""
+                top_gap_type = gaps[0].get("type", "") if gaps else ""
                 top_rec = recommendations[0]
                 rec_title = top_rec.get("title", "") if isinstance(top_rec, dict) else str(top_rec)
                 intro_prompt = (
                     f"Tulis SATU kalimat ringkas (maksimal 40 kata) dalam Bahasa Indonesia yang "
-                    f"merangkum usulan penelitian baru hasil sintesis dari {len(paper_contents)} jurnal. "
-                    f"Gap utama: {top_gap_desc}. Usulan penelitian: {rec_title}. "
-                    f"Tulis sebagai kalimat pembuka yang mengalir, tanpa awalan 'Berikut' atau label."
+                    f"merangkum INDIKATOR usulan penelitian hasil sintesis dari {len(paper_contents)} jurnal. "
+                    f"Indikator synthesis gap ({top_gap_type}): {top_gap_desc}. Arah usulan: {rec_title}. "
+                    f"Posisikan sebagai indikator/peluang yang masih PERLU DIVALIDASI peneliti — "
+                    f"gunakan kata seperti 'berpotensi', 'mengindikasikan', atau 'dapat dipertimbangkan', "
+                    f"JANGAN menyatakannya sebagai temuan pasti. Tanpa awalan 'Berikut' atau label."
                 )
                 proposal_intro = glm.generate(intro_prompt, max_tokens=120).strip()
         except Exception as intro_err:
@@ -1022,7 +1384,10 @@ JSON:"""
                 "new_papers": new_papers,
                 "duplicate_papers": duplicate_papers,
                 "paper_groups": paper_groups,
+                "paper_similarity": paper_similarity,
+                "paper_weaknesses": paper_weaknesses,
                 "proposal_intro": proposal_intro,
+                "related_paper_refs": related_paper_refs,
                 "execution_mode": execution_mode,
                 "gap_indicators": gap_indicators,
                 "rule_engine_report": rule_engine_report,

@@ -45,7 +45,8 @@ class PaperMetadata:
             "pdf_url": self.pdf_url,
             "citation_count": self.citation_count,
             "keywords": self.keywords or [],
-            "source_api": self.source_api
+            "source_api": self.source_api,
+            "source": self.source_api,
         }
 
 

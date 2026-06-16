@@ -106,17 +106,32 @@ class GapDetectorAgent:
             return result
         
         # Step 2: Extract facts from papers (if FactExtractor available)
+        # PERF: Skip if the FactTable is already populated (e.g. the Coordinator
+        # already ran fact extraction for this same analysis). Re-extracting the
+        # same papers doubles the LLM calls for zero new information.
         if self.fact_extractor and self.fact_table:
             try:
-                extraction_stats = self.fact_extractor.extract_from_papers(
-                    papers, self.fact_table
-                )
-                result["fact_extraction_stats"] = extraction_stats
-                
-                # Build KG from fact table
-                if self.knowledge_graph:
-                    self.knowledge_graph.build_from_fact_table(self.fact_table)
-                    
+                existing_facts = 0
+                try:
+                    existing_facts = self.fact_table.get_statistics().get("total_facts", 0)
+                except Exception:
+                    existing_facts = 0
+
+                if existing_facts > 0:
+                    logger.info(
+                        f"Skipping fact extraction — FactTable already has "
+                        f"{existing_facts} facts (reusing prior extraction)."
+                    )
+                else:
+                    extraction_stats = self.fact_extractor.extract_from_papers(
+                        papers, self.fact_table
+                    )
+                    result["fact_extraction_stats"] = extraction_stats
+
+                    # Build KG from fact table
+                    if self.knowledge_graph:
+                        self.knowledge_graph.build_from_fact_table(self.fact_table)
+
             except Exception as e:
                 logger.error(f"Fact extraction failed: {e}")
         
