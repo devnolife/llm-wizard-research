@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Share2 } from 'lucide-react'
+import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Share2, Sparkles } from 'lucide-react'
 import { useDarkMode } from '../../contexts/DarkModeContext'
 import ModelSelector from '../common/ModelSelector'
 
@@ -17,35 +17,48 @@ const Navbar = () => {
   const navigate = useNavigate()
 
   return (
-    <nav className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="w-full flex h-14 items-center px-6 lg:px-10">
+    <nav className="sticky top-0 z-50 border-b border-border/60 glass">
+      <div className="w-full flex h-16 items-center px-5 lg:px-10">
         {/* Logo */}
         <button
           onClick={() => navigate('/')}
-          className="mr-6 flex items-center gap-2 font-semibold"
+          className="group mr-7 flex items-center gap-2.5"
+          aria-label="Beranda Wizard Research"
         >
-          <span className="text-lg">Research Wizard</span>
+          <span className="relative grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-glow transition-transform duration-300 group-hover:scale-105 group-hover:-rotate-3">
+            <Sparkles className="h-[18px] w-[18px]" />
+            <span className="absolute inset-0 rounded-xl ring-1 ring-inset ring-white/20" />
+          </span>
+          <span className="flex flex-col leading-none text-left">
+            <span className="font-display text-[15px] font-bold tracking-tight">Wizard Research</span>
+            <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              Synthesis Gap Detection
+            </span>
+          </span>
         </button>
 
         {/* Nav Links */}
-        <div className="flex items-center gap-1 flex-1">
-          {NAV_LINKS.map(({ to, label, icon: Icon, desc }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              title={desc}
-              className={({ isActive }) =>
-                `flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${isActive
-                  ? 'bg-secondary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-                }`
-              }
-            >
-              <Icon className="w-4 h-4" />
-              <span className="hidden md:inline">{label}</span>
-            </NavLink>
-          ))}
+        <div className="flex items-center gap-0.5 flex-1">
+          {NAV_LINKS.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                title={item.desc}
+                className={({ isActive }) =>
+                  `group relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${isActive
+                    ? 'text-primary bg-primary/10 ring-1 ring-inset ring-primary/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                  }`
+                }
+              >
+                <Icon className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                <span className="hidden md:inline">{item.label}</span>
+              </NavLink>
+            )
+          })}
         </div>
 
         {/* Model Selector */}
@@ -54,9 +67,10 @@ const Navbar = () => {
         {/* Dark Mode Toggle */}
         <button
           onClick={toggleDarkMode}
-          className="inline-flex items-center justify-center rounded-md w-9 h-9 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors ml-1"
+          aria-label={darkMode ? 'Mode terang' : 'Mode gelap'}
+          className="ml-1.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-all duration-200 hover:border-primary/40 hover:text-foreground hover:bg-secondary"
         >
-          {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {darkMode ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
         </button>
       </div>
     </nav>

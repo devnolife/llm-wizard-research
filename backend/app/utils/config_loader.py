@@ -27,8 +27,8 @@ class LLMConfig:
 class VectorDBConfig:
     """Vector database configuration"""
     persist_directory: str = "./chroma_db"
-    collection_name: str = "research_papers"
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    collection_name: str = "research_papers_ml"
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     distance_metric: str = "cosine"
 
 
@@ -48,6 +48,9 @@ class RetrievalConfig:
     chunk_size: int = 512
     chunk_overlap: int = 50
     min_relevance_score: float = 0.7
+    rerank_enabled: bool = True
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    chunk_strategy: str = "sections"
 
 
 @dataclass
@@ -210,6 +213,9 @@ class ConfigLoader:
             chunk_size=int(os.getenv("CHUNK_SIZE", yaml_config.get("retrieval", {}).get("chunk_size", 512))),
             chunk_overlap=int(os.getenv("CHUNK_OVERLAP", yaml_config.get("retrieval", {}).get("chunk_overlap", 50))),
             min_relevance_score=float(os.getenv("MIN_RELEVANCE_SCORE", yaml_config.get("retrieval", {}).get("min_relevance_score", 0.7))),
+            rerank_enabled=str(os.getenv("RERANK_ENABLED", yaml_config.get("retrieval", {}).get("rerank_enabled", True))).lower() in ("1", "true", "yes"),
+            reranker_model=os.getenv("RERANKER_MODEL", yaml_config.get("retrieval", {}).get("reranker_model", "cross-encoder/ms-marco-MiniLM-L-6-v2")),
+            chunk_strategy=os.getenv("CHUNK_STRATEGY", yaml_config.get("retrieval", {}).get("chunk_strategy", "sections")),
         )
         
         # API Configuration

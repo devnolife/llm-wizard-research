@@ -90,7 +90,10 @@ class TestFragmentation:
         frag = [i for i in indicators if i.indicator_type == IndicatorType.FRAGMENTATION]
         assert len(frag) >= 1
         assert frag[0].detection_method == "topic_clustering"
-        assert 0.5 < frag[0].confidence <= 0.85
+        # Confidence is calibrated from measured cluster separation: fully
+        # disjoint approach-sets (as in this fixture) score near the top of the
+        # defensible band rather than a fixed heuristic value.
+        assert 0.6 <= frag[0].confidence <= 0.9
         assert frag[0].sub_indicators  # cluster traceability
 
     def test_not_detected_with_single_paper(self):
@@ -129,8 +132,9 @@ class TestInconsistency:
 
         llm_inc = [i for i in indicators if i.detection_method == "llm_nli"]
         assert len(llm_inc) == 1
-        # LLM-detected contradictions get LOW confidence (epistemological caution)
-        assert llm_inc[0].confidence == pytest.approx(0.5)
+        # LLM-only contradictions get LOW confidence (epistemological caution):
+        # lower than the dedicated NLI cross-encoder signal, which is preferred.
+        assert llm_inc[0].confidence == pytest.approx(0.4)
 
     def test_llm_no_contradiction_found(self, divergent_papers):
         llm = MagicMock()
@@ -174,7 +178,9 @@ class TestIncompleteness:
 
         meth = [i for i in indicators if i.detection_method == "methodology_coverage"]
         assert len(meth) == 1
-        assert meth[0].confidence == pytest.approx(0.6)
+        # Confidence is calibrated by method dominance: 3 papers sharing one
+        # method → 0.4 + 0.4 * (3/5) = 0.64. More papers → stronger signal.
+        assert meth[0].confidence == pytest.approx(0.64)
         assert "deep learning" in meth[0].description
 
 

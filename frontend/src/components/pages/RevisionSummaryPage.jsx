@@ -345,6 +345,10 @@ const COMMENTS = [
   },
 ]
 
+/* ─── helpers ─── */
+// Buang tanda "§" (section sign) dari teks lokasi, mis. "BAB I §1.1" → "BAB I 1.1"
+const cleanLokasi = (s) => (s || '').replace(/\u00a7\s*/g, '').replace(/\s{2,}/g, ' ').trim()
+
 /* ─── small components ─── */
 const Badge = ({ children, variant = 'default' }) => {
   const cls = {
@@ -371,7 +375,7 @@ const ActionItem = ({ aksi, index }) => (
     {aksi.lokasi && (
       <div className="flex items-center gap-1.5 mt-2 pl-[30px]">
         <BookOpen className="w-3 h-3 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground font-medium">{aksi.lokasi}</span>
+        <span className="text-xs text-muted-foreground font-medium">{cleanLokasi(aksi.lokasi)}</span>
       </div>
     )}
     {aksi.alur && aksi.alur.length > 0 && (
@@ -399,7 +403,7 @@ const PrintActionItem = ({ aksi, index }) => (
   <div className="mb-2 pl-4 border-l-2 border-emerald-500">
     <p className="text-xs font-bold">{index + 1}. {aksi.judul}</p>
     <p className="text-xs mt-0.5">{aksi.penjelasan}</p>
-    {aksi.lokasi && <p className="text-xs text-gray-500 italic">[{aksi.lokasi}]</p>}
+    {aksi.lokasi && <p className="text-xs text-gray-500 italic">[{cleanLokasi(aksi.lokasi)}]</p>}
     {aksi.alur && aksi.alur.map((step, i) => (
       <p key={i} className="text-xs ml-3 mt-0.5">{'\u2192'} {step}</p>
     ))}

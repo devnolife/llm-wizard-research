@@ -72,6 +72,40 @@ def get_glm_interface() -> GLMInterface:
 
 
 @lru_cache()
+def get_reranker():
+    """Get or create the cross-encoder reranker (optional, two-stage retrieval).
+
+    Re-scores candidate passages jointly with the query for higher precision.
+    Controlled by config.retrieval.rerank_enabled and degrades gracefully to
+    None when the model cannot be loaded (offline / missing weights), in which
+    case the retriever falls back to its heuristic reranker.
+    """
+    if "reranker" not in _components:
+        if not getattr(config.retrieval, "rerank_enabled", True):
+            logger.info("Cross-encoder reranker disabled via config")
+            _components["reranker"] = None
+        else:
+            try:
+                from ..core.retrieval.reranker import CrossEncoderReranker
+                model = CrossEncoderReranker(
+                    model_name=getattr(
+                        config.retrieval, "reranker_model",
+                        "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                    )
+                )
+                if model.available:
+                    logger.info("Cross-encoder reranker loaded")
+                    _components["reranker"] = model
+                else:
+                    logger.warning("Reranker not available; using heuristic fallback")
+                    _components["reranker"] = None
+            except Exception as e:
+                logger.warning(f"Failed to load reranker: {e}")
+                _components["reranker"] = None
+    return _components["reranker"]
+
+
+@lru_cache()
 def get_retriever() -> RAGRetriever:
     """Get or create RAG retriever instance"""
     if "retriever" not in _components:
@@ -79,7 +113,8 @@ def get_retriever() -> RAGRetriever:
         _components["retriever"] = RAGRetriever(
             vector_store=vector_store,
             top_k=config.retrieval.top_k,
-            min_relevance_score=config.retrieval.min_relevance_score
+            min_relevance_score=config.retrieval.min_relevance_score,
+            reranker=get_reranker(),
         )
     return _components["retriever"]
 
@@ -136,11 +171,42 @@ def get_rule_engine() -> RuleEngine:
 
 
 @lru_cache()
+def get_nli_model():
+    """Get or create the dedicated cross-encoder NLI model (optional).
+
+    Provides a contradiction signal that is *decoupled* from the generative
+    LLM (per the thesis's neuro-symbolic claim). Controlled by the
+    ENABLE_NLI_MODEL env var (default: enabled) and degrades gracefully to
+    None when the model weights cannot be loaded (e.g. offline).
+    """
+    if "nli_model" not in _components:
+        enabled = os.getenv("ENABLE_NLI_MODEL", "true").lower() in ("1", "true", "yes")
+        if not enabled:
+            logger.info("NLI model disabled via ENABLE_NLI_MODEL")
+            _components["nli_model"] = None
+        else:
+            try:
+                from ..core.validation.nli_model import NLIModel
+                model = NLIModel()
+                if model.available:
+                    logger.info("Dedicated cross-encoder NLI model loaded")
+                    _components["nli_model"] = model
+                else:
+                    logger.warning("NLI model not available; falling back to LLM/markers")
+                    _components["nli_model"] = None
+            except Exception as e:
+                logger.warning(f"Failed to load NLI model: {e}")
+                _components["nli_model"] = None
+    return _components["nli_model"]
+
+
+@lru_cache()
 def get_relation_classifier() -> RelationClassifier:
-    """Get or create RelationClassifier instance"""
+    """Get or create RelationClassifier instance (with dedicated NLI signal)"""
     if "relation_classifier" not in _components:
         _components["relation_classifier"] = RelationClassifier(
-            llm_interface=get_glm_interface()
+            llm_interface=get_glm_interface(),
+            nli_model=get_nli_model(),
         )
     return _components["relation_classifier"]
 
@@ -166,7 +232,9 @@ def get_paper_api() -> AggregatedPaperAPI:
             pubmed_key=os.getenv("PUBMED_API_KEY"),
             crossref_email=os.getenv("CROSSREF_EMAIL"),
             pubmed_email=os.getenv("PUBMED_EMAIL"),
-            core_key=os.getenv("CORE_API_KEY")
+            core_key=os.getenv("CORE_API_KEY"),
+            elsevier_key=os.getenv("ELSEVIER_API_KEY"),
+            elsevier_insttoken=os.getenv("ELSEVIER_INSTTOKEN")
         )
     return _components["paper_api"]
 
@@ -243,6 +311,7 @@ def get_document_processor() -> DocumentProcessor:
     if "document_processor" not in _components:
         _components["document_processor"] = DocumentProcessor(
             chunk_size=config.retrieval.chunk_size,
-            chunk_overlap=config.retrieval.chunk_overlap
+            chunk_overlap=config.retrieval.chunk_overlap,
+            chunk_strategy=getattr(config.retrieval, "chunk_strategy", "sections"),
         )
     return _components["document_processor"]

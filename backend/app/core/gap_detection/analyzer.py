@@ -35,6 +35,7 @@ from ...models.responses import (
     RuleVerdictType,
     GapIndicatorModel,
 )
+from ..knowledge.fact_table import EntityType, PredicateType
 
 # Re-export for backward compatibility
 GapIndicatorType = IndicatorType
@@ -224,7 +225,9 @@ class GapAnalyzer:
                     f"{len(clusters)} distinct clusters with different approaches. "
                     f"No integrative framework found."
                 ),
-                confidence=min(0.5 + len(clusters) * 0.1, 0.85),
+                confidence=self._calibrate_fragmentation_confidence(
+                    clusters, paper_approaches
+                ),
                 related_papers=[pid for pids in clusters.values() for pid in pids],
                 evidence=cluster_descriptions,
                 suggested_directions=[
@@ -311,8 +314,15 @@ class GapAnalyzer:
                     detection_method="fact_table_contradicts",
                 ))
         
-        # Method 2: LLM-based contradiction detection
-        if self.llm and len(papers) >= 2:
+        # Method 2: Dedicated cross-encoder NLI — independent signal, decoupled
+        # from the generative LLM (only runs when an NLI model is wired in).
+        nli_indicators = self._detect_contradictions_nli(topic, papers)
+        indicators.extend(nli_indicators)
+
+        # Method 3: LLM-based contradiction detection (complementary). Skipped
+        # when the NLI model already produced grounded contradiction signals,
+        # to avoid duplicate low-trust indicators.
+        if self.llm and len(papers) >= 2 and not nli_indicators:
             llm_contradictions = self._detect_contradictions_llm(topic, papers)
             indicators.extend(llm_contradictions)
         
@@ -349,6 +359,11 @@ class GapAnalyzer:
                         {c.lower() for c in covered_aspects}]
             
             if uncovered:
+                # Calibrated: confidence scales with the measured coverage gap
+                # (fraction of expected aspects that no paper addresses), not a
+                # fixed magic number.
+                coverage_gap = len(uncovered) / max(1, len(expected_aspects))
+                conf = round(0.3 + 0.6 * coverage_gap, 3)
                 indicators.append(GapIndicator(
                     indicator_type=GapIndicatorType.INCOMPLETENESS,
                     description=(
@@ -356,11 +371,13 @@ class GapAnalyzer:
                         f"{len(uncovered)} critical aspect(s) not addressed by "
                         f"any of the {len(papers)} papers analyzed."
                     ),
-                    confidence=min(0.4 + len(uncovered) * 0.1, 0.8),
+                    confidence=min(conf, 0.85),
                     related_papers=[p.get("doc_id", "") for p in papers],
                     evidence=[
                         f"Uncovered aspects: {', '.join(uncovered[:5])}",
                         f"Covered aspects: {', '.join(list(covered_aspects)[:5])}",
+                        f"Coverage gap: {len(uncovered)}/{len(expected_aspects)} "
+                        f"expected aspects uncovered ({coverage_gap:.0%}).",
                     ],
                     suggested_directions=[
                         f"Investigate: {aspect}" for aspect in uncovered[:3]
@@ -371,6 +388,10 @@ class GapAnalyzer:
         # Check for missing methodology diversity
         methods_used = self._extract_methods(papers)
         if len(methods_used) <= 1 and len(papers) >= 3:
+            # Calibrated: a single shared method across MORE papers is a stronger
+            # incompleteness signal than across the minimum of 3.
+            dominance = min(1.0, len(papers) / 5.0)
+            conf = round(0.4 + 0.4 * dominance, 3)
             indicators.append(GapIndicator(
                 indicator_type=GapIndicatorType.INCOMPLETENESS,
                 description=(
@@ -378,9 +399,12 @@ class GapAnalyzer:
                     f"use similar methodology ({', '.join(methods_used) or 'unidentified'}). "
                     f"Alternative methodological approaches are absent."
                 ),
-                confidence=0.6,
+                confidence=conf,
                 related_papers=[p.get("doc_id", "") for p in papers],
-                evidence=[f"Methods found: {', '.join(methods_used)}"],
+                evidence=[
+                    f"Methods found: {', '.join(methods_used) or 'unidentified'}",
+                    f"All {len(papers)} papers share a single methodological approach.",
+                ],
                 suggested_directions=[
                     "Apply alternative methodological approaches to this topic",
                     "Conduct a mixed-methods study",
@@ -408,8 +432,13 @@ class GapAnalyzer:
                 "type": "gap_indicator",
                 "description": indicator.description,
                 "confidence": indicator.confidence,
-                "findings": indicator.related_papers,
+                "related_papers": indicator.related_papers,
             }
+            # Link the indicator to concrete KG entities (METHOD / DOMAIN /
+            # FINDING) so the Rule Engine's feasibility (F1-F3), causality
+            # (C1-C3) and consistency (K1-K3) rules can actually fire instead
+            # of defaulting to PASS for lack of an entity to reason over.
+            claim.update(self._link_kg_entities(indicator))
             
             report = self.rule_engine.validate(claim)
             indicator.rule_engine_verdict = RuleVerdictType(report.overall_verdict) \
@@ -430,6 +459,158 @@ class GapAnalyzer:
     # -------------------------------------------------------------------
     # Helper methods
     # -------------------------------------------------------------------
+
+    def _link_kg_entities(self, indicator: "GapIndicator") -> Dict[str, Any]:
+        """
+        Resolve the most relevant METHOD / DOMAIN / FINDING entities for an
+        indicator's related papers, so the Rule Engine can reason over them.
+
+        Without this, gap-indicator claims carried no `method`/`domain`/finding
+        entity IDs, so every feasibility/causality rule fell through to a
+        default PASS — making the "symbolic" validation layer inert in practice.
+        """
+        links: Dict[str, Any] = {}
+        if not self.fact_table:
+            return links
+
+        methods: List[Any] = []
+        domains: List[Any] = []
+        findings: List[Any] = []
+        for pid in indicator.related_papers or []:
+            if not pid:
+                continue
+            try:
+                methods += self.fact_table.find_entities(
+                    entity_type=EntityType.METHOD, source_paper=pid
+                )
+                domains += self.fact_table.find_entities(
+                    entity_type=EntityType.DOMAIN, source_paper=pid
+                )
+                findings += self.fact_table.find_entities(
+                    entity_type=EntityType.FINDING, source_paper=pid
+                )
+            except Exception as e:
+                logger.debug(f"Entity linking failed for paper {pid}: {e}")
+
+        if methods:
+            links["method"] = methods[0].entity_id
+        if domains:
+            links["domain"] = domains[0].entity_id
+        if findings:
+            links["findings"] = [f.entity_id for f in findings]
+        return links
+
+    def _calibrate_fragmentation_confidence(
+        self,
+        clusters: Dict[int, List[str]],
+        paper_approaches: Dict[str, List[str]],
+    ) -> float:
+        """
+        Derive fragmentation confidence from measured cluster separation rather
+        than a fixed `0.5 + 0.1 * n` heuristic.
+
+        Combines two evidence signals:
+          - breadth: how many distinct clusters relative to papers, and
+          - separation: average pairwise dissimilarity (1 - Jaccard) between
+            cluster approach-sets. Highly distinct clusters → stronger signal.
+        """
+        n_clusters = len(clusters)
+        if n_clusters < 2:
+            return 0.3
+
+        # Approach-set per cluster
+        cluster_sets: List[Set[str]] = []
+        for pids in clusters.values():
+            approaches: Set[str] = set()
+            for pid in pids:
+                approaches.update(a.lower() for a in paper_approaches.get(pid, []))
+            cluster_sets.append(approaches)
+
+        # Average pairwise Jaccard distance between clusters
+        distances: List[float] = []
+        for i in range(len(cluster_sets)):
+            for j in range(i + 1, len(cluster_sets)):
+                a, b = cluster_sets[i], cluster_sets[j]
+                if not a and not b:
+                    continue
+                inter = len(a & b)
+                union = len(a | b) or 1
+                distances.append(1.0 - inter / union)
+        separation = sum(distances) / len(distances) if distances else 0.5
+
+        total_papers = len(paper_approaches) or 1
+        breadth = min(1.0, n_clusters / total_papers)
+
+        # Weighted blend, clamped to a defensible band.
+        confidence = 0.35 + 0.4 * separation + 0.15 * breadth
+        return round(max(0.3, min(confidence, 0.9)), 3)
+
+    def _detect_contradictions_nli(
+        self,
+        topic: str,
+        papers: List[Dict[str, Any]],
+    ) -> List[GapIndicator]:
+        """
+        Detect contradictions using the dedicated cross-encoder NLI model — an
+        evidence signal independent of the generative LLM.
+
+        Compares paper claim snippets pairwise; a contradiction is only reported
+        when the NLI model assigns it above its own threshold, and the reported
+        confidence is the NLI score itself (calibrated, not hand-picked).
+        """
+        nli = getattr(self.relation_classifier, "nli_model", None) if self.relation_classifier else None
+        if nli is None or not getattr(nli, "available", False):
+            return []
+
+        # Build a short claim snippet per paper (title + leading findings text).
+        claims: List[Tuple[str, str]] = []  # (paper_id, snippet)
+        for p in papers[:6]:
+            pid = p.get("doc_id", p.get("id", ""))
+            title = p.get("metadata", {}).get("title", "")
+            snippet = (title + ". " + p.get("content", "")[:300]).strip()
+            if snippet:
+                claims.append((pid, snippet))
+
+        indicators: List[GapIndicator] = []
+        seen_pairs: Set[Tuple[str, str]] = set()
+        for i in range(len(claims)):
+            for j in range(i + 1, len(claims)):
+                pid_a, snip_a = claims[i]
+                pid_b, snip_b = claims[j]
+                key = tuple(sorted((pid_a, pid_b)))
+                if key in seen_pairs:
+                    continue
+                seen_pairs.add(key)
+                try:
+                    result = nli.check_contradiction(snip_a, snip_b)
+                except Exception as e:
+                    logger.debug(f"NLI check failed: {e}")
+                    continue
+                if result and result.get("is_contradiction"):
+                    score = float(result.get("confidence", 0.0))
+                    indicators.append(GapIndicator(
+                        indicator_type=GapIndicatorType.INCONSISTENCY,
+                        description=(
+                            f"Potential contradiction between two papers on "
+                            f"'{topic}' flagged by the dedicated NLI model "
+                            f"(p={score:.2f}). Requires human verification."
+                        ),
+                        confidence=round(score, 3),
+                        related_papers=[pid_a, pid_b],
+                        evidence=[
+                            f"Paper A: {snip_a[:160]}",
+                            f"Paper B: {snip_b[:160]}",
+                            f"NLI contradiction probability: {score:.2f} "
+                            f"(decoupled from the generative LLM).",
+                        ],
+                        suggested_directions=[
+                            "Verify whether these findings genuinely conflict",
+                            "Design a study that reconciles the contradiction",
+                        ],
+                        detection_method="nli_cross_encoder",
+                    ))
+        return indicators
+
     
     def _extract_approaches(
         self, papers: List[Dict[str, Any]]
@@ -571,7 +752,9 @@ List contradictions (if none found, say "No contradictions detected"):"""
                         f"LLM-detected contradictions in '{topic}' literature. "
                         f"These require human verification."
                     ),
-                    confidence=0.5,  # Lower confidence for LLM-detected
+                    confidence=0.4,  # LLM-only signal: lower trust than the
+                    # dedicated NLI cross-encoder (used as a fallback when NLI
+                    # is unavailable or finds nothing).
                     related_papers=[p.get("doc_id", "") for p in papers[:5]],
                     evidence=[response[:500]],
                     suggested_directions=[

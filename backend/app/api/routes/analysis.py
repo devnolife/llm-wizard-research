@@ -317,7 +317,7 @@ def _parse_weaknesses_json(raw: str) -> dict:
             text = match.group(1)
 
     def _clean(items):
-        """Normalise weakness items to {poin, dasar} objects (handles legacy strings)."""
+        """Normalise weakness items to {poin, dasar, kutipan} (handles legacy strings)."""
         out = []
         for it in items if isinstance(items, list) else []:
             if isinstance(it, dict):
@@ -327,12 +327,15 @@ def _parse_weaknesses_json(raw: str) -> dict:
                 dasar = str(
                     it.get("dasar", it.get("basis", it.get("alasan", it.get("bukti", ""))))
                 ).strip()
+                kutipan = str(
+                    it.get("kutipan", it.get("quote", it.get("kutipan_verbatim", "")))
+                ).strip().strip('"').strip()
                 if poin:
-                    out.append({"poin": poin, "dasar": dasar})
+                    out.append({"poin": poin, "dasar": dasar, "kutipan": kutipan})
             else:
                 s = str(it).strip().lstrip('-•* ').strip()
                 if s:
-                    out.append({"poin": s, "dasar": ""})
+                    out.append({"poin": s, "dasar": "", "kutipan": ""})
         return out[:3]
 
     try:
@@ -345,6 +348,107 @@ def _parse_weaknesses_json(raw: str) -> dict:
     except (_json.JSONDecodeError, ValueError):
         pass
     return {"tersurat": [], "tersirat": []}
+
+
+def _normalize_text(s: str) -> str:
+    """Lowercase + collapse whitespace for robust substring matching."""
+    import re as _re
+    return _re.sub(r"\s+", " ", (s or "").lower()).strip()
+
+
+def _fuzzy_contains(needle: str, haystack: str, threshold: float = 0.82) -> float:
+    """
+    Return best similarity (0-1) of `needle` against any same-length window of
+    `haystack`. Cheap anti-hallucination check for verbatim-ish quotes.
+    """
+    from difflib import SequenceMatcher
+    needle = _normalize_text(needle)
+    haystack = _normalize_text(haystack)
+    if not needle or not haystack:
+        return 0.0
+    if needle in haystack:
+        return 1.0
+    # Slide a window the size of the needle across the haystack (word-stepped).
+    nlen = len(needle)
+    best = 0.0
+    step = max(1, nlen // 2)
+    for start in range(0, max(1, len(haystack) - nlen + 1), step):
+        window = haystack[start:start + nlen]
+        ratio = SequenceMatcher(None, needle, window).ratio()
+        if ratio > best:
+            best = ratio
+            if best >= 0.97:
+                break
+    return best
+
+
+def _content_word_overlap(claim: str, full_norm: str) -> float:
+    """Fraction of meaningful words in `claim` that also appear in the paper."""
+    import re as _re
+    stop = {
+        "yang", "dan", "atau", "tidak", "ada", "pada", "ini", "itu", "untuk",
+        "dengan", "dari", "ke", "di", "the", "a", "an", "of", "to", "in", "is",
+        "are", "and", "or", "not", "no", "this", "that", "study", "paper",
+        "jurnal", "penelitian", "hanya", "secara", "sebuah", "adalah",
+    }
+    words = [w for w in _re.findall(r"[a-zA-Z]{4,}", claim.lower()) if w not in stop]
+    if not words:
+        return 0.0
+    hits = sum(1 for w in set(words) if w in full_norm)
+    return hits / len(set(words))
+
+
+def _verify_paper_weaknesses(parsed, full_content, source_name="", vector_store=None):
+    """
+    Verify each weakness point against the paper text so the output is grounded,
+    not guessed.
+
+    - tersurat (explicit): the 'kutipan'/'dasar' MUST be locatable in the paper
+      (substring or fuzzy match). Unverifiable points are DROPPED — they are
+      likely hallucinations. Verified points get verification_status='terverifikasi'.
+    - tersirat (implicit, by definition not written): grounded against the paper
+      via the project's own vector store (embedding similarity, filtered to this
+      source) with a content-word overlap fallback. Points with no grounding at
+      all are dropped; the rest carry verification_status + confidence.
+    """
+    full_norm = _normalize_text(full_content)
+
+    def _ground_score(text: str) -> float:
+        # Primary: reuse the project's embeddings via the vector store.
+        if vector_store is not None and source_name and text:
+            try:
+                results = vector_store.search(
+                    query=text, top_k=1,
+                    filter_metadata={"source": source_name},
+                )
+                if results:
+                    return max(0.0, float(results[0].score))
+            except Exception as e:
+                logger.debug(f"Weakness grounding search failed: {e}")
+        # Fallback: lexical overlap with the paper text.
+        return _content_word_overlap(text, full_norm)
+
+    verified_tersurat = []
+    for item in parsed.get("tersurat", []):
+        quote = item.get("kutipan") or item.get("dasar") or item.get("poin")
+        match = _fuzzy_contains(quote, full_content)
+        if match >= 0.82:
+            item["verification_status"] = "terverifikasi"
+            item["confidence"] = round(match, 2)
+            verified_tersurat.append(item)
+        # else: explicit claim we cannot find in the text → drop (hallucination)
+
+    verified_tersirat = []
+    for item in parsed.get("tersirat", []):
+        basis = item.get("dasar") or item.get("poin")
+        score = _ground_score(basis)
+        if score < 0.2:
+            continue  # ungrounded inference → drop
+        item["verification_status"] = "terbukti" if score >= 0.5 else "inferensi"
+        item["confidence"] = round(score, 2)
+        verified_tersirat.append(item)
+
+    return {"tersurat": verified_tersurat, "tersirat": verified_tersirat}
 
 
 @router.post("/analyze-selection")
@@ -598,54 +702,100 @@ def _parse_gap_text(text: str) -> list:
     return gaps
 
 
+def _coerce_rec_dict(item: dict, idx: int) -> dict:
+    """Normalise one LLM dict into a recommendation record (or {} if degenerate)."""
+    title = _clean_rec_field(str(item.get("title", "")))
+    description = _clean_rec_field(str(item.get("description", "")))
+    if _is_degenerate_text(title) and _is_degenerate_text(description):
+        return {}
+    default_priority = "high" if idx < 2 else "medium" if idx < 4 else "low"
+    return {
+        "title": title or "Usulan penelitian",
+        "description": description,
+        "gap_type": str(item.get("gap_type", item.get("type", ""))).upper(),
+        "why": _clean_rec_field(str(item.get("why", ""))),
+        "how": _clean_rec_field(str(item.get("how", ""))),
+        "priority": item.get("priority", default_priority),
+    }
+
+
 def _parse_recommendations_json(raw: str) -> list:
-    """Parse LLM JSON output for recommendations."""
+    """
+    Parse LLM JSON output for recommendations. Robust to:
+    - a JSON array  [ {...}, {...} ]
+    - a SINGLE JSON object  {...}  (small models often drop the array wrapper)
+    - several bare objects  {...}\n{...}  not wrapped in an array
+    - markdown code fences around any of the above
+    Never lets raw JSON leak into a recommendation field.
+    """
     import json as _json
     import re as _re
-    text = raw.strip()
-    match = _re.search(r'```(?:json)?\s*(\[.*?\])\s*```', text, _re.DOTALL)
-    if match:
-        text = match.group(1)
-    elif not text.startswith('['):
-        match = _re.search(r'(\[.*\])', text, _re.DOTALL)
-        if match:
-            text = match.group(1)
+    text = (raw or "").strip()
+
+    # Unwrap a ```json ... ``` fence if present.
+    fence = _re.search(r'```(?:json)?\s*(.+?)\s*```', text, _re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+
+    parsed = None
+    # 1) Try the whole payload as-is (handles both array and single object).
     try:
-        items = _json.loads(text)
-        if isinstance(items, list):
-            result = []
-            for idx, item in enumerate(items):
-                if isinstance(item, dict):
-                    title = _clean_rec_field(item.get("title", ""))
-                    description = _clean_rec_field(item.get("description", ""))
-                    # Skip degenerate items (e.g. title/desc that is just "[INCOMPLETENESS]")
-                    if _is_degenerate_text(title) and _is_degenerate_text(description):
-                        continue
-                    # Priority by rank when the model doesn't supply one, so the
-                    # frontend can pick a sensible primary proposal.
-                    default_priority = "high" if idx < 2 else "medium" if idx < 4 else "low"
-                    result.append({
-                        "title": title or "Usulan penelitian",
-                        "description": description,
-                        "gap_type": str(item.get("gap_type", item.get("type", ""))).upper(),
-                        "why": item.get("why", ""),
-                        "how": item.get("how", ""),
-                        "priority": item.get("priority", default_priority),
-                    })
-            return result
+        parsed = _json.loads(text)
     except (_json.JSONDecodeError, ValueError):
-        pass
+        parsed = None
+
+    # 2) If that failed, try to isolate a top-level array.
+    if parsed is None:
+        m = _re.search(r'\[.*\]', text, _re.DOTALL)
+        if m:
+            try:
+                parsed = _json.loads(m.group())
+            except (_json.JSONDecodeError, ValueError):
+                parsed = None
+
+    # 3) Still nothing → collect every individual {...} object and parse each.
+    if parsed is None:
+        objs = []
+        for m in _re.finditer(r'\{[^{}]*\}', text, _re.DOTALL):
+            try:
+                objs.append(_json.loads(m.group()))
+            except (_json.JSONDecodeError, ValueError):
+                continue
+        if objs:
+            parsed = objs
+
+    # Normalise the shape to a list of dicts.
+    if isinstance(parsed, dict):
+        parsed = [parsed]
+    if isinstance(parsed, list):
+        result = []
+        for idx, item in enumerate(parsed):
+            if isinstance(item, dict):
+                rec = _coerce_rec_dict(item, idx)
+                if rec:
+                    result.append(rec)
+        if result:
+            return result
+
+    # Last resort: plain-text parsing (guards against raw JSON leakage).
     return _parse_recommendations_text(text)
 
 
 def _parse_recommendations_text(text: str) -> list:
     """Parse plain text recommendations into structured dicts."""
     import re as _re
+    # Safety: if the text still looks like JSON, do NOT dump it into a card.
+    stripped = (text or "").strip()
+    if stripped.startswith('{') or stripped.startswith('['):
+        return []
     recs = []
     items = _re.split(r'\n\s*(?:\d+[\.\)]\s*|-\s+)', text)
     for item in items:
         item = item.strip()
         if not item or len(item) < 10:
+            continue
+        # Skip any fragment that is (or starts as) raw JSON.
+        if item.startswith('{') or item.startswith('['):
             continue
         title = item.split('\n')[0].strip().rstrip(':')
         desc = '\n'.join(item.split('\n')[1:]).strip() or title
@@ -896,6 +1046,11 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
                         "title": processed_doc.title or source_name,
                         "chunk_index": chunk.chunk_index,
                     }
+                    # Carry section label (from section-aware chunking) so the
+                    # vector store supports section-targeted retrieval.
+                    section = chunk.metadata.get("section") if chunk.metadata else None
+                    if section:
+                        metadata["section"] = section
                     vector_store.add_document(chunk.content, metadata)
                     total_chunks += 1
                 new_papers += 1
@@ -904,6 +1059,14 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
                 "source": source_name,
                 "title": processed_doc.title or source_name,
                 "content": " ".join(c.content for c in processed_doc.chunks[:10]),
+                "full_content": processed_doc.content or " ".join(
+                    c.content for c in processed_doc.chunks
+                ),
+                "weakness_context": document_processor.extract_weakness_sections(
+                    processed_doc.content or " ".join(
+                        c.content for c in processed_doc.chunks
+                    )
+                ),
                 "already_indexed": already_indexed,
             })
             pdf_path.unlink()
@@ -977,24 +1140,36 @@ Topik:"""
 
         def _compute_weaknesses():
             def _weak_prompt(p):
+                # Ground the analysis in the sections where authors actually
+                # state weaknesses (Limitations / Future Work / Conclusion),
+                # plus a short lead-in for context — NOT just the intro.
+                weakness_ctx = (p.get("weakness_context") or "").strip()
+                lead_in = (p.get("content") or "")[:600]
+                evidence_block = (
+                    f"[BAGIAN KETERBATASAN/KESIMPULAN JURNAL]\n{weakness_ctx}\n\n"
+                    f"[CUPLIKAN AWAL JURNAL]\n{lead_in}"
+                ) if weakness_ctx else f"Konten: {(p.get('content') or '')[:1800]}"
                 return (
                     "Anda adalah reviewer jurnal ilmiah. Analisis SATU jurnal berikut dan temukan "
                     "KEKURANGAN/keterbatasannya secara KONKRET berdasarkan isinya (bukan tebakan umum).\n\n"
                     "Bedakan dua jenis. Untuk SETIAP poin WAJIB sertakan 'dasar' (bukti/alasan dari isi jurnal):\n"
-                    "- tersurat: kelemahan yang DITULIS EKSPLISIT oleh penulis. 'dasar' = parafrase/kutipan "
-                    "bagian teks yang menyebutkannya (mis. bagian keterbatasan, saran, atau future work).\n"
+                    "- tersurat: kelemahan yang DITULIS EKSPLISIT oleh penulis. WAJIB sertakan 'kutipan' = "
+                    "potongan kalimat (5-20 kata) yang DISALIN PERSIS dari teks jurnal (verbatim) tempat "
+                    "kelemahan itu disebut (mis. bagian keterbatasan, saran, atau future work). 'dasar' = "
+                    "parafrase singkat dari kutipan itu.\n"
                     "- tersirat: kelemahan yang TIDAK ditulis tapi DISIMPULKAN dari isi. 'dasar' = fakta "
                     "spesifik di jurnal yang jadi alasannya (mis. 'hanya menguji 1 dataset', 'tidak ada "
                     "perbandingan dengan metode lain', 'tidak ada uji statistik', 'ruang lingkup hanya 1 kasus').\n\n"
                     "LARANGAN: jangan memakai kata ragu seperti 'mungkin', 'sepertinya', 'kemungkinan', "
                     "'bisa jadi'. Nyatakan observasi + simpulan secara tegas. Jika tidak ada dasar nyata di "
-                    "teks, JANGAN mengarang poin (kembalikan array kosong saja).\n\n"
+                    "teks, JANGAN mengarang poin (kembalikan array kosong saja). Untuk tersurat, kalau tidak "
+                    "ada kutipan verbatim yang bisa disalin, JANGAN buat poin tersurat.\n\n"
                     f"Judul: {p['title']}\n"
-                    f"Konten: {p['content'][:1800]}\n\n"
+                    f"{evidence_block}\n\n"
                     "Aturan: maksimal 3 poin per kategori; 'poin' = 1 kalimat singkat & spesifik, "
                     "'dasar' = 1 kalimat berisi bukti dari jurnal. Gunakan Bahasa Indonesia.\n"
                     "Kembalikan HANYA JSON (tanpa teks lain): "
-                    '{"tersurat": [{"poin": "...", "dasar": "..."}], '
+                    '{"tersurat": [{"poin": "...", "dasar": "...", "kutipan": "..."}], '
                     '"tersirat": [{"poin": "...", "dasar": "..."}]}'
                 )
 
@@ -1005,11 +1180,17 @@ Topik:"""
                 parsed_weak = _parse_weaknesses_json(
                     raw_weak if isinstance(raw_weak, str) else str(raw_weak)
                 )
+                # Verify each point against the paper text so the UI's promise
+                # ("disertai dasar dari jurnal — bukan tebakan") actually holds.
+                verified = _verify_paper_weaknesses(
+                    parsed_weak, p.get("full_content", ""),
+                    source_name=p.get("source", ""), vector_store=vector_store,
+                )
                 out.append({
                     "title": p["title"],
                     "source": p["source"],
-                    "tersurat": parsed_weak["tersurat"],
-                    "tersirat": parsed_weak["tersirat"],
+                    "tersurat": verified["tersurat"],
+                    "tersirat": verified["tersirat"],
                 })
             return out
 

@@ -55,7 +55,8 @@ class DocumentProcessor:
         self,
         chunk_size: int = 512,
         chunk_overlap: int = 50,
-        min_chunk_length: int = 100
+        min_chunk_length: int = 100,
+        chunk_strategy: str = "sections"
     ):
         """
         Initialize document processor
@@ -64,12 +65,20 @@ class DocumentProcessor:
             chunk_size: Target size for text chunks (in characters)
             chunk_overlap: Overlap between chunks
             min_chunk_length: Minimum chunk length to keep
+            chunk_strategy: "sections" (section-aware, default) or "fixed"
+                (legacy sliding-window). Section-aware chunking tags each chunk
+                with its source section (Introduction, Methods, Limitations, …),
+                enabling section-targeted retrieval and better weakness grounding.
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.min_chunk_length = min_chunk_length
+        self.chunk_strategy = chunk_strategy
         
-        logger.info(f"DocumentProcessor initialized (chunk_size={chunk_size}, overlap={chunk_overlap})")
+        logger.info(
+            f"DocumentProcessor initialized (chunk_size={chunk_size}, "
+            f"overlap={chunk_overlap}, strategy={chunk_strategy})"
+        )
     
     def process_pdf(
         self,
@@ -113,8 +122,15 @@ class DocumentProcessor:
         # Clean and preprocess text
         cleaned_text = self._clean_text(text)
         
-        # Create chunks
-        chunks = self._chunk_text(cleaned_text, doc_id, metadata)
+        # Create chunks — section-aware by default, fixed-window as fallback.
+        # Section detection runs on the RAW text because _clean_text collapses
+        # the newlines that header detection relies on.
+        if self.chunk_strategy == "sections":
+            chunks = self._chunk_sections(text, doc_id, metadata)
+            if not chunks:  # no detectable sections → fall back
+                chunks = self._chunk_text(cleaned_text, doc_id, metadata)
+        else:
+            chunks = self._chunk_text(cleaned_text, doc_id, metadata)
         
         logger.info(f"Processed document: {title} ({len(chunks)} chunks)")
         
@@ -228,6 +244,138 @@ class DocumentProcessor:
         
         return text
     
+    # Section keywords (English + Indonesian) used to recognise headers.
+    _SECTION_KEYWORDS = [
+        "abstract", "abstrak", "introduction", "pendahuluan", "background",
+        "related work", "literature review", "tinjauan pustaka", "landasan teori",
+        "method", "methods", "methodology", "metode", "metodologi",
+        "materials and methods", "approach", "proposed", "model", "experiment",
+        "experiments", "experimental", "eksperimen", "evaluation", "evaluasi",
+        "result", "results", "hasil", "hasil dan pembahasan", "findings",
+        "discussion", "pembahasan", "analysis", "analisis",
+        "conclusion", "conclusions", "kesimpulan", "penutup",
+        "limitation", "limitations", "keterbatasan", "future work",
+        "acknowledgment", "acknowledgments", "acknowledgement",
+        "references", "daftar pustaka", "bibliography", "appendix", "lampiran",
+    ]
+
+    def _detect_sections(self, text: str) -> List[Tuple[str, str]]:
+        """
+        Split a paper into (section_title, section_text) pairs.
+
+        Recognises three common header shapes, line by line:
+          - numbered: ``3 Model Architecture``, ``3.1 Results``, ``IV. Method``
+          - keyword headers: a short line whose start matches a known section
+            keyword (English or Indonesian)
+          - ALL-CAPS headers: a short upper-case line (e.g. ``INTRODUCTION``)
+
+        Returns an empty list when no headers are found, so the caller can fall
+        back to fixed-window chunking.
+        """
+        lines = text.split("\n")
+        # Header detectors
+        numbered = re.compile(
+            r"^\s*((\d{1,2}(\.\d{1,2})*)|([IVXLC]{1,5}))[\.\)]?\s+([A-Z][\w].{0,48})$"
+        )
+        keyword_re = re.compile(
+            r"^\s*(\d{1,2}[\.\)]?\s+)?(" + "|".join(
+                re.escape(k) for k in self._SECTION_KEYWORDS
+            ) + r")\b", re.IGNORECASE
+        )
+
+        boundaries: List[Tuple[int, str]] = []  # (line_index, title)
+        for i, raw in enumerate(lines):
+            line = raw.strip()
+            if not line or len(line) > 60:
+                continue
+            is_header = False
+            if numbered.match(line):
+                is_header = True
+            elif keyword_re.match(line) and len(line.split()) <= 7:
+                is_header = True
+            elif (
+                line.isupper() and 3 <= len(line) <= 40
+                and any(c.isalpha() for c in line)
+                and (" " in line.strip() or line.lower() in self._SECTION_KEYWORDS)
+            ):
+                # Multi-word ALL-CAPS (e.g. "RELATED WORK") or a known keyword;
+                # excludes single-token caps noise like table labels "NERMNLI".
+                is_header = True
+            if is_header:
+                boundaries.append((i, line))
+
+        if len(boundaries) < 2:
+            return []
+
+        sections: List[Tuple[str, str]] = []
+        for idx, (line_no, title) in enumerate(boundaries):
+            end_line = boundaries[idx + 1][0] if idx + 1 < len(boundaries) else len(lines)
+            body = "\n".join(lines[line_no + 1:end_line]).strip()
+            if body:
+                sections.append((title, body))
+        return sections
+
+    def _chunk_sections(
+        self,
+        text: str,
+        doc_id: str,
+        metadata: Dict[str, Any]
+    ) -> List[DocumentChunk]:
+        """
+        Section-aware chunking.
+
+        Splits the document into sections, then within each section emits
+        sliding-window sub-chunks (so embeddings stay focused) — each tagged
+        with its ``section`` title. Falls back to an empty list when no sections
+        are detected so ``process_pdf`` can use fixed-window chunking instead.
+        """
+        sections = self._detect_sections(text)
+        if not sections:
+            return []
+
+        chunks: List[DocumentChunk] = []
+        chunk_index = 0
+        stride = max(1, self.chunk_size - self.chunk_overlap)
+
+        for section_title, raw_body in sections:
+            # The section body comes from RAW text; normalise whitespace here so
+            # chunks read cleanly while header detection still saw the newlines.
+            body = re.sub(r"\s+", " ", raw_body).strip()
+            start = 0
+            blen = len(body)
+            while start < blen:
+                end = min(start + self.chunk_size, blen)
+                piece = body[start:end]
+                # Break on a sentence boundary near the end when possible.
+                if end < blen:
+                    last_period = piece.rfind(". ", max(0, len(piece) - 100))
+                    if last_period > 0:
+                        piece = piece[:last_period + 1]
+                        end = start + last_period + 1
+                if len(piece.strip()) >= self.min_chunk_length or (
+                    not chunks and end >= blen
+                ):
+                    chunk_id = f"{doc_id}_chunk_{chunk_index}"
+                    chunk_metadata = metadata.copy()
+                    chunk_metadata.update({
+                        "chunk_id": chunk_id,
+                        "chunk_index": chunk_index,
+                        "section": section_title,
+                    })
+                    chunks.append(DocumentChunk(
+                        chunk_id=chunk_id,
+                        content=piece.strip(),
+                        metadata=chunk_metadata,
+                        chunk_index=chunk_index,
+                        total_chunks=0,
+                    ))
+                    chunk_index += 1
+                start += stride
+
+        for chunk in chunks:
+            chunk.total_chunks = len(chunks)
+        return chunks
+
     def _chunk_text(
         self,
         text: str,
@@ -372,6 +520,76 @@ class DocumentProcessor:
         
         return unique_citations[:50]  # Limit to 50 citations
     
+    def extract_weakness_sections(self, full_text: str, max_chars: int = 4000) -> str:
+        """
+        Extract the parts of a paper where authors actually state weaknesses.
+
+        Real, explicit limitations live in sections like *Limitations*,
+        *Future Work*, *Threats to Validity*, *Discussion* and *Conclusion* —
+        which sit at the END of a paper and are therefore missed when only the
+        first N chunks (title/abstract/intro) are fed to an LLM. This method
+        locates those sections and returns their text so weakness analysis can
+        be grounded in evidence rather than guesswork.
+
+        Strategy:
+          - High-precision headers (limitation/future work/threats to validity)
+            are captured wherever they occur.
+          - Generic headers (conclusion/discussion) are only captured in the
+            latter part of the document, to avoid matching an intro's
+            "we discuss…" or "in conclusion" phrasing.
+          - Falls back to the document tail when no headers are found.
+
+        Args:
+            full_text: The full cleaned paper text.
+            max_chars: Maximum length of the returned context.
+
+        Returns:
+            Concatenated weakness-bearing sections (or the document tail).
+        """
+        if not full_text:
+            return ""
+
+        text = full_text
+        lower = text.lower()
+        n = len(text)
+        latter_start = int(n * 0.4)
+
+        precise = ["limitation", "future work", "future research",
+                   "threats to validity", "shortcoming", "drawback"]
+        generic = ["conclusion", "concluding remarks", "discussion"]
+
+        windows: List[Tuple[int, str]] = []
+        for kw in precise:
+            for m in re.finditer(re.escape(kw), lower):
+                start = m.start()
+                windows.append((start, text[start:start + 1500]))
+        for kw in generic:
+            for m in re.finditer(re.escape(kw), lower):
+                start = m.start()
+                if start >= latter_start:  # only trust generic headers late in the doc
+                    windows.append((start, text[start:start + 1200]))
+
+        if not windows:
+            # No recognizable sections — fall back to the tail of the paper,
+            # where conclusions/limitations usually live.
+            return text[-max_chars:].strip()
+
+        # Merge in document order, skipping overlapping windows.
+        windows.sort(key=lambda w: w[0])
+        collected: List[str] = []
+        consumed_until = -1
+        total = 0
+        for start, chunk in windows:
+            if start < consumed_until:
+                continue
+            collected.append(chunk.strip())
+            consumed_until = start + len(chunk)
+            total += len(chunk)
+            if total >= max_chars:
+                break
+
+        return "\n...\n".join(collected)[:max_chars].strip()
+
     def chunk_by_sections(
         self,
         text: str,

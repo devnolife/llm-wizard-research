@@ -14,6 +14,15 @@ import json
 from loguru import logger
 
 
+def _strip_markup(text: str) -> str:
+    """Remove JATS/HTML tags (e.g. CrossRef's <jats:p>) and collapse whitespace."""
+    if not text:
+        return ""
+    import re
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 @dataclass
 class PaperMetadata:
     """Standard paper metadata structure"""
@@ -360,8 +369,8 @@ class CrossRefAPI:
                 elif item.get("published-online"):
                     year = item["published-online"]["date-parts"][0][0]
                 
-                # Abstract
-                abstract = item.get("abstract", "")
+                # Abstract (CrossRef returns JATS-tagged abstracts)
+                abstract = _strip_markup(item.get("abstract", ""))
                 
                 # URLs
                 doi = item.get("DOI", "")
@@ -590,6 +599,24 @@ class CoreAPI:
                     if response.status_code == 401:
                         logger.warning("CORE API: Invalid or missing API key")
                         return []
+                    elif response.status_code == 429:
+                        # Rate limited — common when no CORE_API_KEY is set.
+                        # Retry with exponential backoff, then give actionable advice.
+                        if attempt < max_retries - 1:
+                            wait_time = retry_delay * (2 ** attempt)
+                            logger.warning(
+                                f"CORE API rate limited (429, attempt {attempt+1}/{max_retries}), "
+                                f"retrying in {wait_time}s..."
+                            )
+                            await asyncio.sleep(wait_time)
+                            continue
+                        else:
+                            logger.error(
+                                "CORE API rate limited (429). Set a free CORE_API_KEY in "
+                                "backend/.env to raise the limit to 10,000 requests/day "
+                                "(get one at https://core.ac.uk/services/api)."
+                            )
+                            return []
                     elif response.status_code == 500:
                         # CORE API Elasticsearch overloaded - retry with backoff
                         error_msg = response.text[:500]
@@ -718,6 +745,263 @@ class CoreAPI:
             return None
 
 
+class EuropePMCAPI:
+    """Europe PMC REST API client (open access, no API key required)"""
+
+    BASE_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+
+    def __init__(self, email: Optional[str] = None):
+        self.email = email
+        self.headers = {"User-Agent": "WizardResearch/1.0 (mailto:research@example.com)"}
+
+    async def search(
+        self,
+        query: str,
+        max_results: int = 10,
+        year_from: Optional[int] = None,
+        year_to: Optional[int] = None
+    ) -> List[PaperMetadata]:
+        """
+        Search Europe PMC papers
+
+        Args:
+            query: Search query
+            max_results: Maximum number of results
+            year_from: Filter papers from this year onwards (optional)
+            year_to: Filter papers up to this year (optional)
+
+        Returns:
+            List of paper metadata
+        """
+        search_query = query
+        if year_from or year_to:
+            lo = year_from or 1900
+            hi = year_to or datetime.now().year
+            search_query = f"{query} AND PUB_YEAR:[{lo} TO {hi}]"
+
+        params = {
+            "query": search_query,
+            "format": "json",
+            "pageSize": max_results,
+            "resultType": "core",
+        }
+
+        try:
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.get(self.BASE_URL, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return self._parse_europepmc_response(data)
+                    else:
+                        logger.error(f"Europe PMC API error: {response.status}")
+                        return []
+        except Exception as e:
+            logger.error(f"Europe PMC API request failed: {e}")
+            return []
+
+    @staticmethod
+    def _strip_html(text: str) -> str:
+        """Remove simple inline HTML/JATS tags from abstracts."""
+        if not text:
+            return ""
+        import re
+        return re.sub(r"<[^>]+>", " ", text).replace("  ", " ").strip()
+
+    def _parse_europepmc_response(self, data: Dict) -> List[PaperMetadata]:
+        """Parse Europe PMC API response"""
+        papers = []
+
+        for item in data.get("resultList", {}).get("result", []):
+            try:
+                # Authors: "Smith J, Doe A." -> list
+                author_string = item.get("authorString", "") or ""
+                authors = [a.strip() for a in author_string.rstrip(".").split(",") if a.strip()]
+
+                # Year
+                year = None
+                if item.get("pubYear"):
+                    try:
+                        year = int(item["pubYear"])
+                    except (ValueError, TypeError):
+                        year = None
+
+                # URLs: prefer a full-text / DOI link, capture a PDF when offered
+                url = None
+                pdf_url = None
+                for ft in item.get("fullTextUrlList", {}).get("fullTextUrl", []):
+                    ft_url = ft.get("url")
+                    if not ft_url:
+                        continue
+                    if url is None:
+                        url = ft_url
+                    if ft.get("documentStyle") == "pdf" and pdf_url is None:
+                        pdf_url = ft_url
+
+                doi = item.get("doi")
+                if url is None and doi:
+                    url = f"https://doi.org/{doi}"
+
+                papers.append(PaperMetadata(
+                    paper_id=doi or f"{item.get('source', 'EPMC')}:{item.get('id', '')}",
+                    title=item.get("title", ""),
+                    authors=authors[:10],
+                    abstract=self._strip_html(item.get("abstractText", ""))[:2000],
+                    year=year,
+                    journal=item.get("journalTitle"),
+                    doi=doi,
+                    url=url,
+                    pdf_url=pdf_url,
+                    citation_count=item.get("citedByCount", 0) or 0,
+                    keywords=item.get("keywordList", {}).get("keyword", [])[:10]
+                    if item.get("keywordList") else [],
+                    source_api="europe_pmc",
+                    raw_data=item
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to parse Europe PMC entry: {e}")
+                continue
+
+        return papers
+
+
+class ScienceDirectAPI:
+    """
+    Elsevier ScienceDirect Search API client.
+
+    Requires a free Elsevier API key (ELSEVIER_API_KEY), obtainable at
+    https://dev.elsevier.com/. Full-text access to subscribed content
+    additionally requires either running from the institution's IP range
+    (e.g. UNHAS campus network / VPN) or an institutional token
+    (ELSEVIER_INSTTOKEN) issued by the institution's library. For metadata and
+    abstracts (used for search + ingestion) the API key alone is sufficient.
+    """
+
+    BASE_URL = "https://api.elsevier.com/content/search/sciencedirect"
+
+    def __init__(self, api_key: Optional[str] = None, insttoken: Optional[str] = None):
+        self.api_key = api_key or os.getenv("ELSEVIER_API_KEY")
+        self.insttoken = insttoken or os.getenv("ELSEVIER_INSTTOKEN")
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {"Accept": "application/json"}
+        if self.api_key:
+            headers["X-ELS-APIKey"] = self.api_key
+        if self.insttoken:
+            headers["X-ELS-Insttoken"] = self.insttoken
+        return headers
+
+    async def search(
+        self,
+        query: str,
+        max_results: int = 10,
+        year_from: Optional[int] = None,
+        year_to: Optional[int] = None
+    ) -> List[PaperMetadata]:
+        """Search ScienceDirect papers"""
+        if not self.api_key:
+            logger.warning(
+                "ScienceDirect skipped: no ELSEVIER_API_KEY set. Get a free key at "
+                "https://dev.elsevier.com/ and add ELSEVIER_API_KEY to backend/.env "
+                "(use your UNHAS campus network/VPN or an ELSEVIER_INSTTOKEN for full text)."
+            )
+            return []
+
+        params = {
+            "query": query,
+            "count": min(max_results, 100),
+        }
+        if year_from or year_to:
+            lo = year_from or 1900
+            hi = year_to or datetime.now().year
+            params["date"] = f"{lo}-{hi}"
+
+        try:
+            async with aiohttp.ClientSession(headers=self._headers()) as session:
+                async with session.get(self.BASE_URL, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return self._parse_sciencedirect_response(data)
+                    elif response.status == 401:
+                        logger.error(
+                            "ScienceDirect API error 401: invalid ELSEVIER_API_KEY "
+                            "(or missing institutional entitlement)."
+                        )
+                        return []
+                    elif response.status == 429:
+                        logger.error("ScienceDirect API error 429: rate/quota limit reached.")
+                        return []
+                    else:
+                        body = (await response.text())[:200]
+                        logger.error(f"ScienceDirect API error: {response.status} - {body}")
+                        return []
+        except Exception as e:
+            logger.error(f"ScienceDirect API request failed: {e}")
+            return []
+
+    def _parse_sciencedirect_response(self, data: Dict) -> List[PaperMetadata]:
+        """Parse ScienceDirect Search API response"""
+        papers = []
+        entries = data.get("search-results", {}).get("entry", [])
+
+        for item in entries:
+            # An empty result set is returned as a single entry carrying an error.
+            if item.get("error"):
+                logger.info(f"ScienceDirect: {item.get('error')}")
+                continue
+            try:
+                # Authors: prefer the structured list, fall back to dc:creator
+                authors = []
+                author_block = item.get("authors")
+                if isinstance(author_block, dict):
+                    for a in author_block.get("author", []):
+                        name = " ".join(
+                            part for part in [a.get("given-name"), a.get("surname")] if part
+                        ).strip()
+                        if name:
+                            authors.append(name)
+                if not authors and item.get("dc:creator"):
+                    authors = [item["dc:creator"]]
+
+                # Year from prism:coverDate (YYYY-MM-DD)
+                year = None
+                cover_date = item.get("prism:coverDate")
+                if cover_date:
+                    try:
+                        year = int(str(cover_date)[:4])
+                    except (ValueError, TypeError):
+                        year = None
+
+                # Public ScienceDirect URL (prefer the scidir link)
+                url = None
+                for link in item.get("link", []):
+                    if link.get("@ref") == "scidir":
+                        url = link.get("@href")
+                        break
+                doi = item.get("prism:doi")
+                if url is None:
+                    url = f"https://doi.org/{doi}" if doi else item.get("prism:url")
+
+                papers.append(PaperMetadata(
+                    paper_id=doi or item.get("dc:identifier", "") or item.get("pii", ""),
+                    title=item.get("dc:title", ""),
+                    authors=authors[:10],
+                    abstract=(item.get("dc:description") or "").strip()[:2000],
+                    year=year,
+                    journal=item.get("prism:publicationName"),
+                    doi=doi,
+                    url=url,
+                    pdf_url=None,
+                    citation_count=int(item.get("citedby-count", 0) or 0),
+                    source_api="sciencedirect",
+                    raw_data=item
+                ))
+            except Exception as e:
+                logger.warning(f"Failed to parse ScienceDirect entry: {e}")
+                continue
+
+        return papers
+
+
 class AggregatedPaperAPI:
     """
     Aggregated API client that searches across multiple sources
@@ -729,7 +1013,9 @@ class AggregatedPaperAPI:
         pubmed_key: Optional[str] = None,
         crossref_email: Optional[str] = None,
         pubmed_email: Optional[str] = None,
-        core_key: Optional[str] = None
+        core_key: Optional[str] = None,
+        elsevier_key: Optional[str] = None,
+        elsevier_insttoken: Optional[str] = None
     ):
         """Initialize all API clients"""
         self.arxiv = ArXivAPI()
@@ -737,6 +1023,10 @@ class AggregatedPaperAPI:
         self.crossref = CrossRefAPI(email=crossref_email)
         self.pubmed = PubMedAPI(api_key=pubmed_key, email=pubmed_email)
         self.core = CoreAPI(api_key=core_key)
+        self.europe_pmc = EuropePMCAPI(email=crossref_email)
+        self.sciencedirect = ScienceDirectAPI(
+            api_key=elsevier_key, insttoken=elsevier_insttoken
+        )
     
     async def search_all(
         self,
@@ -785,6 +1075,14 @@ class AggregatedPaperAPI:
             tasks.append(self.core.search(query, max_results_per_source, year_from, year_to))
             source_names.append("core")
         
+        if "europe_pmc" in sources:
+            tasks.append(self.europe_pmc.search(query, max_results_per_source, year_from, year_to))
+            source_names.append("europe_pmc")
+        
+        if "sciencedirect" in sources:
+            tasks.append(self.sciencedirect.search(query, max_results_per_source, year_from, year_to))
+            source_names.append("sciencedirect")
+        
         # Execute all searches in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -802,16 +1100,21 @@ class AggregatedPaperAPI:
     
     def deduplicate_papers(
         self,
-        all_papers: Dict[str, List[PaperMetadata]]
+        all_papers: Dict[str, List[PaperMetadata]],
+        query: Optional[str] = None
     ) -> List[PaperMetadata]:
         """
         Deduplicate papers from multiple sources based on DOI and title similarity
-        
+
         Args:
             all_papers: Dictionary of papers from different sources
-        
+            query: Optional search query. When provided, results are ordered by
+                relevance to the query (title/abstract term overlap) instead of
+                source iteration order — otherwise the first source (e.g. arXiv)
+                always dominates the top regardless of relevance.
+
         Returns:
-            Deduplicated list of papers
+            Deduplicated list of papers (relevance-ordered when query is given)
         """
         seen_dois = set()
         seen_titles = set()
@@ -833,8 +1136,36 @@ class AggregatedPaperAPI:
                 seen_titles.add(title_norm)
                 
                 unique_papers.append(paper)
-        
+
+        if query:
+            unique_papers.sort(
+                key=lambda p: self._relevance_score(p, query), reverse=True
+            )
         return unique_papers
+
+    @staticmethod
+    def _relevance_score(paper: PaperMetadata, query: str) -> float:
+        """
+        Lightweight query-relevance score for cross-source ordering.
+
+        Title term matches are weighted far higher than abstract matches, and a
+        small citation bonus breaks ties. Language-agnostic (works for
+        Indonesian queries), so penjadwalan-titled papers rank above unrelated
+        arXiv hits.
+        """
+        import re
+        terms = {t for t in re.findall(r"[a-z0-9]+", (query or "").lower()) if len(t) > 2}
+        if not terms:
+            return 0.0
+        title = (paper.title or "").lower()
+        abstract = (paper.abstract or "").lower()
+        title_hits = sum(1 for t in terms if t in title)
+        abstract_hits = sum(1 for t in terms if t in abstract)
+        score = 3.0 * (title_hits / len(terms)) + 1.0 * (abstract_hits / len(terms))
+        # Tiny citation tie-breaker (log-scaled, capped) — keeps it secondary.
+        cites = paper.citation_count or 0
+        score += min(cites, 100) / 1000.0
+        return score
 
 
 # Example usage and testing

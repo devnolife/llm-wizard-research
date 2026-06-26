@@ -68,7 +68,7 @@ async def search_external_papers(request: PaperSearchRequest):
         
         # Deduplicate if requested
         if request.deduplicate:
-            papers = paper_api.deduplicate_papers(results)
+            papers = paper_api.deduplicate_papers(results, query=request.query)
             logger.info(f"Deduplicated to {len(papers)} unique papers")
         else:
             # Flatten all results
@@ -125,6 +125,12 @@ async def ingest_external_paper(
             paper = results[0] if results else None
         elif source == "crossref":
             results = await paper_api.crossref.search(paper_id, max_results=1)
+            paper = results[0] if results else None
+        elif source == "europe_pmc":
+            results = await paper_api.europe_pmc.search(paper_id, max_results=1)
+            paper = results[0] if results else None
+        elif source == "sciencedirect":
+            results = await paper_api.sciencedirect.search(paper_id, max_results=1)
             paper = results[0] if results else None
         else:
             raise HTTPException(status_code=400, detail=f"Source {source} not supported")

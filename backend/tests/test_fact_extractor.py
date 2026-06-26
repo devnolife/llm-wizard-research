@@ -42,6 +42,12 @@ RELATIONS_JSON = json.dumps([
     },
 ])
 
+# Combined single-call format the extractor now prefers ({"entities", "relations"}).
+COMBINED_JSON = json.dumps({
+    "entities": json.loads(ENTITIES_JSON),
+    "relations": json.loads(RELATIONS_JSON),
+})
+
 
 @pytest.fixture
 def extractor():
@@ -182,8 +188,8 @@ class TestGenerateJson:
 class TestExtractFromText:
     def test_entities_and_facts_extracted(self, fact_table):
         llm = MagicMock()
-        # First call = entity extraction, second = relation extraction
-        llm.generate.side_effect = [ENTITIES_JSON, RELATIONS_JSON]
+        # Fast path: extractor makes ONE combined call returning {entities, relations}.
+        llm.generate.return_value = COMBINED_JSON
         fe = FactExtractor(llm_interface=llm)
 
         stats = fe.extract_from_text(
@@ -205,9 +211,15 @@ class TestExtractFromText:
         assert PredicateType.ACHIEVES in predicates
 
     def test_object_wrapped_llm_output_still_works(self, fact_table):
-        """Regression: Ollama JSON mode wrapping must not zero out extraction."""
+        """Regression: Ollama JSON mode wrapping must not zero out extraction.
+
+        Forces the 2-call fallback pipeline (combined call yields nothing) and
+        feeds object-wrapped single-key responses, which the array parser must
+        unwrap into entities/relations.
+        """
         llm = MagicMock()
         llm.generate.side_effect = [
+            "{}",  # combined call → empty object → triggers 2-call fallback
             json.dumps({"entities": json.loads(ENTITIES_JSON)}),
             json.dumps({"relations": json.loads(RELATIONS_JSON)}),
         ]

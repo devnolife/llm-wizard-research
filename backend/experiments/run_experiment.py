@@ -103,6 +103,13 @@ def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False)
     config = get_config()
     model_name = model_name or os.environ.get("OLLAMA_MODEL", config.llm.model_name)
 
+    # Mode-driven NLI toggle for the H9 ablation (dedicated cross-encoder NLI
+    # vs LLM-only contradiction detection). Other modes honour the --nli flag.
+    if mode == "nli":
+        use_nli = True
+    elif mode == "no-nli":
+        use_nli = False
+
     logger.info(f"Using LLM model: {model_name} | mode: {mode} | dedicated NLI: {use_nli}")
 
     # Use a separate collection for experiments
@@ -139,8 +146,10 @@ def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False)
     kg_builder = KnowledgeGraphBuilder()
     doc_processor = DocumentProcessor(chunk_size=512, chunk_overlap=50)
 
-    # Ablation: no-rule-engine mode removes the symbolic validation layer (H7)
-    analyzer_rule_engine = rule_engine if mode == "full" else None
+    # Ablation: only no-rule-engine / linear-baseline remove the symbolic
+    # validation layer (H7). full / nli / no-nli keep the Rule Engine so the
+    # H9 NLI ablation isolates the NLI signal, not the rule engine.
+    analyzer_rule_engine = None if mode in ("no-rule-engine", "linear-baseline") else rule_engine
 
     gap_analyzer = GapAnalyzer(
         vector_store=vector_store,
@@ -418,6 +427,7 @@ def phase3_gap_detection(components, topics):
                 adj = getattr(ind, 'adjusted_confidence', None)
                 topic_result["indicators"].append({
                     "type": ind_type,
+                    "detection_method": str(getattr(ind, 'detection_method', '') or ''),
                     "description": str(getattr(ind, 'description', ''))[:200],
                     "confidence": conf,
                     "adjusted_confidence": float(adj) if adj is not None else conf,
@@ -887,8 +897,10 @@ def main():
     )
     parser.add_argument(
         "--mode", default="full",
-        choices=["full", "no-rule-engine", "linear-baseline"],
-        help="Experiment mode: full pipeline, ablation without rule engine (H7), or linear RAG+LLM baseline (H6)",
+        choices=["full", "no-rule-engine", "linear-baseline", "nli", "no-nli"],
+        help="Experiment mode: full pipeline; no-rule-engine ablation (H7); "
+             "linear RAG+LLM baseline (H6); nli / no-nli ablation for the "
+             "dedicated cross-encoder NLI signal (H9)",
     )
     parser.add_argument(
         "--topics", default=None,
@@ -990,15 +1002,16 @@ def main():
     else:
         phase3_results = phase3_gap_detection(components, topics)
 
-    # --- Phase 4: rule engine aggregation (full mode only) ---
-    if args.mode == "full":
+    # --- Phase 4: rule engine aggregation (full agentic pipeline modes) ---
+    FULL_PIPELINE_MODES = ("full", "nli", "no-nli")
+    if args.mode in FULL_PIPELINE_MODES:
         phase4_results = phase4_rule_engine_analysis(components, phase3_results)
     else:
         logger.info(f"PHASE 4 skipped (mode={args.mode})")
         phase4_results = {"summary": {}, "total_time": 0, "skipped": True}
 
-    # --- Phase 5: adversarial rule engine validation (full mode only) ---
-    if args.mode == "full":
+    # --- Phase 5: adversarial rule engine validation (full agentic modes) ---
+    if args.mode in FULL_PIPELINE_MODES:
         phase5_results = phase5_adversarial_validation()
     else:
         phase5_results = {"summary": {}, "total_time": 0, "skipped": True}

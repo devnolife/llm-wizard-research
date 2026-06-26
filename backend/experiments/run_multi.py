@@ -31,6 +31,10 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 RESULTS_DIR = BACKEND_DIR / "experiments" / "results"
 MODES = ["full", "no-rule-engine", "linear-baseline"]
 
+# Effect-size + CI helpers (complement the Mann-Whitney p-values).
+sys.path.insert(0, str(BACKEND_DIR / "experiments"))
+from stats_utils import format_effect  # noqa: E402
+
 
 def run_name(mode: str, model: str, run_idx: int) -> str:
     slug = model.replace(":", "_").replace("/", "_")
@@ -122,32 +126,43 @@ def aggregate(model: str, data: dict) -> str:
         )
 
     # Hypothesis tests on pooled per-indicator confidences
-    lines += ["", "### Uji Signifikansi (Mann-Whitney U, two-sided)", ""]
-    lines += ["| Perbandingan | Hipotesis | Variabel | U | p-value | Signifikan (α=0.05) |",
-              "|---|---|---|---|---|---|"]
+    lines += ["", "### Uji Signifikansi (Mann-Whitney U) + Effect Size & CI", ""]
+    lines += ["| Perbandingan | Hipotesis | Variabel | U | p-value | Sig (α=0.05) | Effect size & 95% CI |",
+              "|---|---|---|---|---|---|---|"]
 
     comparisons = [
         ("full", "no-rule-engine", "H7"),
         ("full", "linear-baseline", "H6"),
+        ("nli", "no-nli", "H9"),
     ]
     for mode_a, mode_b, hyp in comparisons:
         runs_a, runs_b = data.get(mode_a, []), data.get(mode_b, [])
+        if not runs_a or not runs_b:
+            continue  # only emit H9 (etc.) when both modes were run
         # Variable 1: per-run indicator counts
-        counts = mwu([r["indicators"] for r in runs_a], [r["indicators"] for r in runs_b])
+        counts_a = [r["indicators"] for r in runs_a]
+        counts_b = [r["indicators"] for r in runs_b]
+        counts = mwu(counts_a, counts_b)
         # Variable 2: pooled per-indicator confidences
         conf_a = [c for r in runs_a for c in r["confidences"]]
         conf_b = [c for r in runs_b for c in r["confidences"]]
         confs = mwu(conf_a, conf_b)
 
-        for label, res in [("jumlah indikator/run", counts), ("confidence per indikator", confs)]:
+        for label, res, sa, sb in [
+            ("jumlah indikator/run", counts, counts_a, counts_b),
+            ("confidence per indikator", confs, conf_a, conf_b),
+        ]:
             if res is None:
-                lines.append(f"| {mode_a} vs {mode_b} | {hyp} | {label} | — | — | data tidak cukup |")
+                effect = format_effect(sa, sb)
+                lines.append(f"| {mode_a} vs {mode_b} | {hyp} | {label} | — | — | data tidak cukup | {effect} |")
             else:
                 u, p = res
                 sig = "ya" if p < 0.05 else "tidak"
-                lines.append(f"| {mode_a} vs {mode_b} | {hyp} | {label} | {u:.1f} | {p:.4f} | {sig} |")
+                effect = format_effect(sa, sb, u=u)
+                lines.append(f"| {mode_a} vs {mode_b} | {hyp} | {label} | {u:.1f} | {p:.4f} | {sig} | {effect} |")
 
-    lines += ["", "_Catatan: n run kecil (≈3–5) membatasi power statistik; "
+    lines += ["", "_Effect size: Cliff's δ (negligible/small/medium/large), rank-biserial r, "
+              "dan selisih median dengan 95% CI bootstrap. n run kecil (≈3–5) membatasi power; "
               "p ≥ 0.05 berarti 'belum ada bukti perbedaan', bukan 'terbukti sama'._"]
     return "\n".join(lines)
 

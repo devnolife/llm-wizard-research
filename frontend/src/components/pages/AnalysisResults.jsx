@@ -250,16 +250,39 @@ const AnalysisResults = () => {
 
   const parsedRecommendations = useMemo(() => {
     const recs = data?.recommendations || []
+    // Defensive: older jobs may carry a record whose fields are raw JSON text
+    // (a parser bug). Recover the real fields so nothing ugly reaches the UI.
+    const recoverRawJson = (rec) => {
+      const probe = String(rec.description || rec.title || '')
+      if (!probe.trim().startsWith('{')) return rec
+      const m = probe.match(/\{[\s\S]*\}/)
+      if (!m) return rec
+      try {
+        const obj = JSON.parse(m[0])
+        if (obj && typeof obj === 'object') {
+          return {
+            ...rec,
+            title: obj.title || rec.title,
+            description: obj.description || '',
+            gap_type: obj.gap_type || obj.type || rec.gap_type,
+            why: obj.why || rec.why,
+            how: obj.how || rec.how,
+          }
+        }
+      } catch { /* leave as-is */ }
+      return rec
+    }
     if (Array.isArray(recs)) {
       return recs.map((rec, idx) => {
         if (typeof rec === 'object' && rec !== null) {
+          const r = recoverRawJson(rec)
           return {
-            title: rec.title || '',
-            description: rec.description || '',
-            gap_type: (rec.gap_type || rec.type || '').toUpperCase() || null,
-            why: rec.why || '',
-            how: rec.how || '',
-            priority: rec.priority || (idx < 2 ? 'high' : idx < 4 ? 'medium' : 'low'),
+            title: r.title || '',
+            description: r.description || '',
+            gap_type: (r.gap_type || r.type || '').toUpperCase() || null,
+            why: r.why || '',
+            how: r.how || '',
+            priority: r.priority || (idx < 2 ? 'high' : idx < 4 ? 'medium' : 'low'),
             index: idx,
           }
         }
@@ -1954,11 +1977,18 @@ const AnalysisResults = () => {
                           {w.tersurat.map((t, j) => {
                             const poin = typeof t === 'object' ? t.poin : t
                             const dasar = typeof t === 'object' ? t.dasar : ''
+                            const status = typeof t === 'object' ? t.verification_status : ''
+                            const conf = typeof t === 'object' ? t.confidence : null
                             return (
                               <li key={j} className="flex items-start gap-1.5 text-xs">
                                 <span className="text-amber-500 mt-0.5">•</span>
                                 <div>
                                   <span className="text-muted-foreground">{poin}</span>
+                                  {status && (
+                                    <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700 dark:text-emerald-400 align-middle">
+                                      ✓ {status}{conf != null ? ` ${Math.round(conf * 100)}%` : ''}
+                                    </span>
+                                  )}
                                   {dasar && (
                                     <p className="text-[11px] text-amber-700/80 dark:text-amber-300/70 mt-0.5">
                                       <span className="font-medium">Dasar:</span> {dasar}
@@ -1985,11 +2015,19 @@ const AnalysisResults = () => {
                           {w.tersirat.map((t, j) => {
                             const poin = typeof t === 'object' ? t.poin : t
                             const dasar = typeof t === 'object' ? t.dasar : ''
+                            const status = typeof t === 'object' ? t.verification_status : ''
+                            const conf = typeof t === 'object' ? t.confidence : null
+                            const grounded = status === 'terbukti'
                             return (
                               <li key={j} className="flex items-start gap-1.5 text-xs">
                                 <span className="text-rose-500 mt-0.5">•</span>
                                 <div>
                                   <span className="text-muted-foreground">{poin}</span>
+                                  {status && (
+                                    <span className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-medium align-middle ${grounded ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'}`}>
+                                      {grounded ? '✓' : '≈'} {status}{conf != null ? ` ${Math.round(conf * 100)}%` : ''}
+                                    </span>
+                                  )}
                                   {dasar && (
                                     <p className="text-[11px] text-rose-700/80 dark:text-rose-300/70 mt-0.5">
                                       <span className="font-medium">Dasar (dari isi jurnal):</span> {dasar}
@@ -2014,9 +2052,9 @@ const AnalysisResults = () => {
         </div>
 
         {/* ④ Usulan Penelitian */}
-        <div className="rounded-lg border bg-card p-5 mb-6">
+        <div className="rounded-xl border border-primary/30 bg-gradient-to-br from-primary/5 to-transparent p-5 mb-6">
           <div className="flex items-center gap-2 mb-1">
-            <span className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">4</span>
+            <span className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold flex-shrink-0">4</span>
             <Target className="w-5 h-5 text-primary" />
             <h3 className="font-semibold text-sm">Usulan — Arah Penelitian dari Kekurangan Ini</h3>
           </div>
@@ -2024,38 +2062,62 @@ const AnalysisResults = () => {
             Dari gap & kekurangan di atas, ini indikator arah penelitian yang bisa Anda kembangkan.
           </p>
 
-          {/* Disclaimer decision-support */}
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 mb-4 ml-8">
-            <Shield className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
-              <strong>Indikator, bukan kesimpulan.</strong> Usulan ini <em>alat bantu keputusan</em> berbasis{' '}
-              indikator <Term k="synthesis gap">synthesis gap</Term> — <strong>perlu Anda validasi</strong> sebelum dijadikan judul.
-            </p>
-          </div>
-
           {sd?.primaryRec ? (
-            <div className="pl-8 space-y-3">
-              {sd.intro && <p className="text-sm leading-relaxed">{sd.intro}</p>}
-              <div className="rounded-lg border bg-secondary/30 p-4">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <div className="pl-8 space-y-4">
+              {sd.intro && (
+                <p className="text-sm leading-relaxed text-foreground/90 border-l-2 border-primary/40 pl-3 italic">
+                  {sd.intro}
+                </p>
+              )}
+
+              {/* Kartu judul usulan */}
+              <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
+                <div className="bg-primary/10 px-4 py-2 flex items-center gap-2 flex-wrap border-b">
                   <Lightbulb className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-[11px] font-semibold text-primary uppercase tracking-wide">Judul yang diusulkan</span>
                   {sd.primaryRec.gap_type && GAP_COLORS[sd.primaryRec.gap_type] && (
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${GAP_COLORS[sd.primaryRec.gap_type].bg} ${GAP_COLORS[sd.primaryRec.gap_type].text}`} title="Indikator synthesis gap yang dijawab">
+                    <span className={`ml-auto px-2 py-0.5 rounded-full text-[10px] font-medium ${GAP_COLORS[sd.primaryRec.gap_type].bg} ${GAP_COLORS[sd.primaryRec.gap_type].text}`} title="Indikator synthesis gap yang dijawab usulan ini">
                       Menjawab: {GAP_COLORS[sd.primaryRec.gap_type].label}
                     </span>
                   )}
                 </div>
-                {sd.primaryRec.title && <p className="font-semibold text-sm mb-1">{sd.primaryRec.title}</p>}
-                {sd.primaryRec.description && <Markdown content={sd.primaryRec.description} className="text-muted-foreground" />}
-                {sd.primaryRec.why && (
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <p className="text-xs font-semibold text-muted-foreground mb-0.5 flex items-center gap-1">
-                      <Target className="w-3 h-3" /> Mengapa penting
-                    </p>
-                    <Markdown content={sd.primaryRec.why} className="text-muted-foreground text-xs" />
+                <div className="p-4 space-y-3">
+                  {sd.primaryRec.title && (
+                    <p className="font-semibold text-sm leading-snug">{sd.primaryRec.title}</p>
+                  )}
+                  {sd.primaryRec.description && (
+                    <Markdown content={sd.primaryRec.description} className="text-sm text-muted-foreground" />
+                  )}
+
+                  <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                    {sd.primaryRec.why && (
+                      <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
+                        <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1 flex items-center gap-1">
+                          <Target className="w-3.5 h-3.5" /> Mengapa penting
+                        </p>
+                        <Markdown content={sd.primaryRec.why} className="text-xs text-muted-foreground" />
+                      </div>
+                    )}
+                    {sd.primaryRec.how && (
+                      <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3">
+                        <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1 flex items-center gap-1">
+                          <Zap className="w-3.5 h-3.5" /> Pendekatan
+                        </p>
+                        <Markdown content={sd.primaryRec.how} className="text-xs text-muted-foreground" />
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
+
+              {/* Disclaimer ringkas */}
+              <p className="flex items-start gap-1.5 text-[11px] text-amber-700/90 dark:text-amber-300/80">
+                <Shield className="w-3.5 h-3.5 flex-shrink-0 mt-px" />
+                <span>
+                  <strong>Indikator, bukan kesimpulan</strong> — usulan ini alat bantu keputusan berbasis{' '}
+                  <Term k="synthesis gap">synthesis gap</Term> dan <strong>perlu Anda validasi</strong> sebelum dijadikan judul.
+                </span>
+              </p>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground pl-8">Usulan belum tersedia untuk analisis ini.</p>

@@ -2,11 +2,9 @@ import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Upload, FileText, X, Loader } from 'lucide-react'
 import { analysisService } from '../../services/analysisService'
-import { useDarkMode } from '../../contexts/DarkModeContext'
 import { useToast } from '../../contexts/ToastContext'
 
 const UploadPage = () => {
-  const { darkMode } = useDarkMode()
   const toast = useToast()
   const navigate = useNavigate()
   const [files, setFiles] = useState([])
@@ -84,29 +82,44 @@ const UploadPage = () => {
   }
 
   return (
-    <div className="w-full px-6 lg:px-10 py-12">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Auto-Analisis Penelitian</h1>
-        <p className="text-muted-foreground">
-          Unggah paper PDF. AI mengekstrak topik, mendeteksi gap penelitian, dan menghasilkan rekomendasi.
+    <div className="relative w-full px-6 lg:px-10 py-12 max-w-6xl mx-auto">
+      {/* Hero */}
+      <div className="mb-10 reveal">
+        <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-medium text-primary mb-5">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+          </span>
+          Neuro-Symbolic Agentic Analysis
+        </span>
+        <h1 className="font-display text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.05] mb-4">
+          Temukan <span className="text-gradient">celah penelitian</span>
+          <br className="hidden sm:block" /> dari paper yang Anda unggah.
+        </h1>
+        <p className="text-base md:text-lg text-muted-foreground max-w-2xl leading-relaxed">
+          Unggah paper PDF — AI mengekstrak topik, membangun knowledge graph, dan
+          mendeteksi indikator <em className="not-italic text-foreground font-medium">synthesis gap</em>
+          {' '}(fragmentasi, inkonsistensi, ketidaklengkapan) untuk arah penelitian baru.
         </p>
       </div>
 
       {/* How it works */}
-      <div className="rounded-lg border bg-card p-5 mb-8">
-        <p className="text-sm font-semibold mb-3">Cara kerja — 3 langkah:</p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="rounded-2xl border bg-card/80 p-6 mb-8 shadow-soft">
+        <p className="text-sm font-semibold mb-4 flex items-center gap-2">
+          <span className="h-1 w-6 rounded-full bg-primary" />
+          Cara kerja — 3 langkah
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 reveal">
           {[
             { step: '1', title: 'Unggah Paper', desc: 'Pilih satu atau beberapa file PDF paper penelitian, lalu klik Analisis.' },
             { step: '2', title: 'AI Menganalisis', desc: 'Sistem membaca isi paper, mengekstrak topik & fakta, lalu mencari celah penelitian (~2-5 menit).' },
             { step: '3', title: 'Lihat Hasil', desc: 'Hasil tampil per tab: Ringkasan → Gap Penelitian → Rekomendasi. Gap = ide penelitian baru untuk Anda.' },
           ].map(({ step, title, desc }) => (
-            <div key={step} className="flex gap-3">
-              <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold flex-shrink-0">{step}</div>
+            <div key={step} className="flex gap-3.5">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-primary/10 text-primary text-sm font-bold flex-shrink-0 ring-1 ring-inset ring-primary/20">{step}</div>
               <div>
-                <p className="text-sm font-medium">{title}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+                <p className="text-sm font-semibold">{title}</p>
+                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{desc}</p>
               </div>
             </div>
           ))}
@@ -114,15 +127,15 @@ const UploadPage = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-3 gap-4 mb-8 reveal">
         {[
           { label: 'Paper Terindeks', value: stats.papers },
           { label: 'Chunk di Vector DB', value: typeof stats.chunks === 'number' ? stats.chunks.toLocaleString() : stats.chunks },
           { label: 'Waktu Analisis Rata-rata', value: '~2 menit' },
         ].map((stat, idx) => (
-          <div key={idx} className="rounded-lg border bg-card p-4">
-            <p className="text-sm text-muted-foreground">{stat.label}</p>
-            <p className="text-2xl font-bold">{stat.value}</p>
+          <div key={idx} className="rounded-2xl border bg-card/80 p-5 lift">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</p>
+            <p className="font-display text-3xl font-bold mt-1.5 tabular-nums">{stat.value}</p>
           </div>
         ))}
       </div>
@@ -132,9 +145,9 @@ const UploadPage = () => {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative rounded-lg border-2 border-dashed p-12 text-center transition-colors ${isDragging
-            ? 'border-foreground/50 bg-secondary'
-            : 'border-border hover:border-foreground/30 hover:bg-secondary/50'
+        className={`group relative rounded-2xl border-2 border-dashed p-12 text-center transition-all duration-300 ${isDragging
+            ? 'border-primary bg-primary/5 scale-[1.01]'
+            : 'border-border hover:border-primary/50 hover:bg-primary/[0.03]'
           }`}
       >
         <input
@@ -147,8 +160,10 @@ const UploadPage = () => {
           disabled={uploading}
         />
         <label htmlFor="file-input" className="cursor-pointer block">
-          <Upload className="w-10 h-10 mx-auto mb-4 text-muted-foreground" />
-          <p className="text-lg font-medium mb-1">Letakkan file PDF di sini</p>
+          <span className={`mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl transition-all duration-300 ${isDragging ? 'bg-primary text-primary-foreground scale-110' : 'bg-primary/10 text-primary group-hover:scale-105'}`}>
+            <Upload className="w-7 h-7" />
+          </span>
+          <p className="text-lg font-semibold mb-1">Letakkan file PDF di sini</p>
           <p className="text-sm text-muted-foreground">atau klik untuk memilih dari perangkat Anda</p>
           <p className="text-xs text-muted-foreground mt-2">Format: File PDF maksimal 50MB</p>
         </label>
@@ -188,9 +203,9 @@ const UploadPage = () => {
       {files.length > 0 && !uploading && (
         <button
           onClick={handleUploadAndAnalyze}
-          className="mt-6 w-full py-3 px-4 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+          className="mt-6 w-full py-3.5 px-4 rounded-xl bg-primary text-primary-foreground font-semibold shadow-glow transition-all duration-200 hover:bg-primary/90 hover:shadow-lg active:scale-[0.99]"
         >
-          Unggah & Auto-Analisis ({files.length} file)
+          Unggah &amp; Auto-Analisis ({files.length} file)
         </button>
       )}
 

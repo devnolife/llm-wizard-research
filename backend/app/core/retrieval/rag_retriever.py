@@ -42,7 +42,8 @@ class RAGRetriever:
         vector_store: VectorStore,
         top_k: int = 5,
         min_relevance_score: float = 0.7,
-        context_window: int = 2
+        context_window: int = 2,
+        reranker=None,
     ):
         """
         Initialize RAG retriever
@@ -52,13 +53,21 @@ class RAGRetriever:
             top_k: Number of results to retrieve
             min_relevance_score: Minimum relevance threshold
             context_window: Number of surrounding chunks to include
+            reranker: Optional CrossEncoderReranker for two-stage retrieval.
+                When available, it re-scores candidates jointly (query, passage);
+                otherwise retrieval falls back to a heuristic reranker.
         """
         self.vector_store = vector_store
         self.top_k = top_k
         self.min_relevance_score = min_relevance_score
         self.context_window = context_window
+        self.reranker = reranker
         
-        logger.info(f"RAGRetriever initialized (top_k={top_k}, min_score={min_relevance_score})")
+        logger.info(
+            f"RAGRetriever initialized (top_k={top_k}, min_score={min_relevance_score}"
+            + (", cross-encoder reranker enabled" if reranker is not None else "")
+            + ")"
+        )
     
     def retrieve(
         self,
@@ -158,8 +167,47 @@ class RAGRetriever:
         results: List[RetrievalResult]
     ) -> List[RetrievalResult]:
         """
-        Rerank results based on multiple criteria
-        
+        Rerank results — two-stage retrieval.
+
+        Uses a cross-encoder (joint query/passage scoring) when one is wired in
+        and available; otherwise falls back to a lightweight heuristic (vector
+        similarity + query-term overlap + metadata quality).
+        """
+        if not results:
+            return results
+
+        # Stage 2: cross-encoder reranking (preferred).
+        if self.reranker is not None:
+            try:
+                passages = [r.document.content for r in results]
+                ranked = self.reranker.rerank(query, passages)
+                if ranked is not None:
+                    reranked: List[RetrievalResult] = []
+                    for new_rank, (orig_idx, ce_score) in enumerate(ranked):
+                        res = results[orig_idx]
+                        # Expose the cross-encoder score for traceability while
+                        # keeping the original bi-encoder score in metadata.
+                        res.document.metadata.setdefault(
+                            "bi_encoder_score", round(res.score, 4)
+                        )
+                        res.score = float(ce_score)
+                        res.rank = new_rank + 1
+                        reranked.append(res)
+                    return reranked
+            except Exception as e:
+                logger.warning(f"Cross-encoder rerank failed, using heuristic: {e}")
+
+        # Fallback: heuristic reranking.
+        return self._heuristic_rerank(query, results)
+
+    def _heuristic_rerank(
+        self,
+        query: str,
+        results: List[RetrievalResult]
+    ) -> List[RetrievalResult]:
+        """
+        Heuristic reranker (fallback when no cross-encoder is available).
+
         Considers:
         - Semantic similarity (from vector store)
         - Query term overlap
@@ -177,7 +225,7 @@ class RAGRetriever:
             # Bonus for query term overlap
             content_terms = set(result.document.content.lower().split())
             overlap = len(query_terms & content_terms)
-            overlap_score = min(overlap / len(query_terms), 1.0) * 0.2
+            overlap_score = min(overlap / len(query_terms), 1.0) * 0.2 if query_terms else 0.0
             
             # Bonus for metadata quality
             quality_score = 0.0

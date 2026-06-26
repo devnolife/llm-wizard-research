@@ -17,22 +17,25 @@ function App() {
     <DarkModeProvider>
       <ToastProvider>
         <Router>
-          <div className="min-h-screen bg-background text-foreground">
-            <Navbar />
-            <ErrorBoundary>
-              <main>
-                <Routes>
-                  <Route path="/" element={<UploadPage />} />
-                  <Route path="/results/:jobId" element={<AnalysisResults />} />
-                  <Route path="/search" element={<SearchPage />} />
-                  <Route path="/chat" element={<ChatPage />} />
-                  <Route path="/documents" element={<DocumentsPage />} />
-                  <Route path="/graph" element={<GraphPage />} />
-                  <Route path="/revisi" element={<RevisionSummaryPage />} />
-                  <Route path="*" element={<NotFoundPage />} />
-                </Routes>
-              </main>
-            </ErrorBoundary>
+          <div className="relative min-h-screen text-foreground">
+            <div className="atmosphere" aria-hidden="true" />
+            <div className="relative z-10">
+              <Navbar />
+              <ErrorBoundary>
+                <main>
+                  <Routes>
+                    <Route path="/" element={<UploadPage />} />
+                    <Route path="/results/:jobId" element={<AnalysisResults />} />
+                    <Route path="/search" element={<SearchPage />} />
+                    <Route path="/chat" element={<ChatPage />} />
+                    <Route path="/documents" element={<DocumentsPage />} />
+                    <Route path="/graph" element={<GraphPage />} />
+                    <Route path="/revisi" element={<RevisionSummaryPage />} />
+                    <Route path="*" element={<NotFoundPage />} />
+                  </Routes>
+                </main>
+              </ErrorBoundary>
+            </div>
           </div>
         </Router>
       </ToastProvider>

@@ -66,7 +66,7 @@ const ChatPage = () => {
   return (
     <div className="w-full px-6 lg:px-10 py-6 h-[calc(100vh-80px)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 reveal">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Asisten Penelitian</h1>
           <p className="text-sm text-muted-foreground">Tanyakan tentang korpus penelitian Anda</p>

@@ -13,6 +13,7 @@ const SOURCES = [
   { id: 'crossref', label: 'CrossRef' },
   { id: 'pubmed', label: 'PubMed' },
   { id: 'europe_pmc', label: 'Europe PMC' },
+  { id: 'sciencedirect', label: 'ScienceDirect' },
 ]
 
 const SearchPage = () => {
@@ -106,7 +107,7 @@ const SearchPage = () => {
   return (
     <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 reveal">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Cari Paper</h1>
         <p className="text-muted-foreground">
           Cari paper dari database eksternal untuk menambah bahan literatur Anda.

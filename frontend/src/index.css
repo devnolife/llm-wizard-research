@@ -4,44 +4,49 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
+    /* "Modern Research Instrument" — warm paper + iris accent */
+    --background: 40 33% 98%;
+    --foreground: 240 24% 12%;
+    --card: 40 44% 99.5%;
+    --card-foreground: 240 24% 12%;
+    --primary: 250 76% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 22% 94%;
+    --secondary-foreground: 240 22% 20%;
+    --muted: 40 22% 94%;
+    --muted-foreground: 240 8% 45%;
+    --accent: 250 62% 95%;
+    --accent-foreground: 250 60% 32%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 16% 87%;
+    --input: 40 16% 87%;
+    --ring: 250 76% 58%;
+    --radius: 0.75rem;
+    --iris: 250 76% 58%;
+    --amber: 35 92% 56%;
   }
 
   .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --background: 245 32% 7%;
+    --foreground: 240 20% 96%;
+    --card: 245 28% 10%;
+    --card-foreground: 240 20% 96%;
+    --primary: 252 95% 73%;
+    --primary-foreground: 245 45% 9%;
+    --secondary: 245 20% 16%;
+    --secondary-foreground: 240 20% 92%;
+    --muted: 245 20% 16%;
+    --muted-foreground: 240 12% 64%;
+    --accent: 250 40% 20%;
+    --accent-foreground: 250 85% 86%;
+    --destructive: 0 70% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 245 18% 18%;
+    --input: 245 18% 18%;
+    --ring: 252 95% 73%;
+    --iris: 252 95% 73%;
+    --amber: 38 95% 60%;
   }
 }
 
@@ -51,37 +56,119 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+  }
+
+  /* Distinctive display type for headings — propagates to every page */
+  h1, h2, h3 {
+    font-family: 'Bricolage Grotesque', 'Plus Jakarta Sans', sans-serif;
+    letter-spacing: -0.02em;
+    font-optical-sizing: auto;
+  }
+
+  .font-mono, code, pre, kbd {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+}
+
+/* ---- Atmosphere: layered gradient mesh behind all content ---- */
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38rem 38rem at 12% -8%, hsl(var(--iris) / 0.16), transparent 60%),
+    radial-gradient(32rem 32rem at 92% 4%, hsl(var(--amber) / 0.10), transparent 55%),
+    radial-gradient(46rem 46rem at 78% 96%, hsl(var(--iris) / 0.10), transparent 60%);
+}
+.dark .atmosphere {
+  background:
+    radial-gradient(40rem 40rem at 10% -10%, hsl(var(--iris) / 0.22), transparent 60%),
+    radial-gradient(34rem 34rem at 94% 2%, hsl(var(--amber) / 0.10), transparent 55%),
+    radial-gradient(48rem 48rem at 82% 98%, hsl(var(--iris) / 0.16), transparent 62%);
+}
+.atmosphere::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.dark .atmosphere::after { opacity: 0.04; }
+
+/* ---- Utilities ---- */
+.text-gradient {
+  background: linear-gradient(105deg, hsl(var(--foreground)) 0%, hsl(var(--iris)) 55%, hsl(var(--foreground)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.glass {
+  background: hsl(var(--background) / 0.72);
+  backdrop-filter: saturate(1.6) blur(12px);
+  -webkit-backdrop-filter: saturate(1.6) blur(12px);
+}
+
+.lift {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.lift:hover {
+  transform: translateY(-3px);
+  border-color: hsl(var(--primary) / 0.35);
+  box-shadow: 0 1px 2px hsl(240 30% 12% / 0.04), 0 18px 40px -20px hsl(var(--iris) / 0.35);
+}
+
+/* Staggered reveal */
+.reveal > * {
+  animation: fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.reveal > *:nth-child(1) { animation-delay: 0.02s; }
+.reveal > *:nth-child(2) { animation-delay: 0.08s; }
+.reveal > *:nth-child(3) { animation-delay: 0.14s; }
+.reveal > *:nth-child(4) { animation-delay: 0.20s; }
+.reveal > *:nth-child(5) { animation-delay: 0.26s; }
+.reveal > *:nth-child(6) { animation-delay: 0.32s; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal > *, .animate-fade-up, .animate-fade-in, .animate-float-slow {
+    animation: none !important;
   }
 }
 
 /* Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
+  background: hsl(var(--muted-foreground) / 0.28);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  background: hsl(var(--primary) / 0.45);
+  background-clip: padding-box;
 }
 
-html {
-  scroll-behavior: smooth;
+::selection {
+  background: hsl(var(--primary) / 0.22);
+  color: hsl(var(--foreground));
 }
+
+html { scroll-behavior: smooth; }
 
 *:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
 
-button {
-  user-select: none;
-}
+button { user-select: none; }

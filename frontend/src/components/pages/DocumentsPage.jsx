@@ -59,7 +59,7 @@ const DocumentsPage = () => {
   return (
     <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 reveal">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Dokumen</h1>
         <p className="text-muted-foreground">Kelola koleksi dokumen penelitian dan vector store Anda</p>
       </div>
@@ -87,10 +87,12 @@ const DocumentsPage = () => {
             { icon: BarChart3, label: 'Total Chunk', value: stats.total_chunks ?? stats.chunk_count ?? '—' },
             { icon: Database, label: 'Vector Store', value: stats.vector_count ?? stats.collection_count ?? '—' },
           ].map((stat, idx) => (
-            <div key={idx} className="rounded-lg border bg-card p-5">
-              <stat.icon className="w-5 h-5 text-muted-foreground mb-2" />
-              <p className="text-sm text-muted-foreground">{stat.label}</p>
-              <p className="text-2xl font-bold">{stat.value}</p>
+            <div key={idx} className="rounded-2xl border bg-card/80 p-5 lift">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/20 mb-3">
+                <stat.icon className="w-[18px] h-[18px]" />
+              </span>
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</p>
+              <p className="font-display text-3xl font-bold mt-1 tabular-nums">{stat.value}</p>
             </div>
           ))}
           <div className="md:col-span-3">
@@ -135,7 +137,7 @@ const DocumentsPage = () => {
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground mb-4">Menemukan {searchResults.length} hasil</p>
           {searchResults.map((result, idx) => (
-            <div key={result.id || idx} className="p-4 rounded-lg border bg-card">
+            <div key={result.id || idx} className="p-4 rounded-xl border bg-card/80 lift">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1.5">

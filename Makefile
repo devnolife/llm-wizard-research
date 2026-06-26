@@ -1,6 +1,6 @@
 # Wizard Research — Neuro-Symbolic Synthesis Gap Detection
 
-.PHONY: help install dev test clean docker-up docker-down backend frontend experiment
+.PHONY: help install dev test clean docker-up docker-down backend frontend experiment db-stats db-sources db-query papers-search papers-ingest experiment-ablation-nli experiment-breakdown experiment-calibration experiment-benchmark experiment-prf experiment-retrieval experiment-errors
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -53,8 +53,30 @@ experiment-ablation: ## Run ablation runs (no-rule-engine + linear-baseline)
 experiment-compare: ## Aggregate experiment results into BAB IV tables
 	cd backend && python experiments/compare_results.py
 
-experiment-stats: ## Multi-run experiments with mean±std + Mann-Whitney U (H6/H7)
+experiment-stats: ## Multi-run experiments with mean±std + Mann-Whitney U + effect size (H6/H7/H9)
 	cd backend && python experiments/run_multi.py --runs 3
+
+experiment-ablation-nli: ## H9 ablation: dedicated NLI cross-encoder vs LLM-only (run both modes)
+	cd backend && python experiments/run_experiment.py --mode nli --skip-ingest
+	cd backend && python experiments/run_experiment.py --mode no-nli --skip-ingest
+
+experiment-breakdown: ## Breakdown EAR/conf by indicator type & detection method: make experiment-breakdown R=<results.json>
+	cd backend && python experiments/breakdown_analysis.py --results $(or $(R),experiments/results/experiment_full_llama3.2_latest.json)
+
+experiment-benchmark: ## Build a gold gap benchmark from corpus future-work (add NOLLM=1 to skip Ollama)
+	cd backend && python experiments/build_gap_benchmark.py $(if $(NOLLM),--no-llm,)
+
+experiment-prf: ## Gap Precision/Recall/F1 vs gold: make experiment-prf GOLD=<gold.json> R=<results.json>
+	cd backend && python experiments/evaluate_gaps.py --gold $(GOLD) --results $(or $(R),experiments/results/experiment_full_llama3.2_latest.json) --per-topic
+
+experiment-retrieval: ## Retrieval eval (nDCG/MRR/Recall@k) ± reranker, with ID/EN breakdown
+	cd backend && python experiments/evaluate_retrieval.py --n 40 --k 10 --by-language
+
+experiment-errors: ## False-discovery error taxonomy from expert form: make experiment-errors F=<form.xlsx> R=<results.json>
+	cd backend && python experiments/error_taxonomy.py --forms $(F) $(if $(R),--results $(R),)
+
+experiment-calibration: ## Confidence calibration (Brier/ECE) from a filled expert form: make experiment-calibration F=<form.xlsx>
+	cd backend && python experiments/expert_eval/calibration.py --forms $(F)
 
 experiment-annotate: ## Sample 50 SPO facts into an annotation sheet (precision)
 	cd backend && python experiments/annotate_facts.py sample --results experiments/results/experiment_full_llama3.2_latest.json --n 50
@@ -87,6 +109,21 @@ docker-logs: ## View Docker logs
 
 init-db: ## Initialize database
 	cd backend && python scripts/init_db.py
+
+db-stats: ## Show vector store statistics (collection, doc count, model)
+	cd backend && python scripts/vectorstore_cli.py stats
+
+db-sources: ## List source documents and chunk counts in the vector store
+	cd backend && python scripts/vectorstore_cli.py sources
+
+db-query: ## Semantic search the vector store: make db-query Q="your query" [K=5]
+	cd backend && python scripts/vectorstore_cli.py query "$(Q)" -k $(or $(K),5)
+
+papers-search: ## Fetch external papers (no ingest): make papers-search Q="query" [K=10]
+	cd backend && python scripts/papers_cli.py search "$(Q)" -k $(or $(K),10)
+
+papers-ingest: ## Fetch papers and add them to the searchable corpus: make papers-ingest Q="query" [K=10]
+	cd backend && python scripts/papers_cli.py ingest "$(Q)" -k $(or $(K),10)
 
 setup: install ## Initial project setup
 	@echo "Creating .env files from examples..."
