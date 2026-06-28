@@ -138,6 +138,33 @@ make frontend
 
 ---
 
+## Scanned PDFs (OCR fallback)
+
+Digital PDFs are parsed with `pypdf`. For **scanned / image-only PDFs** (where
+`pypdf` returns little or no text), the pipeline can fall back to
+[Baidu Unlimited-OCR](https://github.com/baidu/Unlimited-OCR), run as a separate
+GPU microservice in `ocr_service/`.
+
+```bash
+# 1. One-time setup (isolated venv + model download, ~6.7 GB)
+bash ocr_service/setup.sh
+
+# 2. Start the OCR server (GPU 1, port 10000 by default)
+bash ocr_service/run_server.sh
+
+# 3. Enable the fallback, then restart the backend
+echo "OCR_ENABLED=true" >> .env   # already templated in .env
+```
+
+When enabled, any ingested PDF with fewer than `OCR_MIN_CHARS_PER_PAGE` chars/page
+on average is rasterized and parsed by the OCR service; those chunks are tagged
+with `extraction_method="ocr"` / `ocr_used=true`. The backend degrades gracefully
+— if the service is down or OCR fails, ingestion keeps the `pypdf` result and
+never breaks. See [`ocr_service/README.md`](ocr_service/README.md) for details and
+all `OCR_*` env vars.
+
+---
+
 ## Testing
 
 ```bash

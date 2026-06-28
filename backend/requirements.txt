@@ -27,6 +27,7 @@ pypdf>=3.17.0
 python-docx>=1.1.0
 python-magic>=0.4.27
 pillow>=10.1.0
+pymupdf>=1.24.0  # rasterize PDF pages for the Unlimited-OCR fallback client
 
 # Data Processing
 numpy>=1.24.0

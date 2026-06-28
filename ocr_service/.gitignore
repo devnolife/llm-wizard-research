@@ -1,0 +1,6 @@
+# Isolated environment & heavy artifacts (downloaded by setup.sh)
+.venv/
+models/
+*.whl
+*.log
+__pycache__/

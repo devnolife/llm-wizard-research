@@ -309,9 +309,27 @@ def get_coordinator() -> CoordinatorAgent:
 def get_document_processor() -> DocumentProcessor:
     """Get or create document processor instance"""
     if "document_processor" not in _components:
+        ocr_cfg = getattr(config, "ocr", None)
+        ocr_enabled = bool(getattr(ocr_cfg, "enabled", False))
+        ocr_options = {}
+        ocr_min_chars = 50
+        if ocr_cfg is not None:
+            ocr_options = {
+                "service_url": ocr_cfg.service_url,
+                "image_mode": ocr_cfg.image_mode,
+                "dpi": ocr_cfg.dpi,
+                "concurrency": ocr_cfg.concurrency,
+                "timeout": ocr_cfg.timeout,
+                "ngram_size": ocr_cfg.ngram_size,
+                "ngram_window": ocr_cfg.ngram_window,
+            }
+            ocr_min_chars = ocr_cfg.min_chars_per_page
         _components["document_processor"] = DocumentProcessor(
             chunk_size=config.retrieval.chunk_size,
             chunk_overlap=config.retrieval.chunk_overlap,
             chunk_strategy=getattr(config.retrieval, "chunk_strategy", "sections"),
+            ocr_enabled=ocr_enabled,
+            ocr_options=ocr_options,
+            ocr_min_chars_per_page=ocr_min_chars,
         )
     return _components["document_processor"]

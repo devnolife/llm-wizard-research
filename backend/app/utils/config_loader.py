@@ -13,6 +13,14 @@ from dotenv import load_dotenv
 from loguru import logger
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """Parse a boolean environment variable, falling back to ``default``."""
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass
 class LLMConfig:
     """LLM configuration"""
@@ -93,6 +101,25 @@ class FactExtractionConfig:
 
 
 @dataclass
+class OCRConfig:
+    """Unlimited-OCR fallback configuration.
+
+    OCR runs as a separate SGLang GPU service (see ocr_service/). When a PDF
+    yields too little text via pypdf (scanned / image-only documents), pages are
+    sent to the OCR service to recover structured Markdown text.
+    """
+    enabled: bool = False
+    service_url: str = "http://127.0.0.1:10000"
+    image_mode: str = "gundam"  # "gundam" (dense single page) or "base"
+    dpi: int = 200
+    concurrency: int = 4
+    timeout: int = 1200
+    min_chars_per_page: int = 50  # below this avg -> treat as scanned, try OCR
+    ngram_size: int = 35
+    ngram_window: int = 128
+
+
+@dataclass
 class AppConfig:
     """Main application configuration"""
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -103,6 +130,7 @@ class AppConfig:
     data: DataConfig = field(default_factory=DataConfig)
     rule_engine: RuleConfig = field(default_factory=RuleConfig)
     fact_extraction: FactExtractionConfig = field(default_factory=FactExtractionConfig)
+    ocr: OCRConfig = field(default_factory=OCRConfig)
     log_level: str = "INFO"
     log_file: str = "./logs/app.log"
 
@@ -261,6 +289,20 @@ class ConfigLoader:
             pattern_extension_confidence=float(fact_thresholds.get("pattern_extension", 0.6)),
         )
         
+        # OCR Configuration (Unlimited-OCR fallback service)
+        ocr_cfg = yaml_config.get("ocr", {})
+        ocr_config = OCRConfig(
+            enabled=_env_bool("OCR_ENABLED", ocr_cfg.get("enabled", False)),
+            service_url=os.getenv("OCR_SERVICE_URL") or ocr_cfg.get("service_url", "http://127.0.0.1:10000"),
+            image_mode=os.getenv("OCR_IMAGE_MODE") or ocr_cfg.get("image_mode", "gundam"),
+            dpi=int(os.getenv("OCR_DPI", ocr_cfg.get("dpi", 200))),
+            concurrency=int(os.getenv("OCR_CONCURRENCY", ocr_cfg.get("concurrency", 4))),
+            timeout=int(os.getenv("OCR_TIMEOUT", ocr_cfg.get("timeout", 1200))),
+            min_chars_per_page=int(os.getenv("OCR_MIN_CHARS_PER_PAGE", ocr_cfg.get("min_chars_per_page", 50))),
+            ngram_size=int(os.getenv("OCR_NGRAM_SIZE", ocr_cfg.get("ngram_size", 35))),
+            ngram_window=int(os.getenv("OCR_NGRAM_WINDOW", ocr_cfg.get("ngram_window", 128))),
+        )
+        
         # Main Configuration
         app_config = AppConfig(
             llm=llm_config,
@@ -271,6 +313,7 @@ class ConfigLoader:
             data=data_config,
             rule_engine=rule_config,
             fact_extraction=fact_config,
+            ocr=ocr_config,
             log_level=os.getenv("LOG_LEVEL") or yaml_config.get("log_level", "INFO"),
             log_file=os.getenv("LOG_FILE") or yaml_config.get("log_file", "./logs/app.log"),
         )
