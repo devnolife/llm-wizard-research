@@ -6,6 +6,7 @@ import EmptyState from '../common/EmptyState'
 import PageHelp from '../common/PageHelp'
 import Term from '../common/Term'
 import Markdown from '../common/Markdown'
+import { safeUUID } from '../../utils/uuid'
 
 const ChatPage = () => {
   const toast = useToast()
@@ -15,7 +16,7 @@ const ChatPage = () => {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [conversationId] = useState(() => crypto.randomUUID())
+  const [conversationId] = useState(() => safeUUID())
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })

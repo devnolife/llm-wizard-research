@@ -65,7 +65,7 @@ const ModelSelector = () => {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border bg-popover shadow-lg z-50 py-1">
+        <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border bg-popover text-popover-foreground shadow-lg z-50 py-1">
           <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground border-b mb-1 flex items-center justify-between">
             <span>Model Ollama</span>
             <span className="text-[10px] font-normal text-muted-foreground/70">{visibleModels.length} model</span>
