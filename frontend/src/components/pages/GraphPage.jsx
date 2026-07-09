@@ -3,6 +3,7 @@ import ForceGraph2D from 'react-force-graph-2d'
 import { Share2, RefreshCw, Search, X, Loader } from 'lucide-react'
 import { useDarkMode } from '../../contexts/DarkModeContext'
 import { useToast } from '../../contexts/ToastContext'
+import api from '../../services/api'
 
 // VOSviewer cluster palette
 const CLUSTER_COLORS = [
@@ -40,9 +41,8 @@ const GraphPage = () => {
   const fetchGraph = useCallback(async (degree = minDegree) => {
     setLoading(true)
     try {
-      const API_BASE = import.meta.env.VITE_API_URL || ''
-      const res = await fetch(`${API_BASE}/api/graph?min_degree=${degree}&max_nodes=300`)
-      const d = await res.json()
+      const res = await api.get('/api/graph', { params: { min_degree: degree, max_nodes: 300 } })
+      const d = res.data
       // react-force-graph mutates objects; give it fresh copies
       setData({
         nodes: d.nodes.map(n => ({ ...n })),

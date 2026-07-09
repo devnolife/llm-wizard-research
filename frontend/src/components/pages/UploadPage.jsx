@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Upload, FileText, X, Loader } from 'lucide-react'
 import { analysisService } from '../../services/analysisService'
+import api from '../../services/api'
 import { useToast } from '../../contexts/ToastContext'
 
 const UploadPage = () => {
@@ -15,10 +16,8 @@ const UploadPage = () => {
   const [stats, setStats] = useState({ papers: '-', chunks: '-' })
 
   useEffect(() => {
-    const API_BASE = import.meta.env.VITE_API_URL || ''
-    fetch(`${API_BASE}/api/stats`)
-      .then(r => r.json())
-      .then(d => {
+    api.get('/api/stats')
+      .then(({ data: d }) => {
         setStats({
           papers: d.total_documents ?? d.document_count ?? '-',
           chunks: d.total_chunks ?? '-',
