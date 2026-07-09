@@ -16,7 +16,7 @@ The system implements a **Neuro-Symbolic Agentic** architecture with 4 processin
 ```
 Phase 1: INGESTION          PDF → Parse → Chunk → Embed → Vector Store (ChromaDB)
 Phase 2: FACT EXTRACTION     Entity Extraction → Relation Extraction → SPO Triples → Knowledge Graph
-Phase 3: AGENTIC ANALYSIS    Plan → Act → Observe → Reflect → Repeat/Stop (LangGraph)
+Phase 3: AGENTIC ANALYSIS    Observe → Think → Act → Evaluate (self-critique) → Repeat/Stop (LangGraph)
 Phase 4: VALIDATION          Rule Engine (9 rules) → PASS / FLAG / REJECT
 ```
 
@@ -100,7 +100,7 @@ ollama pull llama3.2
 ### Run Development Servers
 
 ```bash
-# Terminal 1 — Backend (port 8000)
+# Terminal 1 — Backend (port 8001)
 make backend
 
 # Terminal 2 — Frontend (port 5173)
@@ -108,7 +108,7 @@ make frontend
 ```
 
 - **Frontend:** http://localhost:5173
-- **API Docs:** http://localhost:8000/docs
+- **API Docs:** http://localhost:8001/docs
 
 ---
 
@@ -178,8 +178,8 @@ make test-integration  # Integration tests only
 ## Inspecting the Vector Store
 
 Inspect and query the ingested ChromaDB corpus directly from the CLI. These
-commands use the project's own `VectorStore` (same `all-MiniLM-L6-v2`
-embeddings as the backend), so semantic search works against the client-side
+commands use the project's own `VectorStore` (same multilingual
+`paraphrase-multilingual-MiniLM-L12-v2` embeddings as the backend), so semantic search works against the client-side
 embeddings produced during ingestion:
 
 ```bash
@@ -277,7 +277,7 @@ python experiments/run_experiment.py --mode full --model gpt-oss:latest --skip-i
 # 6. Multi-run statistics — mean ± std + Mann-Whitney U + effect size (Cliff's δ,
 #    rank-biserial) + bootstrap 95% CI, for H6 / H7 / H9
 python experiments/run_multi.py --model llama3.2:latest --runs 3 \
-    --modes full,no-rule-engine,linear-baseline,nli,no-nli
+    --seed 42 --modes full,no-rule-engine,linear-baseline,nli,no-nli
 
 # 7. Negative control — topic absent from the corpus (sanity check)
 python experiments/run_experiment.py --mode full --skip-ingest \
@@ -350,6 +350,9 @@ See [backend/experiments/expert_eval/README.md](backend/experiments/expert_eval/
 ---
 
 ## Docker
+
+Docker setup is currently a template, not the primary supported path; for
+development, run the backend and frontend with `make backend` / `make frontend`.
 
 ```bash
 docker-compose up -d    # Start all services

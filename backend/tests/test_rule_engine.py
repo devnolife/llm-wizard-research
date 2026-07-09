@@ -175,7 +175,7 @@ def engine(populated_fact_table):
 
 @pytest.fixture
 def engine_no_ft():
-    """RuleEngine with no FactTable (everything should default-pass)."""
+    """RuleEngine with no FactTable."""
     return RuleEngine(fact_table=None)
 
 
@@ -239,11 +239,24 @@ class TestRuleF1:
         f1 = next(r for r in report.results if r.rule.rule_id == "F1")
         assert f1.passed is True
 
-    def test_f1_passes_when_no_fact_table(self, engine_no_ft):
+    def test_f1_flags_when_no_fact_table(self, engine_no_ft):
         claim = {"method": "gpt4", "domain": "edge_device", "confidence": 0.8}
         report = engine_no_ft.validate(claim)
         f1 = next(r for r in report.results if r.rule.rule_id == "F1")
+        assert f1.passed is False
+        assert f1.verdict == "FLAG"
+        assert "Insufficient evidence" in f1.reason
+
+    def test_f1_passes_when_no_fact_table_in_legacy_mode(self):
+        engine = RuleEngine(
+            fact_table=None,
+            config={"defaults": {"on_missing_evidence": "pass"}},
+        )
+        claim = {"method": "gpt4", "domain": "edge_device", "confidence": 0.8}
+        report = engine.validate(claim)
+        f1 = next(r for r in report.results if r.rule.rule_id == "F1")
         assert f1.passed is True
+        assert f1.verdict == "PASS"
 
 
 # ---------------------------------------------------------------------------
@@ -372,12 +385,25 @@ class TestRuleC2:
 # ---------------------------------------------------------------------------
 
 class TestRuleC3:
-    def test_c3_passes_without_knowledge_graph(self, engine):
-        """No KG builder → default pass."""
+    def test_c3_flags_without_knowledge_graph(self, engine):
+        """Claim has findings, but no KG builder to verify paths → FLAG."""
+        claim = {"findings": ["finding_a", "finding_b"], "confidence": 0.8}
+        report = engine.validate(claim)
+        c3 = next(r for r in report.results if r.rule.rule_id == "C3")
+        assert c3.passed is False
+        assert c3.verdict == "FLAG"
+        assert "Insufficient evidence" in c3.reason
+
+    def test_c3_passes_without_knowledge_graph_in_legacy_mode(self, populated_fact_table):
+        engine = RuleEngine(
+            fact_table=populated_fact_table,
+            config={"defaults": {"on_missing_evidence": "pass"}},
+        )
         claim = {"findings": ["finding_a", "finding_b"], "confidence": 0.8}
         report = engine.validate(claim)
         c3 = next(r for r in report.results if r.rule.rule_id == "C3")
         assert c3.passed is True
+        assert c3.verdict == "PASS"
 
     def test_c3_flags_multiple_paths(self, populated_fact_table):
         """If KG finds >1 path between entities → FLAG (possible confounder)."""

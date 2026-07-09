@@ -13,6 +13,14 @@ from dotenv import load_dotenv
 from loguru import logger
 
 
+def load_project_env() -> None:
+    """Load repository and backend env files in deterministic precedence order."""
+    project_root = Path(__file__).resolve().parents[3]
+    # Root .env is the main config; backend/.env is an optional backend-specific override.
+    load_dotenv(project_root / ".env")
+    load_dotenv(project_root / "backend" / ".env", override=True)
+
+
 def _env_bool(name: str, default: bool) -> bool:
     """Parse a boolean environment variable, falling back to ``default``."""
     raw = os.getenv(name)
@@ -79,6 +87,8 @@ class DataConfig:
     """Data paths configuration"""
     raw_path: str = "./data/raw"
     processed_path: str = "./data/processed"
+    allowed_file_types: list = field(default_factory=lambda: ["pdf"])
+    max_file_size_mb: int = 50
 
 
 @dataclass
@@ -153,7 +163,7 @@ class ConfigLoader:
             config_path: Path to YAML config file (optional)
         """
         self.config_path = config_path or self._find_config_file()
-        load_dotenv()  # Load .env file
+        load_project_env()
         self.config = self._load_config()
     
     def _find_config_file(self) -> Optional[str]:
@@ -266,6 +276,8 @@ class ConfigLoader:
             processed_path=self._resolve_path(
                 os.getenv("DATA_PROCESSED_PATH") or yaml_config.get("data", {}).get("processed_path", "./data/processed")
             ),
+            allowed_file_types=yaml_config.get("data", {}).get("allowed_file_types", ["pdf"]),
+            max_file_size_mb=int(os.getenv("MAX_FILE_SIZE_MB", yaml_config.get("data", {}).get("max_file_size_mb", 50))),
         )
         
         # Rule Engine Configuration
@@ -372,6 +384,8 @@ class ConfigLoader:
             "data": {
                 "raw_path": self.config.data.raw_path,
                 "processed_path": self.config.data.processed_path,
+                "allowed_file_types": self.config.data.allowed_file_types,
+                "max_file_size_mb": self.config.data.max_file_size_mb,
             },
             "log_level": self.config.log_level,
             "log_file": self.config.log_file,

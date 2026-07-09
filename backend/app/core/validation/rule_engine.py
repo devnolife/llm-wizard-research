@@ -32,9 +32,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
+import yaml
 
 try:
     from ..knowledge.fact_table import FactTable, PredicateType, Verdict
@@ -229,6 +231,7 @@ RULE_K3 = Rule(
 )
 
 ALL_RULES = [RULE_F1, RULE_F2, RULE_F3, RULE_C1, RULE_C2, RULE_C3, RULE_K1, RULE_K2, RULE_K3]
+MISSING_EVIDENCE_CONFIDENCE_ADJUSTMENT = -0.05
 
 
 # ---------------------------------------------------------------------------
@@ -256,12 +259,18 @@ class RuleEngine:
         fact_table: Optional[FactTable] = None,
         knowledge_graph: Optional[KnowledgeGraphBuilder] = None,
         rules: Optional[List[Rule]] = None,
+        config: Optional[Dict[str, Any]] = None,
     ):
         self.fact_table = fact_table
         self.knowledge_graph = knowledge_graph
         self.rules = rules or ALL_RULES
+        self.config = config if config is not None else self._load_rule_engine_config()
+        self.on_missing_evidence = self._get_on_missing_evidence(self.config)
         
-        logger.info(f"RuleEngine initialized with {len(self.rules)} rules")
+        logger.info(
+            f"RuleEngine initialized with {len(self.rules)} rules "
+            f"(on_missing_evidence={self.on_missing_evidence})"
+        )
 
     def validate(
         self,
@@ -394,8 +403,21 @@ class RuleEngine:
         method_id = claim.get("method")
         domain_id = claim.get("domain")
         
-        if not method_id or not self.fact_table:
+        if not method_id:
             return self._default_pass(rule, "No method entity for resource check")
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                f"Insufficient evidence: fact table unavailable for method "
+                f"'{method_id}' — cannot verify resource compatibility",
+                pass_reason="No method entity for resource check",
+            )
+        if not self.fact_table.get_entity(method_id):
+            return self._missing_evidence_or_pass(
+                rule,
+                f"Insufficient evidence: method '{method_id}' not found in fact "
+                f"table — cannot verify resource compatibility",
+            )
         
         # Check if method requires high resources
         resource_facts = self.fact_table.query(
@@ -415,6 +437,12 @@ class RuleEngine:
         
         # Check if domain has low-resource constraint
         if domain_id:
+            if not self.fact_table.get_entity(domain_id):
+                return self._missing_evidence_or_pass(
+                    rule,
+                    f"Insufficient evidence: domain '{domain_id}' not found in "
+                    f"fact table — cannot verify resource compatibility",
+                )
             constraint_facts = self.fact_table.query(
                 subject_id=domain_id,
                 predicate=PredicateType.HAS_CONSTRAINT,
@@ -452,8 +480,20 @@ class RuleEngine:
         method_id = claim.get("method")
         domain_id = claim.get("domain")
         
-        if not method_id or not self.fact_table:
+        if not method_id:
             return self._default_pass(rule)
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                f"Insufficient evidence: fact table unavailable for method "
+                f"'{method_id}' — cannot verify data compatibility",
+            )
+        if not self.fact_table.get_entity(method_id):
+            return self._missing_evidence_or_pass(
+                rule,
+                f"Insufficient evidence: method '{method_id}' not found in fact "
+                f"table — cannot verify data compatibility",
+            )
         
         # Check data requirements
         data_facts = self.fact_table.query(
@@ -472,6 +512,12 @@ class RuleEngine:
             return self._default_pass(rule)
         
         if domain_id:
+            if not self.fact_table.get_entity(domain_id):
+                return self._missing_evidence_or_pass(
+                    rule,
+                    f"Insufficient evidence: domain '{domain_id}' not found in "
+                    f"fact table — cannot verify data compatibility",
+                )
             constraint_facts = self.fact_table.query(
                 subject_id=domain_id,
                 predicate=PredicateType.HAS_CONSTRAINT,
@@ -506,8 +552,20 @@ class RuleEngine:
         """
         method_id = claim.get("method")
         
-        if not method_id or not self.fact_table:
+        if not method_id:
             return self._default_pass(rule)
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                f"Insufficient evidence: fact table unavailable for method "
+                f"'{method_id}' — cannot verify scale compatibility",
+            )
+        if not self.fact_table.get_entity(method_id):
+            return self._missing_evidence_or_pass(
+                rule,
+                f"Insufficient evidence: method '{method_id}' not found in fact "
+                f"table — cannot verify scale compatibility",
+            )
         
         # Check for scalability constraints
         resource_facts = self.fact_table.query(
@@ -546,12 +604,22 @@ class RuleEngine:
         """
         C1: IF relation.type = 'CAUSAL' AND evidence_count < 2 THEN DOWNGRADE to 'CORRELATION'
         """
-        if not self.fact_table:
-            return self._default_pass(rule)
-        
         findings = claim.get("findings", [])
         if len(findings) < 2:
             return self._default_pass(rule)
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: fact table unavailable for findings "
+                f"{findings[:2]} — cannot verify causal evidence",
+            )
+        missing_findings = self._missing_entities(findings)
+        if missing_findings:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: finding(s) "
+                f"{missing_findings} not found in fact table — cannot verify causal evidence",
+            )
         
         # Check how many papers support the claimed relationship
         for i, finding_a in enumerate(findings):
@@ -586,10 +654,22 @@ class RuleEngine:
         """
         # Check temporal consistency in claimed causal relations
         # This requires temporal metadata on entities
-        if not self.fact_table:
-            return self._default_pass(rule)
-        
         findings = claim.get("findings", [])
+        if not findings:
+            return self._default_pass(rule)
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: fact table unavailable for findings "
+                f"{findings} — cannot verify causal direction",
+            )
+        missing_findings = self._missing_entities(findings)
+        if missing_findings:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: finding(s) "
+                f"{missing_findings} not found in fact table — cannot verify causal direction",
+            )
         for finding_id in findings:
             entity = self.fact_table.get_entity(finding_id)
             if entity and entity.properties.get("temporal_order"):
@@ -619,12 +699,15 @@ class RuleEngine:
         """
         # Placeholder: would need more sophisticated confounding detection
         # For now, check if multiple paths exist between cause and effect
-        if not self.knowledge_graph:
-            return self._default_pass(rule)
-        
         findings = claim.get("findings", [])
         if len(findings) < 2:
             return self._default_pass(rule)
+        if not self.knowledge_graph:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: knowledge graph unavailable for findings "
+                f"{findings[:2]} — cannot verify confounding paths",
+            )
         
         # Check for multiple paths (potential confounders)
         paths = self.knowledge_graph.find_paths_between_entities(
@@ -652,11 +735,23 @@ class RuleEngine:
         """
         K1: IF output.claim_A CONTRADICTS output.claim_B THEN FLAG
         """
-        if not self.fact_table:
-            return self._default_pass(rule)
-        
         # Check for contradictions in the claim's findings
         findings = claim.get("findings", [])
+        if not findings:
+            return self._default_pass(rule)
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: fact table unavailable for findings "
+                f"{findings} — cannot verify internal contradictions",
+            )
+        missing_findings = self._missing_entities(findings)
+        if missing_findings:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: finding(s) "
+                f"{missing_findings} not found in fact table — cannot verify internal contradictions",
+            )
         
         for finding_id in findings:
             # Check if this finding contradicts any other finding in the claim
@@ -686,14 +781,17 @@ class RuleEngine:
         """
         K2: IF output.claim NOT_SUPPORTED_BY kg.facts THEN DOWNGRADE confidence
         """
-        if not self.fact_table:
-            return self._default_pass(rule)
-        
         method_id = claim.get("method")
         domain_id = claim.get("domain")
         
         if not method_id:
             return self._default_pass(rule)
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                f"Insufficient evidence: fact table unavailable for method "
+                f"'{method_id}' — cannot verify KG support",
+            )
         
         # Check if the claimed method-domain relationship exists in KG
         supporting_facts = self.fact_table.query(subject_id=method_id)
@@ -713,6 +811,12 @@ class RuleEngine:
         
         # If domain specified, check if method is connected to domain
         if domain_id:
+            if not self.fact_table.get_entity(domain_id):
+                return self._missing_evidence_or_pass(
+                    rule,
+                    f"Insufficient evidence: domain '{domain_id}' not found in "
+                    f"fact table/KG — cannot verify KG support",
+                )
             domain_facts = self.fact_table.query(
                 subject_id=method_id,
                 predicate=PredicateType.APPLIES_TO,
@@ -738,12 +842,28 @@ class RuleEngine:
         """
         K3: IF A→B AND B→C BUT output says A—/→C THEN FLAG
         """
-        if not self.knowledge_graph:
-            return self._default_pass(rule)
-        
         findings = claim.get("findings", [])
         if len(findings) < 3:
             return self._default_pass(rule)
+        if not self.knowledge_graph:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: knowledge graph unavailable for findings "
+                f"{findings[:3]} — cannot verify transitivity",
+            )
+        if not self.fact_table:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: fact table unavailable for findings "
+                f"{findings[:3]} — cannot verify transitivity",
+            )
+        missing_findings = self._missing_entities(findings)
+        if missing_findings:
+            return self._missing_evidence_or_pass(
+                rule,
+                "Insufficient evidence: finding(s) "
+                f"{missing_findings} not found in fact table — cannot verify transitivity",
+            )
         
         # Check transitivity: if A improves B and B improves C,
         # does the claim contradict A→C?
@@ -804,6 +924,59 @@ class RuleEngine:
             evidence=[],
             confidence_adjustment=0.0,
         )
+
+    def _missing_evidence_or_pass(
+        self,
+        rule: Rule,
+        reason: str,
+        pass_reason: str = None,
+    ) -> RuleResult:
+        """Return FLAG for missing evidence unless legacy PASS mode is configured."""
+        if self.on_missing_evidence == "pass":
+            return self._default_pass(rule, pass_reason)
+        logger.debug(f"Missing evidence FLAG for {rule.rule_id}: {reason}")
+        return RuleResult(
+            rule=rule,
+            passed=False,
+            verdict="FLAG",
+            reason=reason,
+            evidence=[],
+            confidence_adjustment=MISSING_EVIDENCE_CONFIDENCE_ADJUSTMENT,
+        )
+
+    def _missing_entities(self, entity_ids: List[str]) -> List[str]:
+        """Return claim entity IDs that are absent from the FactTable."""
+        if not self.fact_table:
+            return list(entity_ids)
+        return [
+            entity_id for entity_id in entity_ids
+            if not self.fact_table.get_entity(entity_id)
+        ]
+
+    def _get_on_missing_evidence(self, config: Dict[str, Any]) -> str:
+        """Resolve missing-evidence behavior from config; default is safe FLAG."""
+        rule_config = config.get("rule_engine", config) if config else {}
+        defaults = rule_config.get("defaults", {})
+        mode = str(defaults.get("on_missing_evidence", "flag")).lower()
+        if mode not in {"pass", "flag"}:
+            logger.warning(
+                f"Invalid rule_engine.defaults.on_missing_evidence='{mode}', "
+                "falling back to 'flag'"
+            )
+            return "flag"
+        return mode
+
+    def _load_rule_engine_config(self) -> Dict[str, Any]:
+        """Load RuleEngine config from backend/config.yaml when available."""
+        config_path = Path(__file__).resolve().parents[3] / "config.yaml"
+        try:
+            with config_path.open("r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            logger.debug("RuleEngine config.yaml not found; using code defaults")
+        except Exception as e:
+            logger.warning(f"Could not load RuleEngine config: {e}")
+        return {}
 
     def _build_summary(
         self,

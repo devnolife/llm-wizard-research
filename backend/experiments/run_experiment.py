@@ -26,6 +26,7 @@ import argparse
 import os
 import sys
 import json
+import random
 import time
 from pathlib import Path
 from datetime import datetime
@@ -65,6 +66,19 @@ DEFAULT_TOPICS = {
     "T2": "computer vision object detection and image recognition",
     "T3": "natural language processing and attention mechanisms",
 }
+
+
+def seed_python_rngs(seed: int):
+    """Seed Python-side RNGs used by the experiment pipeline."""
+    random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except ImportError:
+        logger.warning("numpy is not installed; only Python random was seeded")
+    # Ollama/LLM sampling is server-side and not fully determinized by this;
+    # the seed still makes Python-side sampling, shuffling, and bootstraps repeatable.
+    logger.info(f"Python-side RNG seed: {seed}")
 
 
 def load_topics(topic_filter=None, custom_topics=None):
@@ -821,13 +835,14 @@ def phase5_adversarial_validation():
     return results
 
 
-def compile_results(phase1, phase2, phase3, phase4, phase5, mode, model_name, topics):
+def compile_results(phase1, phase2, phase3, phase4, phase5, mode, model_name, topics, seed):
     """Compile all results into a single JSON report."""
     report = {
         "experiment_info": {
             "timestamp": datetime.now().isoformat(),
             "model": model_name,
             "mode": mode,
+            "seed": seed,
             "papers_dir": str(PAPERS_DIR),
             "topics": topics,
             "system": "Wizard Research — Neuro-Symbolic Agentic Gap Detection",
@@ -896,6 +911,10 @@ def main():
         help="Ollama model name (default: OLLAMA_MODEL env or config)",
     )
     parser.add_argument(
+        "--seed", type=int, default=42,
+        help="Seed for Python-side random and numpy RNGs (default: 42)",
+    )
+    parser.add_argument(
         "--mode", default="full",
         choices=["full", "no-rule-engine", "linear-baseline", "nli", "no-nli"],
         help="Experiment mode: full pipeline; no-rule-engine ablation (H7); "
@@ -928,6 +947,8 @@ def main():
         help="Enable the dedicated NLI cross-encoder model (independent contradiction signal)",
     )
     args = parser.parse_args()
+
+    seed_python_rngs(args.seed)
 
     model_name = args.model or os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
     topics = load_topics(args.topics, custom_topics=args.custom_topic)
@@ -1020,7 +1041,7 @@ def main():
     report = compile_results(
         phase1_results, phase2_results, phase3_results,
         phase4_results, phase5_results,
-        mode=args.mode, model_name=model_name, topics=topics,
+        mode=args.mode, model_name=model_name, topics=topics, seed=args.seed,
     )
 
     model_slug = model_name.replace(":", "_").replace("/", "_")

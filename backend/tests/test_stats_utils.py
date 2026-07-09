@@ -13,12 +13,35 @@ sys.path.insert(0, str(BACKEND_DIR / "experiments"))
 sys.path.insert(0, str(BACKEND_DIR / "experiments" / "expert_eval"))
 
 from stats_utils import (  # noqa: E402
+    holm_bonferroni,
+    per_run_mean_confidences,
     cliffs_delta,
     rank_biserial_from_u,
     bootstrap_ci_diff,
     format_effect,
 )
 from calibration import calibration_metrics  # noqa: E402
+
+
+class TestHolmBonferroni:
+    def test_known_example_preserves_original_order(self):
+        assert holm_bonferroni([0.01, 0.04, 0.03]) == pytest.approx([0.03, 0.06, 0.06])
+
+    def test_none_values_are_preserved(self):
+        assert holm_bonferroni([0.02, None, 0.5]) == pytest.approx([0.04, None, 0.5])
+
+
+class TestPerRunAggregation:
+    def test_mean_confidence_collapses_each_run(self):
+        runs = [
+            {"confidences": [0.2, 0.4]},
+            {"confidences": [0.9]},
+            {"confidences": []},
+        ]
+        assert per_run_mean_confidences(runs) == pytest.approx([0.3, 0.9])
+
+    def test_falls_back_to_recorded_average(self):
+        assert per_run_mean_confidences([{"avg_confidence": 0.7}]) == [0.7]
 
 
 class TestCliffsDelta:

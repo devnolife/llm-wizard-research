@@ -4,8 +4,8 @@ Document ingestion and management endpoints
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from loguru import logger
-import tempfile
 import os
+import uuid
 from typing import Optional
 from pathlib import Path
 
@@ -17,6 +17,8 @@ from ..dependencies import (
     get_retriever,
     get_document_processor
 )
+from ...utils.config_loader import get_config
+from ...utils.upload_validation import sanitize_filename, write_validated_pdf_upload
 
 router = APIRouter()
 
@@ -60,20 +62,19 @@ async def ingest_document(
     year: Optional[int] = None
 ):
     """Ingest a research paper"""
+    tmp_path = None
     try:
-        # Validate file type
-        if not file.filename.endswith('.pdf'):
-            raise HTTPException(status_code=400, detail="Only PDF files are supported")
-        
-        # Save temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_path = tmp_file.name
+        config = get_config()
+        allowed_types = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
+        if "pdf" not in allowed_types:
+            raise HTTPException(status_code=415, detail="PDF uploads are not enabled")
+        safe_name = sanitize_filename(file.filename)
+        tmp_path = Path(config.data.raw_path) / f"{uuid.uuid4()}_{safe_name}"
+        await write_validated_pdf_upload(file, tmp_path, config.data.max_file_size_mb)
         
         # Process document
         processor = get_document_processor()
-        processed_doc = processor.process_pdf(tmp_path)
+        processed_doc = processor.process_pdf(str(tmp_path))
         
         # Add metadata
         if title:
@@ -107,19 +108,24 @@ async def ingest_document(
         
         doc_ids = vector_store.add_documents(docs_to_add)
         
-        # Clean up temp file
-        os.unlink(tmp_path)
-        
         return IngestResponse(
             success=True,
             doc_id=processed_doc.doc_id,
             message=f"Successfully ingested: {processed_doc.title}",
             chunks_created=len(doc_ids)
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Document ingestion failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
 
 
 @router.get("/stats")

@@ -1,3 +1,5 @@
+# NOTE: This compose file is currently NOT functional (no Dockerfile in repo) and is kept as a template. See README Quick Start for the supported way to run.
+
 version: '3.8'
 
 services:
@@ -6,32 +8,30 @@ services:
     build: .
     container_name: rag-llm-api
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./chroma_db:/app/chroma_db
-      - ./configs:/app/configs
+      - ./backend/config.yaml:/app/config.yaml:ro
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
       - LOG_LEVEL=INFO
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - neo4j
     restart: unless-stopped
-    network_mode: "host"
 
   # Neo4j Knowledge Graph (Optional)
   neo4j:
+    profiles: ["neo4j"]
     image: neo4j:5.14
     container_name: neo4j-graph
     ports:
       - "7474:7474"  # HTTP
       - "7687:7687"  # Bolt
     environment:
-      - NEO4J_AUTH=neo4j/research123
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/research123}
       - NEO4J_PLUGINS=["apoc", "graph-data-science"]
       - NEO4J_apoc_export_file_enabled=true
       - NEO4J_apoc_import_file_enabled=true

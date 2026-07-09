@@ -2,7 +2,12 @@
 Test suite for LLM interface
 """
 
+from unittest.mock import Mock
+
+import httpx
+import ollama
 import pytest
+from app.services import llm_service
 from app.services.llm_service import GLMInterface, ModelConfig, PromptTemplate
 
 
@@ -23,6 +28,52 @@ def test_model_config():
     assert config.model_name == "llama3.2:latest"
     assert config.temperature == 0.7
     assert config.max_tokens == 2048
+
+
+def test_client_receives_configured_timeout(monkeypatch):
+    """Test configured timeout is passed to the Ollama client."""
+    client_factory = Mock(return_value=Mock())
+    monkeypatch.setattr(llm_service.ollama, "Client", client_factory)
+
+    config = ModelConfig(base_url="http://ollama.example", timeout=42)
+    GLMInterface(config)
+
+    client_factory.assert_called_once_with(host="http://ollama.example", timeout=42)
+
+
+def test_generate_retries_transient_connect_error_then_succeeds(monkeypatch):
+    """Test transient connection errors are retried before succeeding."""
+    sleep_calls = []
+    monkeypatch.setattr(llm_service.time, "sleep", lambda delay: sleep_calls.append(delay))
+
+    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest"))
+    interface.client = Mock()
+    interface.client.chat.side_effect = [
+        httpx.ConnectError("connection refused"),
+        {"message": {"content": "ok"}, "eval_count": 1},
+    ]
+
+    response = interface.generate("hello")
+
+    assert response == "ok"
+    assert interface.client.chat.call_count == 2
+    assert sleep_calls == [1]
+
+
+def test_generate_does_not_retry_non_transient_response_error(monkeypatch):
+    """Test non-transient Ollama errors are not retried."""
+    sleep_mock = Mock()
+    monkeypatch.setattr(llm_service.time, "sleep", sleep_mock)
+
+    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest"))
+    interface.client = Mock()
+    interface.client.chat.side_effect = ollama.ResponseError("model not found", status_code=404)
+
+    with pytest.raises(ollama.ResponseError):
+        interface.generate("hello")
+
+    assert interface.client.chat.call_count == 1
+    sleep_mock.assert_not_called()
 
 
 def test_prompt_template():

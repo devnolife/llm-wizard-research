@@ -60,7 +60,11 @@ class NLICheckerTool:
                     entity_a=claim_a,
                     entity_b=claim_b,
                     text_context=context,
-                    semantic_similarity=semantic_similarity,
+                    semantic_similarity=(
+                        semantic_similarity
+                        if semantic_similarity is not None
+                        else 0.5
+                    ),
                     kg_facts=kg_facts or [],
                 )
                 result["relation_type"] = classified.relation_type.value

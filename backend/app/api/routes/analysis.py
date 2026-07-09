@@ -14,7 +14,6 @@ from loguru import logger
 from typing import List
 from pathlib import Path
 import asyncio
-import tempfile
 import uuid
 import time
 import json
@@ -25,30 +24,40 @@ from ...models.requests import (
     ChatRequest,
     MarkedPapersRequest
 )
-from ...models.responses import (
-    AnalysisResponseModel,
-    GapIndicatorModel,
-    RuleEngineReportModel,
-    FactTableStatsModel,
-)
 from ..dependencies import (
     get_coordinator,
     get_gap_analyzer,
     get_retriever,
     get_glm_interface,
     get_vector_store,
-    get_document_processor,
     get_fact_table,
-    get_fact_extractor,
     get_rule_engine,
     get_knowledge_graph,
 )
 from ...utils.document_processor import DocumentProcessor
+from ...utils.config_loader import get_config
+from ...utils.job_store import get_job, load_jobs, save_job
+from ...utils.upload_validation import sanitize_filename, write_validated_pdf_upload
 
 router = APIRouter()
 
 # Job storage for async analysis
-_analysis_jobs = {}
+_analysis_jobs = load_jobs()
+
+
+def _set_analysis_job(job_id: str, **updates):
+    job = dict(_analysis_jobs.get(job_id, {}))
+    job.update(updates)
+    _analysis_jobs[job_id] = job
+    save_job(job_id, job)
+    return job
+
+
+def _get_analysis_job(job_id: str):
+    job = get_job(job_id)
+    if job is not None:
+        _analysis_jobs[job_id] = job
+    return job
 
 
 def translate_to_indonesian(glm, text):
@@ -510,31 +519,32 @@ async def upload_and_analyze(
     Upload PDFs and automatically analyze them.
     Returns job_id to track progress.
     """
+    temp_files = []
     try:
+        config = get_config()
+        allowed_types = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
+        if "pdf" not in allowed_types:
+            raise HTTPException(status_code=415, detail="PDF uploads are not enabled")
         # Generate job ID
         job_id = str(uuid.uuid4())
-        
-        # Initialize job status
-        _analysis_jobs[job_id] = {
-            "status": "processing",
-            "progress": 0,
-            "message": "Starting analysis...",
-            "results": None,
-            "error": None,
-            "created_at": time.time()
-        }
-        
+
         # Save uploaded files temporarily
-        temp_files = []
         for file in files:
-            if not file.filename.endswith('.pdf'):
-                raise HTTPException(status_code=400, detail=f"File {file.filename} is not a PDF")
-            
-            temp_path = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}_{file.filename}"
-            with open(temp_path, 'wb') as f:
-                content = await file.read()
-                f.write(content)
+            safe_name = sanitize_filename(file.filename)
+            temp_path = Path(config.data.raw_path) / f"{uuid.uuid4()}_{safe_name}"
+            await write_validated_pdf_upload(file, temp_path, config.data.max_file_size_mb)
             temp_files.append(temp_path)
+
+        # Initialize job status after all uploads pass validation
+        _set_analysis_job(
+            job_id,
+            status="processing",
+            progress=0,
+            message="Starting analysis...",
+            results=None,
+            error=None,
+            created_at=time.time(),
+        )
         
         # Start background analysis
         background_tasks.add_task(process_auto_analysis, job_id, temp_files)
@@ -547,8 +557,12 @@ async def upload_and_analyze(
         }
     
     except HTTPException:
+        for temp_path in temp_files:
+            temp_path.unlink(missing_ok=True)
         raise
     except Exception as e:
+        for temp_path in temp_files:
+            temp_path.unlink(missing_ok=True)
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -561,10 +575,9 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
         job_id: The job ID
         lang: Language for results (en/id). Default: en
     """
-    if job_id not in _analysis_jobs:
+    job = _get_analysis_job(job_id)
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    
-    job = _analysis_jobs[job_id]
     
     # Enrich completed results with rule_engine / fact_table info
     if job["status"] == "completed" and job.get("results"):
@@ -586,6 +599,7 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
         # Add reasoning_trace placeholder
         if "reasoning_trace" not in results:
             results["reasoning_trace"] = []
+        _set_analysis_job(job_id, **job)
     
     # Translate if requested and job is completed
     if lang == "id" and job["status"] == "completed" and "results" in job:
@@ -633,6 +647,7 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
                 "recommendations": translated_recs,
                 "roadmap": translated_roadmap,
             }
+            _set_analysis_job(job_id, **job)
         
         return {
             **job,
@@ -996,8 +1011,7 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
     event loop and block every other request (upload timeouts).
     """
     try:
-        _analysis_jobs[job_id]["progress"] = 5
-        _analysis_jobs[job_id]["message"] = "Processing PDFs..."
+        _set_analysis_job(job_id, progress=5, message="Processing PDFs...")
 
         vector_store = get_vector_store()
         document_processor = DocumentProcessor()
@@ -1028,8 +1042,11 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
             # Temp files are named "{uuid}_{original}"; recover the original name
             # so duplicate detection & metadata use the real filename, not the UUID.
             source_name = pdf_path.name.split('_', 1)[-1]
-            _analysis_jobs[job_id]["message"] = f"Processing {source_name}..."
-            _analysis_jobs[job_id]["progress"] = 5 + (i / len(pdf_paths)) * 15
+            _set_analysis_job(
+                job_id,
+                message=f"Processing {source_name}...",
+                progress=5 + (i / len(pdf_paths)) * 15,
+            )
 
             processed_doc = document_processor.process_pdf(str(pdf_path))
 
@@ -1037,7 +1054,10 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
             already_indexed = vector_store.count_by_source(source_name) > 0
             if already_indexed:
                 duplicate_papers += 1
-                _analysis_jobs[job_id]["message"] = f"{source_name} sudah ada di database — melewati pengindeksan."
+                _set_analysis_job(
+                    job_id,
+                    message=f"{source_name} sudah ada di database — melewati pengindeksan.",
+                )
                 logger.info(f"Skipping ingestion for already-indexed paper: {source_name}")
             else:
                 for chunk in processed_doc.chunks:
@@ -1071,8 +1091,7 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
             })
             pdf_path.unlink()
 
-        _analysis_jobs[job_id]["progress"] = 20
-        _analysis_jobs[job_id]["message"] = "Extracting topics..."
+        _set_analysis_job(job_id, progress=20, message="Extracting topics...")
 
         # ── Step 2: Extract topics from UPLOADED papers only ────
         uploaded_sources = [p["source"] for p in paper_contents]
@@ -1096,7 +1115,7 @@ Topik:"""
         # 2b: classify papers by basis · 2c: shared keywords/themes ·
         # 2d: per-paper weaknesses. Each is defined as a closure and executed in
         # parallel threads; the ollama client releases the GIL during requests.
-        _analysis_jobs[job_id]["message"] = "Menganalisis basis, persamaan & kekurangan jurnal..."
+        _set_analysis_job(job_id, message="Menganalisis basis, persamaan & kekurangan jurnal...")
 
         def _compute_groups():
             paper_list = "\n".join(
@@ -1217,8 +1236,11 @@ Topik:"""
                 logger.warning(f"Paper weakness analysis failed: {weak_err}")
 
         # ── Step 3: Run Coordinator (full neuro-symbolic pipeline) ──
-        _analysis_jobs[job_id]["progress"] = 30
-        _analysis_jobs[job_id]["message"] = "Running neuro-symbolic analysis (Observe \u2192 Think \u2192 Act \u2192 Evaluate)..."
+        _set_analysis_job(
+            job_id,
+            progress=30,
+            message="Running neuro-symbolic analysis (Observe \u2192 Think \u2192 Act \u2192 Evaluate)...",
+        )
 
         coordinator_result = None
         execution_mode = "llm_fallback"
@@ -1246,8 +1268,11 @@ Topik:"""
             rule_engine_report = coordinator_result.get("rule_engine_report", {})
             fact_table_stats = coordinator_result.get("fact_table_stats", {})
 
-            _analysis_jobs[job_id]["progress"] = 70
-            _analysis_jobs[job_id]["message"] = f"Coordinator complete ({execution_mode}). Generating summary..."
+            _set_analysis_job(
+                job_id,
+                progress=70,
+                message=f"Coordinator complete ({execution_mode}). Generating summary...",
+            )
 
             logger.info(
                 f"Coordinator finished: mode={execution_mode}, "
@@ -1257,15 +1282,14 @@ Topik:"""
 
         except Exception as e:
             logger.warning(f"Coordinator pipeline failed, falling back to LLM: {e}")
-            _analysis_jobs[job_id]["message"] = "Coordinator unavailable, using LLM fallback..."
+            _set_analysis_job(job_id, message="Coordinator unavailable, using LLM fallback...")
             reasoning_trace.append({
                 "phase": "coordinator_fallback",
                 "error": str(e),
             })
 
         # ── Step 4: Generate summary (always via LLM) ──────────
-        _analysis_jobs[job_id]["progress"] = 75
-        _analysis_jobs[job_id]["message"] = "Generating research summary..."
+        _set_analysis_job(job_id, progress=75, message="Generating research summary...")
 
         if topics:
             source_filter = {"source": {"$in": uploaded_sources}} if len(uploaded_sources) > 1 else {"source": uploaded_sources[0]}
@@ -1288,8 +1312,7 @@ Ringkasan:"""
             summary = "No topics extracted."
 
         # ── Step 5: Gap detection (use coordinator result or LLM fallback) ──
-        _analysis_jobs[job_id]["progress"] = 80
-        _analysis_jobs[job_id]["message"] = "Finalizing gap analysis..."
+        _set_analysis_job(job_id, progress=80, message="Finalizing gap analysis...")
 
         gaps = []
         if gap_indicators:
@@ -1387,8 +1410,11 @@ JSON:"""
         # (fragmentasi, inkonsistensi, ketidaklengkapan kolektif), BUKAN kombinasi
         # metode+domain dangkal atau pengulangan "future work". Diposisikan sebagai
         # INDIKATOR usulan (decision-support) yang tetap perlu validasi peneliti.
-        _analysis_jobs[job_id]["progress"] = 85
-        _analysis_jobs[job_id]["message"] = "Menyusun usulan penelitian (berbasis indikator synthesis gap)..."
+        _set_analysis_job(
+            job_id,
+            progress=85,
+            message="Menyusun usulan penelitian (berbasis indikator synthesis gap)...",
+        )
 
         # Rekomendasi paper relevan dari coordinator disimpan terpisah sebagai rujukan,
         # bukan sebagai "usulan penelitian baru".
@@ -1460,8 +1486,7 @@ JSON:"""
             recommendations = _build_recommendations_from_gaps(gaps)
 
         # ── Step 7: Roadmap (always via LLM) ────────────────────
-        _analysis_jobs[job_id]["progress"] = 95
-        _analysis_jobs[job_id]["message"] = "Creating roadmap..."
+        _set_analysis_job(job_id, progress=95, message="Creating roadmap...")
 
         roadmap_topic = topics[0] if topics else "research"
         roadmap_prompt = f"""Buat peta jalan penelitian terstruktur untuk: {roadmap_topic}
@@ -1545,11 +1570,12 @@ JSON:"""
         except Exception as eval_err:
             logger.warning(f"Evaluation metrics computation failed: {eval_err}")
 
-        _analysis_jobs[job_id].update({
-            "status": "completed",
-            "progress": 100,
-            "message": "Analysis complete!",
-            "results": {
+        _set_analysis_job(
+            job_id,
+            status="completed",
+            progress=100,
+            message="Analysis complete!",
+            results={
                 "topics": topics,
                 "summary": summary,
                 "gaps": gaps,
@@ -1576,15 +1602,19 @@ JSON:"""
                 "reasoning_trace": reasoning_trace,
                 "eval_metrics": eval_metrics,
             },
-        })
+        )
 
     except Exception as e:
         logger.error(f"Auto-analysis failed for job {job_id}: {e}")
-        _analysis_jobs[job_id].update({
-            "status": "failed",
-            "error": str(e),
-            "message": f"Analysis failed: {str(e)}",
-        })
+        _set_analysis_job(
+            job_id,
+            status="failed",
+            error=str(e),
+            message=f"Analysis failed: {str(e)}",
+        )
+    finally:
+        for pdf_path in pdf_paths:
+            pdf_path.unlink(missing_ok=True)
 
 
 # ───────────────────────────────────────────
@@ -1640,14 +1670,14 @@ async def stream_analysis(job_id: str):
                 if status == "completed":
                     payload["type"] = "complete"
                     payload["results"] = job.get("results")
-                elif status == "failed":
+                elif status in ("failed", "interrupted"):
                     payload["type"] = "error"
                     payload["error"] = job.get("error", "")
                 yield f"data: {json.dumps(payload, default=str)}\n\n"
                 prev_status = status
                 prev_message = message
 
-            if status in ("completed", "failed"):
+            if status in ("completed", "failed", "interrupted"):
                 return
 
             await asyncio.sleep(1)

@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+MODES = ["full", "no-rule-engine", "linear-baseline", "nli", "no-nli"]
 
 
 def load_reports(results_dir: Path) -> list:
@@ -33,7 +34,7 @@ def load_reports(results_dir: Path) -> list:
         try:
             data = json.loads(path.read_text())
             info = data.get("experiment_info", {})
-            if info.get("mode") not in ("full", "no-rule-engine", "linear-baseline"):
+            if info.get("mode") not in MODES:
                 continue
             reports.append({"file": path.name, "data": data})
         except (json.JSONDecodeError, OSError):
@@ -49,33 +50,48 @@ def fmt(value, suffix=""):
 
 def table_ablation(reports, model_filter=None):
     """Tabel A: ablation per mode (optionally one model)."""
-    rows = []
-    for r in reports:
-        info = r["data"]["experiment_info"]
-        if model_filter and info.get("model") != model_filter:
-            continue
-        m = r["data"].get("overall_metrics", {})
-        p3 = r["data"].get("phase3_gap_detection", {})
-        rows.append({
-            "mode": info.get("mode"),
-            "model": info.get("model"),
-            "indicators": m.get("total_gap_indicators", 0),
-            "facts": m.get("total_facts_extracted", 0),
-            "avg_conf": m.get("avg_confidence", 0),
-            "avg_adj_conf": m.get("avg_adjusted_confidence", 0),
-            "pass": m.get("rule_engine_pass_rate"),
-            "rerr": m.get("rule_engine_rejection_rate_RERR"),
-            "time_s": round(p3.get("total_time", 0), 1),
-        })
+    by_model_mode = {
+        (r["data"]["experiment_info"].get("model"), r["data"]["experiment_info"].get("mode")): r
+        for r in reports
+    }
+    models = sorted({r["data"]["experiment_info"].get("model") for r in reports if r["data"]["experiment_info"].get("model")})
+    if model_filter:
+        models = [m for m in models if m == model_filter]
 
-    order = {"full": 0, "no-rule-engine": 1, "linear-baseline": 2}
-    rows.sort(key=lambda x: (x["model"], order.get(x["mode"], 9)))
+    rows = []
+    for model in models:
+        for mode in MODES:
+            r = by_model_mode.get((model, mode))
+            if not r:
+                rows.append({"mode": mode, "model": model, "available": False})
+                continue
+            info = r["data"]["experiment_info"]
+            m = r["data"].get("overall_metrics", {})
+            p3 = r["data"].get("phase3_gap_detection", {})
+            rows.append({
+                "mode": info.get("mode"),
+                "model": info.get("model"),
+                "available": True,
+                "indicators": m.get("total_gap_indicators", 0),
+                "facts": m.get("total_facts_extracted", 0),
+                "avg_conf": m.get("avg_confidence", 0),
+                "avg_adj_conf": m.get("avg_adjusted_confidence", 0),
+                "pass": m.get("rule_engine_pass_rate"),
+                "rerr": m.get("rule_engine_rejection_rate_RERR"),
+                "time_s": round(p3.get("total_time", 0), 1),
+            })
 
     lines = [
         "| Mode | Model | Indikator | Fakta SPO | Avg Conf | Avg Adj Conf | PASS % | RERR % | Waktu Fase-3 (s) |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
     for x in rows:
+        if not x["available"]:
+            lines.append(
+                f"| {x['mode']} | {x['model']} | not available | not available "
+                f"| not available | not available | not available | not available | not available |"
+            )
+            continue
         lines.append(
             f"| {x['mode']} | {x['model']} | {x['indicators']} | {x['facts']} "
             f"| {fmt(x['avg_conf'])} | {fmt(x['avg_adj_conf'])} "

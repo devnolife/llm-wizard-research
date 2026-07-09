@@ -9,11 +9,12 @@ structured JSON output, streaming support, and error handling.
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Generator, Union
+from typing import Any, Callable, Dict, List, Optional, Generator, Union
 from dataclasses import dataclass
 import time
 
 try:
+    import httpx
     import ollama
 except ImportError:
     raise ImportError("ollama package not installed. Run: pip install ollama")
@@ -127,6 +128,8 @@ class GLMInterface:
     - Token counting and usage tracking
     - Error handling and retries
     """
+    _MAX_TRANSIENT_RETRIES = 2
+    _TRANSIENT_RETRY_DELAYS = (1, 2)
     
     def __init__(self, config: Optional[ModelConfig] = None):
         """
@@ -136,11 +139,42 @@ class GLMInterface:
             config: Model configuration (uses defaults if not provided)
         """
         self.config = config or ModelConfig()
-        self.client = ollama.Client(host=self.config.base_url)
+        self.client = ollama.Client(host=self.config.base_url, timeout=self.config.timeout)
         self.conversation_history: List[ChatMessage] = []
         
         logger.info(f"Initialized GLM Interface with model: {self.config.model_name}")
         logger.info(f"Ollama base URL: {self.config.base_url}")
+
+    def _is_transient_error(self, error: Exception) -> bool:
+        """Return True for connection/timeout/5xx errors that are safe to retry."""
+        if isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, ConnectionError)):
+            return True
+
+        response_error = getattr(ollama, "ResponseError", None)
+        if response_error and isinstance(error, response_error):
+            status_code = getattr(error, "status_code", -1)
+            return 500 <= status_code < 600
+
+        return False
+
+    def _log_retry(self, operation_name: str, error: Exception, attempt: int, delay: int):
+        logger.warning(
+            f"Ollama {operation_name} failed with transient error "
+            f"(attempt {attempt}/{self._MAX_TRANSIENT_RETRIES + 1}); retrying in {delay}s: {error}"
+        )
+
+    def _call_with_retries(self, operation_name: str, operation: Callable[[], Any]) -> Any:
+        """Run an Ollama operation with bounded retries for transient failures."""
+        for attempt in range(self._MAX_TRANSIENT_RETRIES + 1):
+            try:
+                return operation()
+            except Exception as e:
+                if not self._is_transient_error(e) or attempt >= self._MAX_TRANSIENT_RETRIES:
+                    raise
+
+                delay = self._TRANSIENT_RETRY_DELAYS[attempt]
+                self._log_retry(operation_name, e, attempt + 1, delay)
+                time.sleep(delay)
     
     def switch_model(self, model_name: str):
         """Switch to a different Ollama model at runtime."""
@@ -336,22 +370,28 @@ class GLMInterface:
             kwargs["format"] = format
         
         try:
-            response = self.client.chat(
-                model=self.config.model_name,
-                messages=messages,
-                options=options,
-                stream=False,
-                keep_alive=self.config.keep_alive,
-                **kwargs
+            response = self._call_with_retries(
+                "chat",
+                lambda: self.client.chat(
+                    model=self.config.model_name,
+                    messages=messages,
+                    options=options,
+                    stream=False,
+                    keep_alive=self.config.keep_alive,
+                    **kwargs
+                )
             )
         except TypeError:
             # Older ollama clients may not accept `keep_alive` — retry without it.
-            response = self.client.chat(
-                model=self.config.model_name,
-                messages=messages,
-                options=options,
-                stream=False,
-                **kwargs
+            response = self._call_with_retries(
+                "chat",
+                lambda: self.client.chat(
+                    model=self.config.model_name,
+                    messages=messages,
+                    options=options,
+                    stream=False,
+                    **kwargs
+                )
             )
         
         elapsed = time.time() - start_time
@@ -366,20 +406,33 @@ class GLMInterface:
     
     def _generate_stream(self, messages: List[Dict], options: Dict) -> Generator[str, None, None]:
         """Generate streaming response"""
-        try:
-            stream = self.client.chat(
-                model=self.config.model_name,
-                messages=messages,
-                options=options,
-                stream=True
-            )
-            
-            for chunk in stream:
-                if 'message' in chunk and 'content' in chunk['message']:
-                    yield chunk['message']['content']
-        except Exception as e:
-            logger.error(f"Streaming failed: {e}")
-            raise
+        for attempt in range(self._MAX_TRANSIENT_RETRIES + 1):
+            yielded_content = False
+            try:
+                stream = self.client.chat(
+                    model=self.config.model_name,
+                    messages=messages,
+                    options=options,
+                    stream=True
+                )
+                
+                for chunk in stream:
+                    if 'message' in chunk and 'content' in chunk['message']:
+                        yielded_content = True
+                        yield chunk['message']['content']
+                return
+            except Exception as e:
+                if (
+                    yielded_content
+                    or not self._is_transient_error(e)
+                    or attempt >= self._MAX_TRANSIENT_RETRIES
+                ):
+                    logger.error(f"Streaming failed: {e}")
+                    raise
+
+                delay = self._TRANSIENT_RETRY_DELAYS[attempt]
+                self._log_retry("streaming chat", e, attempt + 1, delay)
+                time.sleep(delay)
     
     def chat(
         self,
@@ -423,11 +476,14 @@ class GLMInterface:
             "num_ctx": self.config.num_ctx,
         }
         
-        response = self.client.chat(
-            model=self.config.model_name,
-            messages=messages,
-            options=options,
-            stream=False
+        response = self._call_with_retries(
+            "chat",
+            lambda: self.client.chat(
+                model=self.config.model_name,
+                messages=messages,
+                options=options,
+                stream=False
+            )
         )
         
         assistant_response = response['message']['content']
@@ -529,9 +585,12 @@ class GLMInterface:
             Embedding vector
         """
         try:
-            response = self.client.embeddings(
-                model=self.config.model_name,
-                prompt=text
+            response = self._call_with_retries(
+                "embeddings",
+                lambda: self.client.embeddings(
+                    model=self.config.model_name,
+                    prompt=text
+                )
             )
             return response['embedding']
         except Exception as e:

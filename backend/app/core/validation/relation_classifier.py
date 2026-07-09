@@ -71,6 +71,7 @@ class ClassifiedRelation:
     rule_validated: bool            # Passed Layer 3?
     confidence: float               # Overall confidence
     explanation: str                # Human-readable explanation
+    layers_used: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -83,6 +84,7 @@ class ClassifiedRelation:
             "rule_validated": self.rule_validated,
             "confidence": self.confidence,
             "explanation": self.explanation,
+            "layers_used": self.layers_used,
         }
 
 
@@ -174,6 +176,7 @@ class RelationClassifier:
                     f"Discarded: semantic similarity ({semantic_similarity:.2f}) "
                     f"below threshold ({self.similarity_threshold})"
                 ),
+                layers_used=["semantic_filter"],
             )
         
         # Layer 2: Evidence Extraction
@@ -223,6 +226,11 @@ class RelationClassifier:
             rule_validated=validated,
             confidence=confidence,
             explanation=explanation,
+            layers_used=[
+                "semantic_filter",
+                "evidence_extraction",
+                "rule_validation",
+            ],
         )
 
     def classify_batch(

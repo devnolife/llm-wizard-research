@@ -156,6 +156,7 @@ class TestLayer1SemanticFiltering:
         result = classifier.classify("CNN", "accuracy", text, semantic_similarity=0.1)
         assert result.relation_type == RelationType.UNKNOWN
         assert result.evidence_markers == []
+        assert result.layers_used == ["semantic_filter"]
 
     def test_at_threshold_proceeds(self, classifier):
         """Exactly at threshold should still proceed (not <)."""
@@ -221,6 +222,11 @@ class TestLayer3RuleValidation:
         kg = [{"subject_id": "A", "object_id": "B"}]
         result = classifier.classify("A", "B", text, semantic_similarity=0.6, kg_facts=kg)
         assert result.rule_validated is True
+        assert result.layers_used == [
+            "semantic_filter",
+            "evidence_extraction",
+            "rule_validation",
+        ]
 
     def test_causal_invalid_without_matching_kg(self, classifier):
         text = "A leads to B improvements."
@@ -285,6 +291,11 @@ class TestClassifiedRelation:
         assert "relation_type" in d
         assert "evidence_markers" in d
         assert "confidence" in d
+        assert d["layers_used"] == [
+            "semantic_filter",
+            "evidence_extraction",
+            "rule_validation",
+        ]
 
     def test_evidence_text_truncated_in_dict(self):
         cr = ClassifiedRelation(
@@ -299,6 +310,7 @@ class TestClassifiedRelation:
         )
         d = cr.to_dict()
         assert len(d["evidence_text"]) <= 200
+        assert d["layers_used"] == []
 
 
 # ---------------------------------------------------------------------------

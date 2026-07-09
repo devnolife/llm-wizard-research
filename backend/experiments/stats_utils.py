@@ -15,6 +15,49 @@ import statistics
 from typing import Callable, List, Optional, Tuple
 
 
+def holm_bonferroni(pvalues: list) -> list:
+    """
+    Holm-Bonferroni adjusted p-values, returned in the original order.
+
+    This step-down correction controls family-wise error while retaining more
+    power than plain Bonferroni. None entries are preserved for unavailable
+    tests.
+    """
+    indexed = [(i, float(p)) for i, p in enumerate(pvalues) if p is not None]
+    if not indexed:
+        return [None for _ in pvalues]
+
+    m = len(indexed)
+    adjusted_sorted = []
+    running_max = 0.0
+    for rank, (idx, p) in enumerate(sorted(indexed, key=lambda x: x[1]), start=1):
+        adj = min(1.0, p * (m - rank + 1))
+        running_max = max(running_max, adj)
+        adjusted_sorted.append((idx, running_max))
+
+    adjusted = [None for _ in pvalues]
+    for idx, adj in adjusted_sorted:
+        adjusted[idx] = round(adj, 10)
+    return adjusted
+
+
+def per_run_mean_confidences(runs: List[dict]) -> List[float]:
+    """
+    Collapse indicator-level confidences to one mean-confidence observation/run.
+
+    Using this summary avoids treating many indicators from the same run as
+    independent observations in the primary significance test.
+    """
+    means = []
+    for run in runs:
+        confidences = run.get("confidences") or []
+        if confidences:
+            means.append(sum(confidences) / len(confidences))
+        elif "avg_confidence" in run and run.get("avg_confidence") is not None:
+            means.append(float(run["avg_confidence"]))
+    return means
+
+
 def cliffs_delta(a: List[float], b: List[float]) -> Optional[Tuple[float, str]]:
     """
     Cliff's delta — non-parametric effect size for the dominance of `a` over `b`.

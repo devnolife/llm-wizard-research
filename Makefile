@@ -82,12 +82,12 @@ experiment-annotate: ## Sample 50 SPO facts into an annotation sheet (precision)
 	cd backend && python experiments/annotate_facts.py sample --results experiments/results/experiment_full_llama3.2_latest.json --n 50
 
 lint: ## Run linters
-	cd backend && pylint app/
+	cd backend && flake8 app/
 	cd frontend && npm run lint
 
 format: ## Format code
 	cd backend && black app/
-	cd frontend && npm run format
+	@echo "Frontend formatter is not configured; skipping frontend format."
 
 clean: ## Clean temporary files and caches
 	find . -type d -name "__pycache__" -exec rm -rf {} +
@@ -106,9 +106,6 @@ docker-build: ## Build Docker images
 
 docker-logs: ## View Docker logs
 	docker-compose logs -f
-
-init-db: ## Initialize database
-	cd backend && python scripts/init_db.py
 
 db-stats: ## Show vector store statistics (collection, doc count, model)
 	cd backend && python scripts/vectorstore_cli.py stats

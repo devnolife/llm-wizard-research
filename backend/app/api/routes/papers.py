@@ -2,7 +2,7 @@
 External paper API endpoints
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from loguru import logger
 from typing import List, Dict, Any
 
@@ -96,7 +96,6 @@ async def search_external_papers(request: PaperSearchRequest):
 async def ingest_external_paper(
     paper_id: str,
     source: str = "semantic_scholar",
-    background_tasks: BackgroundTasks = None
 ):
     """
     Fetch and ingest a specific paper from external API into the vector store
@@ -171,7 +170,6 @@ async def batch_ingest_papers(
     query: str,
     max_results: int = 20,
     sources: List[str] = None,
-    background_tasks: BackgroundTasks = None
 ):
     """
     Search for papers and automatically ingest them into the vector store
