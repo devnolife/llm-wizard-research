@@ -145,8 +145,8 @@ const UploadPage = () => {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={`group relative rounded-2xl border-2 border-dashed p-12 text-center transition-all duration-300 ${isDragging
-            ? 'border-primary bg-primary/5 scale-[1.01]'
-            : 'border-border hover:border-primary/50 hover:bg-primary/[0.03]'
+          ? 'border-primary bg-primary/5 scale-[1.01]'
+          : 'border-border hover:border-primary/50 hover:bg-primary/[0.03]'
           }`}
       >
         <input
