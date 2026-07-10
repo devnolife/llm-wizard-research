@@ -1,9 +1,9 @@
 {
   "experiment_info": {
-    "timestamp": "2026-07-10T11:48:36.753483",
+    "timestamp": "2026-07-10T12:57:01.316787",
     "model": "gpt-oss:latest",
     "mode": "full",
-    "seed": 43,
+    "seed": 45,
     "papers_dir": "/home/devnolife/wizard-research/research_papers",
     "topics": {
       "T1": "deep learning architectures and optimization techniques",
@@ -127,7 +127,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 117.68
+        "extraction_time": 102.02
       },
       {
         "paper": "Densely Connected Convolutional Networks",
@@ -140,14 +140,14 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 82.23
+        "extraction_time": 77.13
       },
       {
         "paper": "Adam: A Method for Stochastic Optimization",
         "num_facts": 1,
         "extraction_stats": {
           "paper_id": "adam_paper.pdf",
-          "entities_extracted": 19,
+          "entities_extracted": 20,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 1,
           "total_facts": 1
@@ -160,39 +160,45 @@
             "confidence": 0.6
           }
         ],
-        "extraction_time": 90.65
+        "extraction_time": 108.89
       },
       {
         "paper": "Batch Normalization: Accelerating Deep Network Training",
-        "num_facts": 3,
+        "num_facts": 4,
         "extraction_stats": {
           "paper_id": "batchnorm_paper.pdf",
           "entities_extracted": 14,
-          "llm_facts_extracted": 3,
+          "llm_facts_extracted": 4,
           "pattern_facts_extracted": 0,
-          "total_facts": 3
+          "total_facts": 4
         },
         "facts_sample": [
           {
             "subject": "ResNet",
-            "predicate": "EVALUATED_ON",
+            "predicate": "REQUIRES_DATA",
+            "object": "MNIST",
+            "confidence": 0.8
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.85
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "APPLIES_TO",
             "object": "MNIST",
             "confidence": 0.9
           },
           {
             "subject": "ResNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.95
-          },
-          {
-            "subject": "ResNet",
-            "predicate": "REQUIRES_DATA",
+            "predicate": "EVALUATED_ON",
             "object": "MNIST",
-            "confidence": 0.85
+            "confidence": 0.9
           }
         ],
-        "extraction_time": 75.44
+        "extraction_time": 81.55
       },
       {
         "paper": "Layer Normalization",
@@ -205,7 +211,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 101.8
+        "extraction_time": 104.29
       },
       {
         "paper": "Generative Adversarial Nets",
@@ -218,20 +224,20 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 79.31
+        "extraction_time": 72.76
       },
       {
         "paper": "You Only Look Once: Unified, Real-Time Object Detection",
         "num_facts": 0,
         "extraction_stats": {
           "paper_id": "yolo_paper.pdf",
-          "entities_extracted": 16,
+          "entities_extracted": 2,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 89.9
+        "extraction_time": 71.83
       },
       {
         "paper": "Faster R-CNN: Towards Real-Time Object Detection",
@@ -244,7 +250,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 101.12
+        "extraction_time": 103.19
       },
       {
         "paper": "SSD: Single Shot MultiBox Detector",
@@ -257,7 +263,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 72.1
+        "extraction_time": 77.08
       },
       {
         "paper": "Mask R-CNN",
@@ -270,27 +276,39 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 100.69
+        "extraction_time": 105.43
       },
       {
         "paper": "EfficientNet: Rethinking Model Scaling for CNNs",
-        "num_facts": 1,
+        "num_facts": 3,
         "extraction_stats": {
           "paper_id": "efficientnet_paper.pdf",
-          "entities_extracted": 29,
-          "llm_facts_extracted": 0,
-          "pattern_facts_extracted": 1,
-          "total_facts": 1
+          "entities_extracted": 13,
+          "llm_facts_extracted": 3,
+          "pattern_facts_extracted": 0,
+          "total_facts": 3
         },
         "facts_sample": [
           {
-            "subject": "Compound Scaling Method",
-            "predicate": "EXTENDS",
-            "object": "Compound Scaling",
-            "confidence": 0.6
+            "subject": "accuracy",
+            "predicate": "ACHIEVES",
+            "object": "Result: 80%",
+            "confidence": 0.8
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.9
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "ACHIEVES",
+            "object": "Result: 80%",
+            "confidence": 0.85
           }
         ],
-        "extraction_time": 91.02
+        "extraction_time": 84.61
       },
       {
         "paper": "An Image is Worth 16x16 Words: Transformers for Image Recognition",
@@ -303,99 +321,103 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 74.88
+        "extraction_time": 73.88
       },
       {
         "paper": "Attention Is All You Need",
         "num_facts": 0,
         "extraction_stats": {
           "paper_id": "attention_is_all_you_need.pdf",
-          "entities_extracted": 1,
+          "entities_extracted": 18,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 72.41
+        "extraction_time": 107.58
       },
       {
         "paper": "BERT: Pre-training of Deep Bidirectional Transformers",
-        "num_facts": 2,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "bert_paper.pdf",
-          "entities_extracted": 7,
-          "llm_facts_extracted": 2,
+          "entities_extracted": 23,
+          "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
-          "total_facts": 2
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 97.68
+      },
+      {
+        "paper": "Language Models are Few-Shot Learners (GPT-3)",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "gpt3_paper.pdf",
+          "entities_extracted": 12,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 102.59
+      },
+      {
+        "paper": "Exploring the Limits of Transfer Learning with T5",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "t5_paper.pdf",
+          "entities_extracted": 3,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 77.77
+      },
+      {
+        "paper": "RoBERTa: A Robustly Optimized BERT Pretraining Approach",
+        "num_facts": 6,
+        "extraction_stats": {
+          "paper_id": "roberta_paper.pdf",
+          "entities_extracted": 11,
+          "llm_facts_extracted": 6,
+          "pattern_facts_extracted": 0,
+          "total_facts": 6
         },
         "facts_sample": [
           {
             "subject": "BERT",
-            "predicate": "USES_METHOD",
-            "object": "transformer",
+            "predicate": "ACHIEVES",
+            "object": "Glue",
+            "confidence": 0.92
+          },
+          {
+            "subject": "BERT",
+            "predicate": "EVALUATED_ON",
+            "object": "Glue",
+            "confidence": 0.97
+          },
+          {
+            "subject": "BERT",
+            "predicate": "APPLIES_TO",
+            "object": "Glue",
             "confidence": 0.95
           },
           {
             "subject": "BERT",
-            "predicate": "EXTENDS",
-            "object": "transformer",
-            "confidence": 0.9
-          }
-        ],
-        "extraction_time": 77.29
-      },
-      {
-        "paper": "Language Models are Few-Shot Learners (GPT-3)",
-        "num_facts": 1,
-        "extraction_stats": {
-          "paper_id": "gpt3_paper.pdf",
-          "entities_extracted": 16,
-          "llm_facts_extracted": 0,
-          "pattern_facts_extracted": 1,
-          "total_facts": 1
-        },
-        "facts_sample": [
+            "predicate": "EVALUATED_ON",
+            "object": "SQuAD",
+            "confidence": 0.97
+          },
           {
-            "subject": "language models",
-            "predicate": "APPLIES_TO",
-            "object": "misuse",
-            "confidence": 0.6
+            "subject": "BERT",
+            "predicate": "ACHIEVES",
+            "object": "SQuAD",
+            "confidence": 0.92
           }
         ],
-        "extraction_time": 83.41
-      },
-      {
-        "paper": "Exploring the Limits of Transfer Learning with T5",
-        "num_facts": 1,
-        "extraction_stats": {
-          "paper_id": "t5_paper.pdf",
-          "entities_extracted": 3,
-          "llm_facts_extracted": 1,
-          "pattern_facts_extracted": 0,
-          "total_facts": 1
-        },
-        "facts_sample": [
-          {
-            "subject": "transformer",
-            "predicate": "IMPROVES",
-            "object": "transformer",
-            "confidence": 0.75
-          }
-        ],
-        "extraction_time": 87.51
-      },
-      {
-        "paper": "RoBERTa: A Robustly Optimized BERT Pretraining Approach",
-        "num_facts": 0,
-        "extraction_stats": {
-          "paper_id": "roberta_paper.pdf",
-          "entities_extracted": 19,
-          "llm_facts_extracted": 0,
-          "pattern_facts_extracted": 0,
-          "total_facts": 0
-        },
-        "facts_sample": [],
-        "extraction_time": 103.49
+        "extraction_time": 91.04
       },
       {
         "paper": "ELECTRA: Pre-training Text Encoders as Discriminators",
@@ -409,39 +431,26 @@
         },
         "facts_sample": [
           {
-            "subject": "Accuracy",
+            "subject": "accuracy",
             "predicate": "ACHIEVES",
             "object": "Result: 97%",
-            "confidence": 0.95
+            "confidence": 0.99
           }
         ],
-        "extraction_time": 71.28
+        "extraction_time": 77.34
       },
       {
         "paper": "MobileNets: Efficient CNNs for Mobile Vision Applications",
-        "num_facts": 2,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "mobilenet_paper.pdf",
           "entities_extracted": 24,
-          "llm_facts_extracted": 2,
+          "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
-          "total_facts": 2
+          "total_facts": 0
         },
-        "facts_sample": [
-          {
-            "subject": "FaceNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.88
-          },
-          {
-            "subject": "MobileNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.92
-          }
-        ],
-        "extraction_time": 81.79
+        "facts_sample": [],
+        "extraction_time": 106.64
       },
       {
         "paper": "MobileNetV2: Inverted Residuals and Linear Bottlenecks",
@@ -456,21 +465,15 @@
         "facts_sample": [
           {
             "subject": "ResNet",
-            "predicate": "IMPROVES",
-            "object": "Accuracy",
-            "confidence": 0.6
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.9
           },
           {
             "subject": "MobileNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.95
-          },
-          {
-            "subject": "DenseNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.9
+            "predicate": "EXTENDS",
+            "object": "eNet",
+            "confidence": 0.6
           },
           {
             "subject": "DenseNet",
@@ -479,26 +482,39 @@
             "confidence": 0.85
           },
           {
-            "subject": "MobileNet",
-            "predicate": "EXTENDS",
-            "object": "eNet",
+            "subject": "DenseNet",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.93
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "IMPROVES",
+            "object": "accuracy",
             "confidence": 0.6
           }
         ],
-        "extraction_time": 85.78
+        "extraction_time": 87.15
       },
       {
         "paper": "DistilBERT, a distilled version of BERT",
-        "num_facts": 0,
+        "num_facts": 1,
         "extraction_stats": {
           "paper_id": "distilbert_paper.pdf",
-          "entities_extracted": 20,
-          "llm_facts_extracted": 0,
+          "entities_extracted": 7,
+          "llm_facts_extracted": 1,
           "pattern_facts_extracted": 0,
-          "total_facts": 0
+          "total_facts": 1
         },
-        "facts_sample": [],
-        "extraction_time": 109.48
+        "facts_sample": [
+          {
+            "subject": "BERT",
+            "predicate": "EVALUATED_ON",
+            "object": "Glue",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 83.39
       },
       {
         "paper": "Distilling the Knowledge in a Neural Network",
@@ -514,164 +530,139 @@
           {
             "subject": "onImageNet",
             "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.9
+            "object": "accuracy",
+            "confidence": 0.8
           }
         ],
-        "extraction_time": 73.42
+        "extraction_time": 77.56
       },
       {
         "paper": "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters",
         "num_facts": 0,
         "extraction_stats": {
           "paper_id": "squeezenet_paper.pdf",
-          "entities_extracted": 48,
+          "entities_extracted": 26,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 103.28
+        "extraction_time": 101.37
       }
     ],
-    "total_facts": 19,
-    "total_time": 2025.96,
+    "total_facts": 23,
+    "total_time": 2072.77,
     "fact_table_stats": {
-      "total_entities": 139,
-      "total_facts": 19,
+      "total_entities": 119,
+      "total_facts": 23,
       "total_inferred_facts": 0,
       "entities_by_type": {
-        "METHOD": 41,
-        "DATASET": 8,
+        "METHOD": 47,
+        "DATASET": 6,
         "METRIC": 7,
-        "CONCEPT": 34,
-        "DOMAIN": 3,
-        "PAPER": 17,
-        "FINDING": 24,
-        "CONSTRAINT": 5
+        "CONCEPT": 26,
+        "FINDING": 7,
+        "PAPER": 20,
+        "CONSTRAINT": 2,
+        "DOMAIN": 4
       },
       "facts_by_predicate": {
-        "EXTENDS": 4,
-        "ACHIEVES": 7,
-        "EVALUATED_ON": 1,
+        "EXTENDS": 2,
+        "APPLIES_TO": 3,
+        "EVALUATED_ON": 4,
+        "ACHIEVES": 11,
         "REQUIRES_DATA": 1,
-        "USES_METHOD": 1,
-        "APPLIES_TO": 1,
-        "IMPROVES": 4
+        "IMPROVES": 2
       },
-      "papers_indexed": 10
+      "papers_indexed": 8
     },
     "all_facts": [
       {
-        "fact_id": "bc560bb0",
+        "fact_id": "c915a582",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.9,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "error rates achieved by wide ResNet architecture",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "9725df97",
         "subject": "onImageNet",
         "subject_type": "METHOD",
         "predicate": "ACHIEVES",
-        "object": "Accuracy",
+        "object": "accuracy",
         "object_type": "METRIC",
-        "confidence": 0.9,
+        "confidence": 0.8,
         "source_paper": "distillation_paper.pdf",
         "evidence": "All networks are evaluated as training progresses by computing the validation accuracy@1",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "2919be85",
-        "subject": "Compound Scaling Method",
-        "subject_type": "METHOD",
-        "predicate": "EXTENDS",
-        "object": "Compound Scaling",
-        "object_type": "CONCEPT",
-        "confidence": 0.6,
-        "source_paper": "efficientnet_paper.pdf",
-        "evidence": "Based on this observation, we propose a simple yet effective compound scaling method.",
-        "extraction_method": "pattern"
-      },
-      {
-        "fact_id": "949b9929",
-        "subject": "Accuracy",
-        "subject_type": "METRIC",
-        "predicate": "ACHIEVES",
-        "object": "Result: 97%",
-        "object_type": "FINDING",
-        "confidence": 0.95,
-        "source_paper": "electra_paper.pdf",
-        "evidence": "The final model achieves 97%-98% accuracy on NSP.",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "8de5603d",
-        "subject": "FaceNet",
-        "subject_type": "METHOD",
-        "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.88,
-        "source_paper": "mobilenet_paper.pdf",
-        "evidence": "FaceNet model is a state of the art face recognition model",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "5fbc9526",
-        "subject": "MobileNet",
+        "fact_id": "b3826a48",
+        "subject": "DenseNet",
         "subject_type": "METHOD",
         "predicate": "IMPROVES",
         "object": "ResNet",
         "object_type": "METHOD",
-        "confidence": 0.8,
+        "confidence": 0.85,
         "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "achieving state of the art on multiple image classification and error rates achieved by wide ResNet architecture",
+        "evidence": "the DenseNet with L = 100 and k = 24 also surpasses the current best result achieved by wide ResNet",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "1a968b64",
-        "subject": "MobileNet",
-        "subject_type": "METHOD",
-        "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.95,
-        "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "significantly improves its accuracy, achieving state of the art on multiple image classification",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "34c859ba",
-        "subject": "MobileNet",
-        "subject_type": "METHOD",
-        "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.92,
-        "source_paper": "mobilenet_paper.pdf",
-        "evidence": "significantly improves its accuracy, achieving state of the art on multiple image classification",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "847aa0f1",
+        "fact_id": "df84f290",
         "subject": "BERT",
         "subject_type": "METHOD",
-        "predicate": "USES_METHOD",
-        "object": "transformer",
-        "object_type": "METHOD",
-        "confidence": 0.95,
-        "source_paper": "bert_paper.pdf",
-        "evidence": "BERT uses a transformer architecture",
+        "predicate": "ACHIEVES",
+        "object": "SQuAD",
+        "object_type": "DATASET",
+        "confidence": 0.92,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "These results illustrate the importance of these previously overlooked design decisions and suggest that BERT's pretraining objective remains competitive with recently proposed alternatives.",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "85471122",
-        "subject": "transformer",
+        "fact_id": "ddafd246",
+        "subject": "ResNet",
         "subject_type": "METHOD",
-        "predicate": "IMPROVES",
-        "object": "transformer",
-        "object_type": "METHOD",
-        "confidence": 0.75,
-        "source_paper": "t5_paper.pdf",
-        "evidence": "architectural variants",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.85,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "All networks are evaluated as training progresses by computing the validation accuracy@1",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "67029b30",
+        "fact_id": "3e4cfb50",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "Glue",
+        "object_type": "DATASET",
+        "confidence": 0.92,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "These results illustrate the importance of these previously overlooked design decisions and suggest that BERT's pretraining objective remains competitive with recently proposed alternatives.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "2fcfce14",
+        "subject": "accuracy",
+        "subject_type": "METRIC",
+        "predicate": "ACHIEVES",
+        "object": "Result: 80%",
+        "object_type": "FINDING",
+        "confidence": 0.8,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "but the accuracy gain quickly saturate after reaching 80%",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "80dd960b",
         "subject": "MobileNet",
         "subject_type": "METHOD",
         "predicate": "EXTENDS",
@@ -683,31 +674,115 @@
         "extraction_method": "pattern"
       },
       {
-        "fact_id": "75ae0609",
+        "fact_id": "828b32e3",
         "subject": "ResNet",
         "subject_type": "METHOD",
         "predicate": "REQUIRES_DATA",
         "object": "MNIST",
         "object_type": "DATASET",
-        "confidence": 0.85,
+        "confidence": 0.8,
         "source_paper": "batchnorm_paper.pdf",
-        "evidence": "\"trained the network for 50000 steps, with 60 examples per mini-batch\"",
+        "evidence": "We were interested in the comparison between the baseline and batch-normalized networks, rather than achieving the state of the art performance on MNIST",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "d624e7a6",
-        "subject": "DenseNet",
+        "fact_id": "ee971ad7",
+        "subject": "ResNet",
         "subject_type": "METHOD",
         "predicate": "ACHIEVES",
-        "object": "Accuracy",
+        "object": "accuracy",
         "object_type": "METRIC",
         "confidence": 0.9,
-        "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "the DenseNet with L = 100 and k = 24 also surpasses the current best result achieved by wide ResNet",
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "Bigger networks with larger width, depth, or resolution tend to achieve higher accuracy",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "a8b0b7ab",
+        "fact_id": "d49821b4",
+        "subject": "MobileNet",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.95,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "significantly improves its accuracy, achieving state of the art on multiple image classification and error rates achieved by wide ResNet architecture",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "cb93e429",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "SQuAD",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on GLUE, RACE and SQuAD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "8ce7f365",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MNIST",
+        "object_type": "DATASET",
+        "confidence": 0.9,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "We were interested in the comparison between the baseline and batch-normalized networks, rather than achieving the state of the art performance on MNIST",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "1d9dbcc9",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "Glue",
+        "object_type": "DATASET",
+        "confidence": 0.97,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on GLUE, RACE and SQuAD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "2dc2d9c5",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "IMPROVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.6,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "It re- tains its simplicity and does not require any special op- erators while signi cantly improves",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "70828734",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Glue",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on GLUE, RACE and SQuAD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "69a8afb8",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "Glue",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "\"Full results on GLUE\"",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "a8d90ab8",
         "subject": "ResNet",
         "subject_type": "METHOD",
         "predicate": "EVALUATED_ON",
@@ -715,23 +790,11 @@
         "object_type": "DATASET",
         "confidence": 0.9,
         "source_paper": "batchnorm_paper.pdf",
-        "evidence": "\"state of the art performance on MNIST\"",
+        "evidence": "All networks are evaluated as training progresses by computing the validation accuracy@1",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "27d187a9",
-        "subject": "DenseNet",
-        "subject_type": "METHOD",
-        "predicate": "IMPROVES",
-        "object": "ResNet",
-        "object_type": "METHOD",
-        "confidence": 0.85,
-        "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "surpasses the current best result achieved by wide ResNet",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "9dfffded",
+        "fact_id": "63d344cc",
         "subject": "Adam",
         "subject_type": "METHOD",
         "predicate": "EXTENDS",
@@ -743,52 +806,52 @@
         "extraction_method": "pattern"
       },
       {
-        "fact_id": "28246c48",
+        "fact_id": "e282f2cc",
         "subject": "ResNet",
         "subject_type": "METHOD",
         "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.95,
-        "source_paper": "batchnorm_paper.pdf",
-        "evidence": "\"validation accuracy@1\"",
+        "object": "Result: 80%",
+        "object_type": "FINDING",
+        "confidence": 0.85,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "but the accuracy gain quickly saturate after reaching 80%",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "e4d6ac7f",
-        "subject": "ResNet",
+        "fact_id": "b381e80e",
+        "subject": "DenseNet",
         "subject_type": "METHOD",
-        "predicate": "IMPROVES",
-        "object": "Accuracy",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
         "object_type": "METRIC",
-        "confidence": 0.6,
+        "confidence": 0.93,
         "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "It re- tains its simplicity and does not require any special op- erators while signi cantly improves",
-        "extraction_method": "pattern"
+        "evidence": "the DenseNet with L = 100 and k = 24 also surpasses the current best result achieved by wide ResNet",
+        "extraction_method": "llm"
       },
       {
-        "fact_id": "5432477d",
+        "fact_id": "6f7e9657",
         "subject": "BERT",
         "subject_type": "METHOD",
-        "predicate": "EXTENDS",
-        "object": "transformer",
-        "object_type": "METHOD",
-        "confidence": 0.9,
-        "source_paper": "bert_paper.pdf",
-        "evidence": "BERT uses a transformer architecture",
+        "predicate": "EVALUATED_ON",
+        "object": "SQuAD",
+        "object_type": "DATASET",
+        "confidence": 0.97,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on GLUE, RACE and SQuAD",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "517ebf5a",
-        "subject": "language models",
-        "subject_type": "CONCEPT",
-        "predicate": "APPLIES_TO",
-        "object": "misuse",
-        "object_type": "CONCEPT",
-        "confidence": 0.6,
-        "source_paper": "gpt3_paper.pdf",
-        "evidence": "34 6.1 Misuse of Language Models Malicious uses of language models can be somewhat dif cult to antic",
-        "extraction_method": "pattern"
+        "fact_id": "dc0863aa",
+        "subject": "accuracy",
+        "subject_type": "METRIC",
+        "predicate": "ACHIEVES",
+        "object": "Result: 97%",
+        "object_type": "FINDING",
+        "confidence": 0.99,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "The model achieves 97%-98% accuracy on NSP.",
+        "extraction_method": "llm"
       }
     ]
   },
@@ -798,7 +861,7 @@
         "topic": "deep learning architectures and optimization techniques",
         "topic_key": "T1",
         "num_papers_retrieved": 10,
-        "total_indicators": 4,
+        "total_indicators": 3,
         "indicators": [
           {
             "type": "IndicatorType.FRAGMENTATION",
@@ -812,21 +875,6 @@
             "suggested_directions": [
               "Develop an integrative framework that unifies the 9 approaches",
               "Conduct a systematic review comparing methodological paradigms"
-            ]
-          },
-          {
-            "type": "IndicatorType.INCOMPLETENESS",
-            "detection_method": "aspect_coverage",
-            "description": "Collective incompleteness detected for 'deep learning architectures and optimization techniques': 10 critical aspect(s) not addressed by any of the 10 papers analyzed.",
-            "confidence": 0.85,
-            "adjusted_confidence": 0.85,
-            "verdict": "RuleVerdictType.PASS",
-            "requires_human_validation": true,
-            "evidence_count": 3,
-            "suggested_directions": [
-              "Investigate: Evolution of network architectures (CNNs, RNNs, Transformers, Graph Neural Networks, etc.)",
-              "Investigate: Advances in activation functions and normalization techniques",
-              "Investigate: Loss function design and its impact on convergence"
             ]
           },
           {
@@ -861,22 +909,21 @@
         "distribution": {
           "FRAGMENTATION": 1,
           "INCONSISTENCY": 1,
-          "INCOMPLETENESS": 2
+          "INCOMPLETENESS": 1
         },
         "verdicts": {
-          "PASS": 4,
+          "PASS": 3,
           "FLAG": 0,
           "REJECT": 0,
           "NONE": 0
         },
         "confidence_scores": [
           0.885,
-          0.85,
           0.8,
           0.4
         ],
-        "analysis_time": 11.69,
-        "avg_confidence": 0.734,
+        "analysis_time": 12.25,
+        "avg_confidence": 0.695,
         "max_confidence": 0.885,
         "min_confidence": 0.4
       },
@@ -945,7 +992,7 @@
           0.8,
           0.4
         ],
-        "analysis_time": 11.69,
+        "analysis_time": 12.04,
         "avg_confidence": 0.7,
         "max_confidence": 0.9,
         "min_confidence": 0.4
@@ -966,9 +1013,9 @@
             "requires_human_validation": true,
             "evidence_count": 3,
             "suggested_directions": [
-              "Investigate: Evolution of attention mechanisms in NLP (from additive to scaled dot‑product).",
-              "Investigate: Core architectures that employ attention (Transformer, BERT, GPT, etc.).",
-              "Investigate: Variants of attention (self‑attention, cross‑attention, multi‑head, sparse, adaptive)."
+              "Investigate: Historical development and evolution of attention mechanisms",
+              "Investigate: Architectural variations (Transformer, BERT, GPT, XLNet, etc.)",
+              "Investigate: Computational efficiency, memory usage, and scalability"
             ]
           },
           {
@@ -1031,7 +1078,7 @@
           0.7,
           0.4
         ],
-        "analysis_time": 11.2,
+        "analysis_time": 17.07,
         "avg_confidence": 0.687,
         "max_confidence": 0.85,
         "min_confidence": 0.4
@@ -1066,9 +1113,9 @@
             "requires_human_validation": true,
             "evidence_count": 3,
             "suggested_directions": [
-              "Investigate: Model compression techniques (pruning, quantization, low‑rank factorization)",
-              "Investigate: Knowledge distillation and teacher‑student frameworks",
-              "Investigate: Hardware‑aware neural architecture search (NAS) for edge devices"
+              "Investigate: Model compression and lightweight architecture design",
+              "Investigate: Quantization, pruning, and other parameter‑reduction techniques",
+              "Investigate: Hardware‑aware neural architecture search (NAS) for edge CPUs/NPUs"
             ]
           }
         ],
@@ -1087,18 +1134,18 @@
           0.885,
           0.85
         ],
-        "analysis_time": 9.48,
+        "analysis_time": 8.18,
         "avg_confidence": 0.867,
         "max_confidence": 0.885,
         "min_confidence": 0.85
       }
     ],
-    "total_time": 44.06
+    "total_time": 49.54
   },
   "phase4_rule_engine": {
     "summary": {
-      "total_evaluated": 13,
-      "passed": 13,
+      "total_evaluated": 12,
+      "passed": 12,
       "flagged": 0,
       "rejected": 0,
       "pass_rate": 100.0,
@@ -1237,17 +1284,17 @@
       "correct_verdicts": 6,
       "accuracy": 100.0
     },
-    "total_time": 0.02
+    "total_time": 0.03
   },
   "overall_metrics": {
-    "total_pipeline_time_seconds": 2070.04,
+    "total_pipeline_time_seconds": 2122.34,
     "papers_processed": 23,
     "total_chunks_ingested": 0,
-    "total_facts_extracted": 19,
-    "total_gap_indicators": 13,
+    "total_facts_extracted": 23,
+    "total_gap_indicators": 12,
     "topics_analyzed": 4,
-    "avg_confidence": 0.732,
-    "avg_adjusted_confidence": 0.732,
+    "avg_confidence": 0.723,
+    "avg_adjusted_confidence": 0.723,
     "rule_engine_pass_rate": 100.0,
     "rule_engine_flag_rate": 0.0,
     "rule_engine_reject_rate": 0.0,

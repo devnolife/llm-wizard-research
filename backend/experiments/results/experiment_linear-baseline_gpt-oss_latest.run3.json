@@ -1,9 +1,9 @@
 {
   "experiment_info": {
-    "timestamp": "2026-07-10T14:45:41.278179",
+    "timestamp": "2026-07-10T14:47:12.312175",
     "model": "gpt-oss:latest",
     "mode": "linear-baseline",
-    "seed": 43,
+    "seed": 45,
     "papers_dir": "/home/devnolife/wizard-research/research_papers",
     "topics": {
       "T1": "deep learning architectures and optimization techniques",
@@ -130,19 +130,9 @@
         "indicators": [
           {
             "type": "INCONSISTENCY",
-            "description": "Theoretical arguments suggest that adding identity layers to a shallow network should not increase training error, yet empirical observations of the degradation problem contradict this, indicating a m",
-            "confidence": 0.92,
-            "adjusted_confidence": 0.92,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "INCOMPLETENESS",
-            "description": "Current scaling strategies for convolutional networks (e.g., uniform width/depth/resolution scaling) lack a rigorous theoretical foundation and have not been systematically evaluated across diverse da",
-            "confidence": 0.88,
-            "adjusted_confidence": 0.88,
+            "description": "Theoretical analysis predicts that adding identity layers to a shallow model yields a deeper model with no higher training error, yet empirical observations show a degradation problem, indicating a mi",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
             "verdict": "NONE",
             "requires_human_validation": true,
             "evidence_count": 0,
@@ -150,17 +140,7 @@
           },
           {
             "type": "FRAGMENTATION",
-            "description": "Research on shortcut connections, residual learning, and architecture search (including genetic algorithms and reinforcement learning) is scattered across many studies, with no unified framework that ",
-            "confidence": 0.85,
-            "adjusted_confidence": 0.85,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "INCOMPLETENESS",
-            "description": "Natural gradient and other advanced optimization methods have been studied in isolation, but their effectiveness on large‑scale, modern deep architectures (e.g., ResNet, EfficientNet) remains largely ",
+            "description": "Numerous architecture search methods (hyper‑parameter optimization, pruning, connectivity learning, genetic algorithms, reinforcement learning) are studied in isolation without a common benchmark or c",
             "confidence": 0.8,
             "adjusted_confidence": 0.8,
             "verdict": "NONE",
@@ -170,55 +150,7 @@
           },
           {
             "type": "INCOMPLETENESS",
-            "description": "There is a lack of comparative analyses between adversarial training and Markov‑chain‑based generative models in terms of mode coverage, sharpness of generated samples, and susceptibility to mode coll",
-            "confidence": 0.75,
-            "adjusted_confidence": 0.75,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          }
-        ],
-        "distribution": {
-          "FRAGMENTATION": 1,
-          "INCONSISTENCY": 1,
-          "INCOMPLETENESS": 3
-        },
-        "verdicts": {
-          "PASS": 0,
-          "FLAG": 0,
-          "REJECT": 0,
-          "NONE": 5
-        },
-        "confidence_scores": [
-          0.92,
-          0.88,
-          0.85,
-          0.8,
-          0.75
-        ],
-        "avg_confidence": 0.84,
-        "analysis_time": 6.31
-      },
-      {
-        "topic": "computer vision object detection and image recognition",
-        "topic_key": "T2",
-        "num_papers_retrieved": 10,
-        "total_indicators": 5,
-        "indicators": [
-          {
-            "type": "INCOMPLETENESS",
-            "description": "YOLO has not been systematically evaluated on non-natural image domains such as artwork, medical imaging, or satellite imagery, limiting understanding of its generalization across diverse visual conte",
-            "confidence": 0.8,
-            "adjusted_confidence": 0.8,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "INCONSISTENCY",
-            "description": "The confidence score defined as Pr(Object) × IOU may not consistently reflect true detection quality, leading to potential mismatch between training objectives and inference performance.",
+            "description": "The proposed compound scaling method uniformly scales width, depth, and resolution, but its effectiveness has only been demonstrated on limited datasets, leaving its generalizability across tasks unve",
             "confidence": 0.7,
             "adjusted_confidence": 0.7,
             "verdict": "NONE",
@@ -228,7 +160,7 @@
           },
           {
             "type": "FRAGMENTATION",
-            "description": "Existing literature references multiple detection frameworks (YOLO, RCNN, Poselets, D&T) without a unified benchmark or comparative analysis, resulting in fragmented evaluation practices.",
+            "description": "Shortcut connections and preconditioning have been investigated separately; there is no integrated approach that combines shortcut architectures with preconditioning to simplify optimization.",
             "confidence": 0.6,
             "adjusted_confidence": 0.6,
             "verdict": "NONE",
@@ -238,129 +170,7 @@
           },
           {
             "type": "INCOMPLETENESS",
-            "description": "YOLO’s implicit global context modeling lacks explicit relational reasoning between objects; research on integrating scene graph or object relationship modeling into YOLO is missing.",
-            "confidence": 0.75,
-            "adjusted_confidence": 0.75,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "INCOMPLETENESS",
-            "description": "There is no comprehensive study on YOLO’s robustness to challenging conditions such as heavy occlusion, extreme lighting variations, or adversarial perturbations.",
-            "confidence": 0.65,
-            "adjusted_confidence": 0.65,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          }
-        ],
-        "distribution": {
-          "FRAGMENTATION": 1,
-          "INCONSISTENCY": 1,
-          "INCOMPLETENESS": 3
-        },
-        "verdicts": {
-          "PASS": 0,
-          "FLAG": 0,
-          "REJECT": 0,
-          "NONE": 5
-        },
-        "confidence_scores": [
-          0.8,
-          0.7,
-          0.6,
-          0.75,
-          0.65
-        ],
-        "avg_confidence": 0.7,
-        "analysis_time": 7.65
-      },
-      {
-        "topic": "natural language processing and attention mechanisms",
-        "topic_key": "T3",
-        "num_papers_retrieved": 10,
-        "total_indicators": 1,
-        "indicators": [
-          {
-            "type": "INCOMPLETENESS",
-            "description": "No comprehensive benchmark exists to quantify the functional specialization of individual attention heads across transformer layers and downstream tasks, limiting systematic comparison of head behavio",
-            "confidence": 0.85,
-            "adjusted_confidence": 0.85,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          }
-        ],
-        "distribution": {
-          "FRAGMENTATION": 0,
-          "INCONSISTENCY": 0,
-          "INCOMPLETENESS": 1
-        },
-        "verdicts": {
-          "PASS": 0,
-          "FLAG": 0,
-          "REJECT": 0,
-          "NONE": 1
-        },
-        "confidence_scores": [
-          0.85
-        ],
-        "avg_confidence": 0.85,
-        "analysis_time": 4.17
-      },
-      {
-        "topic": "efficient deep learning deployment on resource-constrained edge devices",
-        "topic_key": "T4",
-        "num_papers_retrieved": 10,
-        "total_indicators": 5,
-        "indicators": [
-          {
-            "type": "INCOMPLETENESS",
-            "description": "There is no systematic evaluation of transfer learning and fine‑tuning strategies specifically tailored for client‑side inference on resource‑constrained edge devices.",
-            "confidence": 0.8,
-            "adjusted_confidence": 0.8,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "FRAGMENTATION",
-            "description": "Research on efficient deep‑learning architectures (DenseNet, ResNet, Inception, etc.) is scattered across disparate studies, lacking a unified framework or guideline for selecting models for edge depl",
-            "confidence": 0.7,
-            "adjusted_confidence": 0.7,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "INCONSISTENCY",
-            "description": "Conflicting claims exist regarding the relative efficiency of DenseNet versus ResNet for edge devices, with no consensus on which architecture offers the best trade‑off between accuracy, size, and inf",
-            "confidence": 0.6,
-            "adjusted_confidence": 0.6,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "INCOMPLETENESS",
-            "description": "The impact of generator size on compute‑efficiency for models like ELECTRA has not been systematically studied in the context of edge deployment, leaving a gap in understanding how to balance generato",
-            "confidence": 0.5,
-            "adjusted_confidence": 0.5,
-            "verdict": "NONE",
-            "requires_human_validation": true,
-            "evidence_count": 0,
-            "suggested_directions": []
-          },
-          {
-            "type": "FRAGMENTATION",
-            "description": "There is a lack of standardized, hardware‑specific benchmarks that evaluate speed, memory footprint, and energy consumption for deep‑learning models on typical edge devices, hindering reproducible com",
+            "description": "Adversarial networks can represent sharp distributions, yet there is a lack of systematic evaluation of their ability to cover all modes of a multimodal distribution and to mitigate mode collapse.",
             "confidence": 0.7,
             "adjusted_confidence": 0.7,
             "verdict": "NONE",
@@ -381,17 +191,207 @@
           "NONE": 5
         },
         "confidence_scores": [
+          0.9,
           0.8,
           0.7,
           0.6,
-          0.5,
           0.7
         ],
-        "avg_confidence": 0.66,
-        "analysis_time": 7.51
+        "avg_confidence": 0.74,
+        "analysis_time": 10.38
+      },
+      {
+        "topic": "computer vision object detection and image recognition",
+        "topic_key": "T2",
+        "num_papers_retrieved": 10,
+        "total_indicators": 5,
+        "indicators": [
+          {
+            "type": "INCOMPLETENESS",
+            "description": "There is no systematic evaluation of YOLO’s performance under domain shift conditions, such as comparing detection accuracy on artwork versus natural images.",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "The literature lacks quantitative analysis of YOLO’s ability to detect small objects and handle varying aspect ratios, despite the mention of default boxes and multi‑scale feature maps.",
+            "confidence": 0.85,
+            "adjusted_confidence": 0.85,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "Multiple detection frameworks (YOLO, RCNN, Poselets, DPM, etc.) are cited, but there is no unified benchmark or comparative study to assess their relative strengths and weaknesses.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCONSISTENCY",
+            "description": "The definition of confidence as Pr(Object) × IOU is provided, yet the text does not discuss how this score is calibrated or its impact on detection quality, leading to potential ambiguity.",
+            "confidence": 0.7,
+            "adjusted_confidence": 0.7,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "While YOLO is demonstrated in real‑time webcam scenarios, there is no evaluation of temporal consistency or tracking performance when objects move or change appearance across frames.",
+            "confidence": 0.75,
+            "adjusted_confidence": 0.75,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 3
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 5
+        },
+        "confidence_scores": [
+          0.9,
+          0.85,
+          0.8,
+          0.7,
+          0.75
+        ],
+        "avg_confidence": 0.8,
+        "analysis_time": 8.82
+      },
+      {
+        "topic": "natural language processing and attention mechanisms",
+        "topic_key": "T3",
+        "num_papers_retrieved": 10,
+        "total_indicators": 1,
+        "indicators": [
+          {
+            "type": "INCOMPLETENESS",
+            "description": "No comprehensive study systematically compares how individual attention heads specialize across different layers and tasks, leaving unclear whether head functions are consistent or task‑specific.",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 0,
+          "INCONSISTENCY": 0,
+          "INCOMPLETENESS": 1
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 1
+        },
+        "confidence_scores": [
+          0.9
+        ],
+        "avg_confidence": 0.9,
+        "analysis_time": 4.35
+      },
+      {
+        "topic": "efficient deep learning deployment on resource-constrained edge devices",
+        "topic_key": "T4",
+        "num_papers_retrieved": 10,
+        "total_indicators": 5,
+        "indicators": [
+          {
+            "type": "FRAGMENTATION",
+            "description": "Existing research focuses on architectural innovations (e.g., DenseNet, ResNet) but lacks a unified framework or benchmark for adapting these models to resource‑constrained edge devices, leading to fr",
+            "confidence": 0.82,
+            "adjusted_confidence": 0.82,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "There is a paucity of studies that evaluate transfer learning for low‑resource tasks directly on edge hardware, leaving a gap in understanding how fine‑tuning strategies perform under strict device co",
+            "confidence": 0.78,
+            "adjusted_confidence": 0.78,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "Systematic analyses of the trade‑off between model size, accuracy, and inference latency on real edge platforms (e.g., ARM Cortex‑A, NVIDIA Jetson) are missing, preventing informed deployment decision",
+            "confidence": 0.75,
+            "adjusted_confidence": 0.75,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCONSISTENCY",
+            "description": "Conflicting evidence exists regarding the optimal generator size in ELECTRA‑style models for edge deployment; some works suggest smaller generators reduce compute, while others highlight potential acc",
+            "confidence": 0.65,
+            "adjusted_confidence": 0.65,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "Research reports training efficiency (e.g., compute per step) separately from inference efficiency, with no standardized metrics or comparative studies, leading to fragmented insights into overall res",
+            "confidence": 0.7,
+            "adjusted_confidence": 0.7,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 2,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 2
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 5
+        },
+        "confidence_scores": [
+          0.82,
+          0.78,
+          0.75,
+          0.65,
+          0.7
+        ],
+        "avg_confidence": 0.74,
+        "analysis_time": 6.87
       }
     ],
-    "total_time": 25.64
+    "total_time": 30.42
   },
   "phase4_rule_engine": {
     "summary": {},
@@ -404,14 +404,14 @@
     "skipped": true
   },
   "overall_metrics": {
-    "total_pipeline_time_seconds": 25.64,
+    "total_pipeline_time_seconds": 30.42,
     "papers_processed": 23,
     "total_chunks_ingested": 0,
     "total_facts_extracted": 0,
     "total_gap_indicators": 16,
     "topics_analyzed": 4,
-    "avg_confidence": 0.741,
-    "avg_adjusted_confidence": 0.741,
+    "avg_confidence": 0.769,
+    "avg_adjusted_confidence": 0.769,
     "rule_engine_pass_rate": 0,
     "rule_engine_flag_rate": 0,
     "rule_engine_reject_rate": 0,

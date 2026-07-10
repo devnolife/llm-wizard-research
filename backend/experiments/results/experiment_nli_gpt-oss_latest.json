@@ -1,8 +1,8 @@
 {
   "experiment_info": {
-    "timestamp": "2026-07-10T11:48:36.753483",
+    "timestamp": "2026-07-10T15:20:18.181448",
     "model": "gpt-oss:latest",
-    "mode": "full",
+    "mode": "nli",
     "seed": 43,
     "papers_dir": "/home/devnolife/wizard-research/research_papers",
     "topics": {
@@ -127,7 +127,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 117.68
+        "extraction_time": 99.99
       },
       {
         "paper": "Densely Connected Convolutional Networks",
@@ -140,59 +140,33 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 82.23
+        "extraction_time": 71.76
       },
       {
         "paper": "Adam: A Method for Stochastic Optimization",
-        "num_facts": 1,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "adam_paper.pdf",
-          "entities_extracted": 19,
+          "entities_extracted": 1,
           "llm_facts_extracted": 0,
-          "pattern_facts_extracted": 1,
-          "total_facts": 1
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
         },
-        "facts_sample": [
-          {
-            "subject": "Adam",
-            "predicate": "EXTENDS",
-            "object": "Adagrad",
-            "confidence": 0.6
-          }
-        ],
-        "extraction_time": 90.65
+        "facts_sample": [],
+        "extraction_time": 52.22
       },
       {
         "paper": "Batch Normalization: Accelerating Deep Network Training",
-        "num_facts": 3,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "batchnorm_paper.pdf",
-          "entities_extracted": 14,
-          "llm_facts_extracted": 3,
+          "entities_extracted": 22,
+          "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
-          "total_facts": 3
+          "total_facts": 0
         },
-        "facts_sample": [
-          {
-            "subject": "ResNet",
-            "predicate": "EVALUATED_ON",
-            "object": "MNIST",
-            "confidence": 0.9
-          },
-          {
-            "subject": "ResNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.95
-          },
-          {
-            "subject": "ResNet",
-            "predicate": "REQUIRES_DATA",
-            "object": "MNIST",
-            "confidence": 0.85
-          }
-        ],
-        "extraction_time": 75.44
+        "facts_sample": [],
+        "extraction_time": 100.68
       },
       {
         "paper": "Layer Normalization",
@@ -205,7 +179,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 101.8
+        "extraction_time": 100.11
       },
       {
         "paper": "Generative Adversarial Nets",
@@ -218,20 +192,20 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 79.31
+        "extraction_time": 80.31
       },
       {
         "paper": "You Only Look Once: Unified, Real-Time Object Detection",
         "num_facts": 0,
         "extraction_stats": {
           "paper_id": "yolo_paper.pdf",
-          "entities_extracted": 16,
+          "entities_extracted": 2,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 89.9
+        "extraction_time": 68.49
       },
       {
         "paper": "Faster R-CNN: Towards Real-Time Object Detection",
@@ -244,7 +218,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 101.12
+        "extraction_time": 100.34
       },
       {
         "paper": "SSD: Single Shot MultiBox Detector",
@@ -257,7 +231,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 72.1
+        "extraction_time": 74.66
       },
       {
         "paper": "Mask R-CNN",
@@ -270,27 +244,27 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 100.69
+        "extraction_time": 99.92
       },
       {
         "paper": "EfficientNet: Rethinking Model Scaling for CNNs",
         "num_facts": 1,
         "extraction_stats": {
           "paper_id": "efficientnet_paper.pdf",
-          "entities_extracted": 29,
-          "llm_facts_extracted": 0,
-          "pattern_facts_extracted": 1,
+          "entities_extracted": 13,
+          "llm_facts_extracted": 1,
+          "pattern_facts_extracted": 0,
           "total_facts": 1
         },
         "facts_sample": [
           {
-            "subject": "Compound Scaling Method",
-            "predicate": "EXTENDS",
-            "object": "Compound Scaling",
-            "confidence": 0.6
+            "subject": "ResNet",
+            "predicate": "ACHIEVES",
+            "object": "Result: 80%",
+            "confidence": 0.8
           }
         ],
-        "extraction_time": 91.02
+        "extraction_time": 74.19
       },
       {
         "paper": "An Image is Worth 16x16 Words: Transformers for Image Recognition",
@@ -303,7 +277,7 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 74.88
+        "extraction_time": 80.9
       },
       {
         "paper": "Attention Is All You Need",
@@ -316,40 +290,27 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 72.41
+        "extraction_time": 72.72
       },
       {
         "paper": "BERT: Pre-training of Deep Bidirectional Transformers",
-        "num_facts": 2,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "bert_paper.pdf",
-          "entities_extracted": 7,
-          "llm_facts_extracted": 2,
+          "entities_extracted": 13,
+          "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
-          "total_facts": 2
+          "total_facts": 0
         },
-        "facts_sample": [
-          {
-            "subject": "BERT",
-            "predicate": "USES_METHOD",
-            "object": "transformer",
-            "confidence": 0.95
-          },
-          {
-            "subject": "BERT",
-            "predicate": "EXTENDS",
-            "object": "transformer",
-            "confidence": 0.9
-          }
-        ],
-        "extraction_time": 77.29
+        "facts_sample": [],
+        "extraction_time": 86.15
       },
       {
         "paper": "Language Models are Few-Shot Learners (GPT-3)",
         "num_facts": 1,
         "extraction_stats": {
           "paper_id": "gpt3_paper.pdf",
-          "entities_extracted": 16,
+          "entities_extracted": 19,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 1,
           "total_facts": 1
@@ -362,40 +323,58 @@
             "confidence": 0.6
           }
         ],
-        "extraction_time": 83.41
+        "extraction_time": 93.11
       },
       {
         "paper": "Exploring the Limits of Transfer Learning with T5",
-        "num_facts": 1,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "t5_paper.pdf",
           "entities_extracted": 3,
-          "llm_facts_extracted": 1,
-          "pattern_facts_extracted": 0,
-          "total_facts": 1
-        },
-        "facts_sample": [
-          {
-            "subject": "transformer",
-            "predicate": "IMPROVES",
-            "object": "transformer",
-            "confidence": 0.75
-          }
-        ],
-        "extraction_time": 87.51
-      },
-      {
-        "paper": "RoBERTa: A Robustly Optimized BERT Pretraining Approach",
-        "num_facts": 0,
-        "extraction_stats": {
-          "paper_id": "roberta_paper.pdf",
-          "entities_extracted": 19,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 103.49
+        "extraction_time": 70.18
+      },
+      {
+        "paper": "RoBERTa: A Robustly Optimized BERT Pretraining Approach",
+        "num_facts": 4,
+        "extraction_stats": {
+          "paper_id": "roberta_paper.pdf",
+          "entities_extracted": 11,
+          "llm_facts_extracted": 4,
+          "pattern_facts_extracted": 0,
+          "total_facts": 4
+        },
+        "facts_sample": [
+          {
+            "subject": "BERT",
+            "predicate": "EVALUATED_ON",
+            "object": "SQuAD",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "ACHIEVES",
+            "object": "Glue",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "ACHIEVES",
+            "object": "SQuAD",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "EVALUATED_ON",
+            "object": "Glue",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 78.67
       },
       {
         "paper": "ELECTRA: Pre-training Text Encoders as Discriminators",
@@ -409,73 +388,54 @@
         },
         "facts_sample": [
           {
-            "subject": "Accuracy",
+            "subject": "accuracy",
             "predicate": "ACHIEVES",
             "object": "Result: 97%",
-            "confidence": 0.95
+            "confidence": 0.99
           }
         ],
-        "extraction_time": 71.28
+        "extraction_time": 70.06
       },
       {
         "paper": "MobileNets: Efficient CNNs for Mobile Vision Applications",
-        "num_facts": 2,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "mobilenet_paper.pdf",
           "entities_extracted": 24,
-          "llm_facts_extracted": 2,
+          "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
-          "total_facts": 2
+          "total_facts": 0
         },
-        "facts_sample": [
-          {
-            "subject": "FaceNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.88
-          },
-          {
-            "subject": "MobileNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.92
-          }
-        ],
-        "extraction_time": 81.79
+        "facts_sample": [],
+        "extraction_time": 100.51
       },
       {
         "paper": "MobileNetV2: Inverted Residuals and Linear Bottlenecks",
-        "num_facts": 6,
+        "num_facts": 5,
         "extraction_stats": {
           "paper_id": "mobilenetv2_paper.pdf",
           "entities_extracted": 11,
-          "llm_facts_extracted": 4,
+          "llm_facts_extracted": 3,
           "pattern_facts_extracted": 2,
-          "total_facts": 6
+          "total_facts": 5
         },
         "facts_sample": [
           {
-            "subject": "ResNet",
-            "predicate": "IMPROVES",
-            "object": "Accuracy",
-            "confidence": 0.6
+            "subject": "DenseNet",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.9
           },
           {
             "subject": "MobileNet",
             "predicate": "ACHIEVES",
-            "object": "Accuracy",
+            "object": "accuracy",
             "confidence": 0.95
           },
           {
-            "subject": "DenseNet",
+            "subject": "ResNet",
             "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.9
-          },
-          {
-            "subject": "DenseNet",
-            "predicate": "IMPROVES",
-            "object": "ResNet",
+            "object": "accuracy",
             "confidence": 0.85
           },
           {
@@ -483,42 +443,41 @@
             "predicate": "EXTENDS",
             "object": "eNet",
             "confidence": 0.6
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "IMPROVES",
+            "object": "accuracy",
+            "confidence": 0.6
           }
         ],
-        "extraction_time": 85.78
+        "extraction_time": 84.62
       },
       {
         "paper": "DistilBERT, a distilled version of BERT",
         "num_facts": 0,
         "extraction_stats": {
           "paper_id": "distilbert_paper.pdf",
-          "entities_extracted": 20,
+          "entities_extracted": 12,
           "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 109.48
+        "extraction_time": 87.14
       },
       {
         "paper": "Distilling the Knowledge in a Neural Network",
-        "num_facts": 1,
+        "num_facts": 0,
         "extraction_stats": {
           "paper_id": "distillation_paper.pdf",
-          "entities_extracted": 2,
-          "llm_facts_extracted": 1,
+          "entities_extracted": 13,
+          "llm_facts_extracted": 0,
           "pattern_facts_extracted": 0,
-          "total_facts": 1
+          "total_facts": 0
         },
-        "facts_sample": [
-          {
-            "subject": "onImageNet",
-            "predicate": "ACHIEVES",
-            "object": "Accuracy",
-            "confidence": 0.9
-          }
-        ],
-        "extraction_time": 73.42
+        "facts_sample": [],
+        "extraction_time": 82.67
       },
       {
         "paper": "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters",
@@ -531,147 +490,156 @@
           "total_facts": 0
         },
         "facts_sample": [],
-        "extraction_time": 103.28
+        "extraction_time": 107.24
       }
     ],
-    "total_facts": 19,
-    "total_time": 2025.96,
+    "total_facts": 12,
+    "total_time": 1936.65,
     "fact_table_stats": {
-      "total_entities": 139,
-      "total_facts": 19,
+      "total_entities": 103,
+      "total_facts": 12,
       "total_inferred_facts": 0,
       "entities_by_type": {
-        "METHOD": 41,
-        "DATASET": 8,
-        "METRIC": 7,
-        "CONCEPT": 34,
-        "DOMAIN": 3,
-        "PAPER": 17,
-        "FINDING": 24,
-        "CONSTRAINT": 5
+        "METHOD": 43,
+        "DATASET": 7,
+        "METRIC": 8,
+        "FINDING": 9,
+        "CONCEPT": 18,
+        "PAPER": 16,
+        "DOMAIN": 2
       },
       "facts_by_predicate": {
-        "EXTENDS": 4,
         "ACHIEVES": 7,
-        "EVALUATED_ON": 1,
-        "REQUIRES_DATA": 1,
-        "USES_METHOD": 1,
         "APPLIES_TO": 1,
-        "IMPROVES": 4
+        "EVALUATED_ON": 2,
+        "EXTENDS": 1,
+        "IMPROVES": 1
       },
-      "papers_indexed": 10
+      "papers_indexed": 5
     },
     "all_facts": [
       {
-        "fact_id": "bc560bb0",
-        "subject": "onImageNet",
+        "fact_id": "377044f8",
+        "subject": "DenseNet",
         "subject_type": "METHOD",
         "predicate": "ACHIEVES",
-        "object": "Accuracy",
+        "object": "accuracy",
         "object_type": "METRIC",
         "confidence": 0.9,
-        "source_paper": "distillation_paper.pdf",
-        "evidence": "All networks are evaluated as training progresses by computing the validation accuracy@1",
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "the DenseNet with L = 100 and k = 24 also surpasses the current best result achieved by wide ResNet",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "2919be85",
-        "subject": "Compound Scaling Method",
+        "fact_id": "1bb09219",
+        "subject": "BERT",
         "subject_type": "METHOD",
-        "predicate": "EXTENDS",
-        "object": "Compound Scaling",
+        "predicate": "ACHIEVES",
+        "object": "SQuAD",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "state-of-the-art results on GLUE, RACE and SQuAD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "80ecf9b3",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "Glue",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "state-of-the-art results on GLUE, RACE and SQuAD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "5945ccd8",
+        "subject": "language models",
+        "subject_type": "CONCEPT",
+        "predicate": "APPLIES_TO",
+        "object": "misuse",
         "object_type": "CONCEPT",
         "confidence": 0.6,
-        "source_paper": "efficientnet_paper.pdf",
-        "evidence": "Based on this observation, we propose a simple yet effective compound scaling method.",
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "34 6.1 Misuse of Language Models Malicious uses of language models can be somewhat dif cult to antic",
         "extraction_method": "pattern"
       },
       {
-        "fact_id": "949b9929",
-        "subject": "Accuracy",
+        "fact_id": "eb32fdc2",
+        "subject": "MobileNet",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.95,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "significantly improves its accuracy, achieving state of the art on multiple image classification and error rates achieved by wide ResNet architecture [42]",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "1bedcfad",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "Glue",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "state-of-the-art results on GLUE, RACE and SQuAD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "71c17af8",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "SQuAD",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "state-of-the-art results on GLUE, RACE and SQuAD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "561b21d1",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "Result: 80%",
+        "object_type": "FINDING",
+        "confidence": 0.8,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "accuracy gain quickly saturate after reaching 80%",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "ffd207a5",
+        "subject": "accuracy",
         "subject_type": "METRIC",
         "predicate": "ACHIEVES",
         "object": "Result: 97%",
         "object_type": "FINDING",
-        "confidence": 0.95,
+        "confidence": 0.99,
         "source_paper": "electra_paper.pdf",
         "evidence": "The final model achieves 97%-98% accuracy on NSP.",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "8de5603d",
-        "subject": "FaceNet",
+        "fact_id": "af1f258a",
+        "subject": "ResNet",
         "subject_type": "METHOD",
         "predicate": "ACHIEVES",
-        "object": "Accuracy",
+        "object": "accuracy",
         "object_type": "METRIC",
-        "confidence": 0.88,
-        "source_paper": "mobilenet_paper.pdf",
-        "evidence": "FaceNet model is a state of the art face recognition model",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "5fbc9526",
-        "subject": "MobileNet",
-        "subject_type": "METHOD",
-        "predicate": "IMPROVES",
-        "object": "ResNet",
-        "object_type": "METHOD",
-        "confidence": 0.8,
+        "confidence": 0.85,
         "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "achieving state of the art on multiple image classification and error rates achieved by wide ResNet architecture",
+        "evidence": "error rates achieved by wide ResNet architecture [42]",
         "extraction_method": "llm"
       },
       {
-        "fact_id": "1a968b64",
-        "subject": "MobileNet",
-        "subject_type": "METHOD",
-        "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.95,
-        "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "significantly improves its accuracy, achieving state of the art on multiple image classification",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "34c859ba",
-        "subject": "MobileNet",
-        "subject_type": "METHOD",
-        "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.92,
-        "source_paper": "mobilenet_paper.pdf",
-        "evidence": "significantly improves its accuracy, achieving state of the art on multiple image classification",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "847aa0f1",
-        "subject": "BERT",
-        "subject_type": "METHOD",
-        "predicate": "USES_METHOD",
-        "object": "transformer",
-        "object_type": "METHOD",
-        "confidence": 0.95,
-        "source_paper": "bert_paper.pdf",
-        "evidence": "BERT uses a transformer architecture",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "85471122",
-        "subject": "transformer",
-        "subject_type": "METHOD",
-        "predicate": "IMPROVES",
-        "object": "transformer",
-        "object_type": "METHOD",
-        "confidence": 0.75,
-        "source_paper": "t5_paper.pdf",
-        "evidence": "architectural variants",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "67029b30",
+        "fact_id": "0898138a",
         "subject": "MobileNet",
         "subject_type": "METHOD",
         "predicate": "EXTENDS",
@@ -683,111 +651,15 @@
         "extraction_method": "pattern"
       },
       {
-        "fact_id": "75ae0609",
-        "subject": "ResNet",
-        "subject_type": "METHOD",
-        "predicate": "REQUIRES_DATA",
-        "object": "MNIST",
-        "object_type": "DATASET",
-        "confidence": 0.85,
-        "source_paper": "batchnorm_paper.pdf",
-        "evidence": "\"trained the network for 50000 steps, with 60 examples per mini-batch\"",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "d624e7a6",
-        "subject": "DenseNet",
-        "subject_type": "METHOD",
-        "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.9,
-        "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "the DenseNet with L = 100 and k = 24 also surpasses the current best result achieved by wide ResNet",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "a8b0b7ab",
-        "subject": "ResNet",
-        "subject_type": "METHOD",
-        "predicate": "EVALUATED_ON",
-        "object": "MNIST",
-        "object_type": "DATASET",
-        "confidence": 0.9,
-        "source_paper": "batchnorm_paper.pdf",
-        "evidence": "\"state of the art performance on MNIST\"",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "27d187a9",
-        "subject": "DenseNet",
-        "subject_type": "METHOD",
-        "predicate": "IMPROVES",
-        "object": "ResNet",
-        "object_type": "METHOD",
-        "confidence": 0.85,
-        "source_paper": "mobilenetv2_paper.pdf",
-        "evidence": "surpasses the current best result achieved by wide ResNet",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "9dfffded",
-        "subject": "Adam",
-        "subject_type": "METHOD",
-        "predicate": "EXTENDS",
-        "object": "Adagrad",
-        "object_type": "METHOD",
-        "confidence": 0.6,
-        "source_paper": "adam_paper.pdf",
-        "evidence": "In particular, the adaptive method, such as Adam and Adagrad, can achieve O(log d   T), an improveme",
-        "extraction_method": "pattern"
-      },
-      {
-        "fact_id": "28246c48",
-        "subject": "ResNet",
-        "subject_type": "METHOD",
-        "predicate": "ACHIEVES",
-        "object": "Accuracy",
-        "object_type": "METRIC",
-        "confidence": 0.95,
-        "source_paper": "batchnorm_paper.pdf",
-        "evidence": "\"validation accuracy@1\"",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "e4d6ac7f",
+        "fact_id": "c5aca020",
         "subject": "ResNet",
         "subject_type": "METHOD",
         "predicate": "IMPROVES",
-        "object": "Accuracy",
+        "object": "accuracy",
         "object_type": "METRIC",
         "confidence": 0.6,
         "source_paper": "mobilenetv2_paper.pdf",
         "evidence": "It re- tains its simplicity and does not require any special op- erators while signi cantly improves",
-        "extraction_method": "pattern"
-      },
-      {
-        "fact_id": "5432477d",
-        "subject": "BERT",
-        "subject_type": "METHOD",
-        "predicate": "EXTENDS",
-        "object": "transformer",
-        "object_type": "METHOD",
-        "confidence": 0.9,
-        "source_paper": "bert_paper.pdf",
-        "evidence": "BERT uses a transformer architecture",
-        "extraction_method": "llm"
-      },
-      {
-        "fact_id": "517ebf5a",
-        "subject": "language models",
-        "subject_type": "CONCEPT",
-        "predicate": "APPLIES_TO",
-        "object": "misuse",
-        "object_type": "CONCEPT",
-        "confidence": 0.6,
-        "source_paper": "gpt3_paper.pdf",
-        "evidence": "34 6.1 Misuse of Language Models Malicious uses of language models can be somewhat dif cult to antic",
         "extraction_method": "pattern"
       }
     ]
@@ -798,8 +670,36 @@
         "topic": "deep learning architectures and optimization techniques",
         "topic_key": "T1",
         "num_papers_retrieved": 10,
-        "total_indicators": 4,
+        "total_indicators": 5,
         "indicators": [
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'deep learning architectures and optimization techniques' flagged by the dedicated NLI model (p=0.98). Requires human verification.",
+            "confidence": 0.983,
+            "adjusted_confidence": 0.983,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'deep learning architectures and optimization techniques' flagged by the dedicated NLI model (p=0.89). Requires human verification.",
+            "confidence": 0.887,
+            "adjusted_confidence": 0.887,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
           {
             "type": "IndicatorType.FRAGMENTATION",
             "detection_method": "topic_clustering",
@@ -824,9 +724,9 @@
             "requires_human_validation": true,
             "evidence_count": 3,
             "suggested_directions": [
-              "Investigate: Evolution of network architectures (CNNs, RNNs, Transformers, Graph Neural Networks, etc.)",
-              "Investigate: Advances in activation functions and normalization techniques",
-              "Investigate: Loss function design and its impact on convergence"
+              "Investigate: Evolution of core neural network architectures (CNNs, RNNs, Transformers, GNNs, etc.)",
+              "Investigate: Advances in architectural design principles (depth, width, skip connections, attention mechanisms)",
+              "Investigate: Comparative performance of optimization algorithms (SGD variants, Adam, RMSProp, LAMB, etc.)"
             ]
           },
           {
@@ -842,49 +742,36 @@
               "Apply alternative methodological approaches to this topic",
               "Conduct a mixed-methods study"
             ]
-          },
-          {
-            "type": "IndicatorType.INCONSISTENCY",
-            "detection_method": "llm_nli",
-            "description": "LLM-detected contradictions in 'deep learning architectures and optimization techniques' literature. These require human verification.",
-            "confidence": 0.4,
-            "adjusted_confidence": 0.4,
-            "verdict": "RuleVerdictType.PASS",
-            "requires_human_validation": true,
-            "evidence_count": 1,
-            "suggested_directions": [
-              "Verify these contradictions manually",
-              "Design study to reconcile contradictory findings"
-            ]
           }
         ],
         "distribution": {
           "FRAGMENTATION": 1,
-          "INCONSISTENCY": 1,
+          "INCONSISTENCY": 2,
           "INCOMPLETENESS": 2
         },
         "verdicts": {
-          "PASS": 4,
+          "PASS": 5,
           "FLAG": 0,
           "REJECT": 0,
           "NONE": 0
         },
         "confidence_scores": [
+          0.983,
+          0.887,
           0.885,
           0.85,
-          0.8,
-          0.4
+          0.8
         ],
-        "analysis_time": 11.69,
-        "avg_confidence": 0.734,
-        "max_confidence": 0.885,
-        "min_confidence": 0.4
+        "analysis_time": 7.93,
+        "avg_confidence": 0.881,
+        "max_confidence": 0.983,
+        "min_confidence": 0.8
       },
       {
         "topic": "computer vision object detection and image recognition",
         "topic_key": "T2",
         "num_papers_retrieved": 10,
-        "total_indicators": 3,
+        "total_indicators": 4,
         "indicators": [
           {
             "type": "IndicatorType.FRAGMENTATION",
@@ -898,6 +785,21 @@
             "suggested_directions": [
               "Develop an integrative framework that unifies the 10 approaches",
               "Conduct a systematic review comparing methodological paradigms"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCOMPLETENESS",
+            "detection_method": "aspect_coverage",
+            "description": "Collective incompleteness detected for 'computer vision object detection and image recognition': 10 critical aspect(s) not addressed by any of the 10 papers analyzed.",
+            "confidence": 0.85,
+            "adjusted_confidence": 0.85,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Investigate: Evolution of core detection architectures (e.g., R-CNN, Fast/Faster R‑CNN, YOLO, SSD, RetinaNet, transformer‑based models).",
+              "Investigate: Benchmark datasets and evaluation protocols (COCO, PASCAL VOC, ImageNet‑Det, Open Images, etc.).",
+              "Investigate: Performance metrics and comparative analysis (mAP, IoU, recall/precision, latency, throughput)."
             ]
           },
           {
@@ -932,21 +834,22 @@
         "distribution": {
           "FRAGMENTATION": 1,
           "INCONSISTENCY": 1,
-          "INCOMPLETENESS": 1
+          "INCOMPLETENESS": 2
         },
         "verdicts": {
-          "PASS": 3,
+          "PASS": 4,
           "FLAG": 0,
           "REJECT": 0,
           "NONE": 0
         },
         "confidence_scores": [
           0.9,
+          0.85,
           0.8,
           0.4
         ],
-        "analysis_time": 11.69,
-        "avg_confidence": 0.7,
+        "analysis_time": 18.66,
+        "avg_confidence": 0.737,
         "max_confidence": 0.9,
         "min_confidence": 0.4
       },
@@ -954,7 +857,7 @@
         "topic": "natural language processing and attention mechanisms",
         "topic_key": "T3",
         "num_papers_retrieved": 10,
-        "total_indicators": 4,
+        "total_indicators": 6,
         "indicators": [
           {
             "type": "IndicatorType.INCOMPLETENESS",
@@ -966,9 +869,9 @@
             "requires_human_validation": true,
             "evidence_count": 3,
             "suggested_directions": [
-              "Investigate: Evolution of attention mechanisms in NLP (from additive to scaled dot‑product).",
-              "Investigate: Core architectures that employ attention (Transformer, BERT, GPT, etc.).",
-              "Investigate: Variants of attention (self‑attention, cross‑attention, multi‑head, sparse, adaptive)."
+              "Investigate: Theoretical foundations and mathematical formulation of attention mechanisms",
+              "Investigate: Evolution of attention-based architectures (e.g., Transformer, BERT, GPT, etc.)",
+              "Investigate: Training strategies and optimization techniques for attention models"
             ]
           },
           {
@@ -983,6 +886,20 @@
             "suggested_directions": [
               "Apply alternative methodological approaches to this topic",
               "Conduct a mixed-methods study"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'natural language processing and attention mechanisms' flagged by the dedicated NLI model (p=0.72). Requires human verification.",
+            "confidence": 0.725,
+            "adjusted_confidence": 0.725,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
             ]
           },
           {
@@ -1001,26 +918,40 @@
           },
           {
             "type": "IndicatorType.INCONSISTENCY",
-            "detection_method": "llm_nli",
-            "description": "LLM-detected contradictions in 'natural language processing and attention mechanisms' literature. These require human verification.",
-            "confidence": 0.4,
-            "adjusted_confidence": 0.4,
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'natural language processing and attention mechanisms' flagged by the dedicated NLI model (p=0.69). Requires human verification.",
+            "confidence": 0.694,
+            "adjusted_confidence": 0.694,
             "verdict": "RuleVerdictType.PASS",
             "requires_human_validation": true,
-            "evidence_count": 1,
+            "evidence_count": 3,
             "suggested_directions": [
-              "Verify these contradictions manually",
-              "Design study to reconcile contradictory findings"
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'natural language processing and attention mechanisms' flagged by the dedicated NLI model (p=0.69). Requires human verification.",
+            "confidence": 0.692,
+            "adjusted_confidence": 0.692,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
             ]
           }
         ],
         "distribution": {
           "FRAGMENTATION": 1,
-          "INCONSISTENCY": 1,
+          "INCONSISTENCY": 3,
           "INCOMPLETENESS": 2
         },
         "verdicts": {
-          "PASS": 4,
+          "PASS": 6,
           "FLAG": 0,
           "REJECT": 0,
           "NONE": 0
@@ -1028,20 +959,50 @@
         "confidence_scores": [
           0.85,
           0.8,
+          0.725,
           0.7,
-          0.4
+          0.694,
+          0.692
         ],
-        "analysis_time": 11.2,
-        "avg_confidence": 0.687,
+        "analysis_time": 2.97,
+        "avg_confidence": 0.744,
         "max_confidence": 0.85,
-        "min_confidence": 0.4
+        "min_confidence": 0.692
       },
       {
         "topic": "efficient deep learning deployment on resource-constrained edge devices",
         "topic_key": "T4",
         "num_papers_retrieved": 10,
-        "total_indicators": 2,
+        "total_indicators": 8,
         "indicators": [
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'efficient deep learning deployment on resource-constrained edge devices' flagged by the dedicated NLI model (p=0.99). Requires human verification.",
+            "confidence": 0.991,
+            "adjusted_confidence": 0.991,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'efficient deep learning deployment on resource-constrained edge devices' flagged by the dedicated NLI model (p=0.98). Requires human verification.",
+            "confidence": 0.983,
+            "adjusted_confidence": 0.983,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
           {
             "type": "IndicatorType.FRAGMENTATION",
             "detection_method": "topic_clustering",
@@ -1057,6 +1018,20 @@
             ]
           },
           {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'efficient deep learning deployment on resource-constrained edge devices' flagged by the dedicated NLI model (p=0.85). Requires human verification.",
+            "confidence": 0.85,
+            "adjusted_confidence": 0.85,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
+          {
             "type": "IndicatorType.INCOMPLETENESS",
             "detection_method": "aspect_coverage",
             "description": "Collective incompleteness detected for 'efficient deep learning deployment on resource-constrained edge devices': 10 critical aspect(s) not addressed by any of the 10 papers analyzed.",
@@ -1066,39 +1041,87 @@
             "requires_human_validation": true,
             "evidence_count": 3,
             "suggested_directions": [
-              "Investigate: Model compression techniques (pruning, quantization, low‑rank factorization)",
-              "Investigate: Knowledge distillation and teacher‑student frameworks",
-              "Investigate: Hardware‑aware neural architecture search (NAS) for edge devices"
+              "Investigate: Model compression and lightweight architecture design",
+              "Investigate: Quantization and low‑precision inference",
+              "Investigate: Pruning and sparsity exploitation"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'efficient deep learning deployment on resource-constrained edge devices' flagged by the dedicated NLI model (p=0.77). Requires human verification.",
+            "confidence": 0.767,
+            "adjusted_confidence": 0.767,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'efficient deep learning deployment on resource-constrained edge devices' flagged by the dedicated NLI model (p=0.58). Requires human verification.",
+            "confidence": 0.577,
+            "adjusted_confidence": 0.577,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'efficient deep learning deployment on resource-constrained edge devices' flagged by the dedicated NLI model (p=0.53). Requires human verification.",
+            "confidence": 0.528,
+            "adjusted_confidence": 0.528,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
             ]
           }
         ],
         "distribution": {
           "FRAGMENTATION": 1,
-          "INCONSISTENCY": 0,
+          "INCONSISTENCY": 6,
           "INCOMPLETENESS": 1
         },
         "verdicts": {
-          "PASS": 2,
+          "PASS": 8,
           "FLAG": 0,
           "REJECT": 0,
           "NONE": 0
         },
         "confidence_scores": [
+          0.991,
+          0.983,
           0.885,
-          0.85
+          0.85,
+          0.85,
+          0.767,
+          0.577,
+          0.528
         ],
-        "analysis_time": 9.48,
-        "avg_confidence": 0.867,
-        "max_confidence": 0.885,
-        "min_confidence": 0.85
+        "analysis_time": 4.01,
+        "avg_confidence": 0.804,
+        "max_confidence": 0.991,
+        "min_confidence": 0.528
       }
     ],
-    "total_time": 44.06
+    "total_time": 33.56
   },
   "phase4_rule_engine": {
     "summary": {
-      "total_evaluated": 13,
-      "passed": 13,
+      "total_evaluated": 23,
+      "passed": 23,
       "flagged": 0,
       "rejected": 0,
       "pass_rate": 100.0,
@@ -1240,14 +1263,14 @@
     "total_time": 0.02
   },
   "overall_metrics": {
-    "total_pipeline_time_seconds": 2070.04,
+    "total_pipeline_time_seconds": 1970.23,
     "papers_processed": 23,
     "total_chunks_ingested": 0,
-    "total_facts_extracted": 19,
-    "total_gap_indicators": 13,
+    "total_facts_extracted": 12,
+    "total_gap_indicators": 23,
     "topics_analyzed": 4,
-    "avg_confidence": 0.732,
-    "avg_adjusted_confidence": 0.732,
+    "avg_confidence": 0.793,
+    "avg_adjusted_confidence": 0.793,
     "rule_engine_pass_rate": 100.0,
     "rule_engine_flag_rate": 0.0,
     "rule_engine_reject_rate": 0.0,
