@@ -1,5 +1,5 @@
 import {
-  ArrowRight, BookOpen, CheckCircle, FileText, Lightbulb, Search, Shield,
+  ArrowRight, BookOpen, Calendar, CheckCircle, FileText, Lightbulb, Search, Shield, Sparkles,
 } from 'lucide-react'
 import Markdown from '../../common/Markdown'
 import { GAP_COLORS } from './constants'
@@ -12,6 +12,10 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
   const gapType = primaryGap?.type || primaryGap?.gap_type
   const gapMeta = GAP_COLORS[gapType]
   const suggestedQuery = primaryRec?.title || primaryGap?.title || data?.topics?.[0] || ''
+  const orderedPapers = [...papers].sort((first, second) => {
+    const yearDiff = (Number(second.year) || 0) - (Number(first.year) || 0)
+    return yearDiff || String(first.title || '').localeCompare(String(second.title || ''))
+  })
 
   const steps = [
     { number: '01', label: 'Jurnal Anda', icon: FileText, complete: papers.length > 0 },
@@ -54,13 +58,23 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Jurnal yang dibaca</p>
               <h2 className="font-semibold mt-1">{papers.length || data?.files_processed || 0} jurnal menjadi dasar analisis</h2>
-              <p className="text-sm text-muted-foreground mt-1">Sistem hanya memakai jurnal pada analisis ini.</p>
+              <p className="text-sm text-muted-foreground mt-1">Sistem hanya memakai jurnal pada analisis ini. Daftar diurutkan dari tahun terbaru.</p>
               {papers.length > 0 && (
                 <details className="mt-3 group">
                   <summary className="cursor-pointer text-sm font-medium text-primary hover:underline">Lihat daftar jurnal</summary>
-                  <ol className="mt-3 space-y-2 border-l border-border pl-3">
-                    {papers.map((paper, index) => (
-                      <li key={`${paper.title}-${index}`} className="text-sm text-muted-foreground leading-snug">{paper.title}</li>
+                  <ol className="mt-3 space-y-2.5 border-l border-border pl-3">
+                    {orderedPapers.map((paper, index) => (
+                      <li key={`${paper.title}-${index}`} className="text-sm leading-snug">
+                        <p className="text-foreground/90">{paper.title}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />{paper.year || 'Tahun tidak terdeteksi'}</span>
+                          {Number.isFinite(Number(paper.similarity_percent)) && paper.similarity_percent !== null && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                              <Sparkles className="w-3 h-3" /> Mirip {paper.similarity_percent}%
+                            </span>
+                          )}
+                        </div>
+                      </li>
                     ))}
                   </ol>
                 </details>

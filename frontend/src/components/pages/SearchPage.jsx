@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { Search, ExternalLink, Calendar, Users, BookOpen, Filter, ChevronDown, Loader, CheckCircle2, Circle, Sparkles, Lightbulb, Tag, X } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Search, ExternalLink, Calendar, Users, BookOpen, Filter, ChevronDown, Loader, CheckCircle2, Circle, Sparkles, Lightbulb, Tag, Upload, X } from 'lucide-react'
 import useToast from '../../hooks/useToast'
 import { paperService } from '../../services/paperService'
+import { documentService } from '../../services/documentService'
 import Badge from '../common/Badge'
 import EmptyState from '../common/EmptyState'
 import PageHelp from '../common/PageHelp'
@@ -19,6 +20,7 @@ const SOURCES = [
 
 const SearchPage = () => {
   const toast = useToast()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const suggestedQuery = searchParams.get('q') || ''
   const isSolutionSearch = searchParams.get('from') === 'solution'
@@ -35,6 +37,9 @@ const SearchPage = () => {
   const [marked, setMarked] = useState([])
   const [analyzing, setAnalyzing] = useState(false)
   const [selectionResult, setSelectionResult] = useState(null)
+  const [manualFile, setManualFile] = useState(null)
+  const [manualUploading, setManualUploading] = useState(false)
+  const [manualUploadResult, setManualUploadResult] = useState(null)
 
   const toggleSource = (id) => {
     setSelectedSources(prev =>
@@ -117,6 +122,33 @@ const SearchPage = () => {
       toast.success(`"${paper.title}" berhasil disimpan`)
     } catch (err) {
       toast.error(err.userMessage || 'Gagal menyimpan paper')
+    }
+  }
+
+  const handleManualFile = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      toast.warning('Pilih file PDF jurnal')
+      event.target.value = ''
+      return
+    }
+    setManualFile(file)
+    setManualUploadResult(null)
+  }
+
+  const handleManualUpload = async () => {
+    if (!manualFile) return
+    setManualUploading(true)
+    try {
+      const result = await documentService.uploadDocument(manualFile)
+      setManualUploadResult(result)
+      setManualFile(null)
+      toast.success('Jurnal Anda berhasil disimpan ke koleksi')
+    } catch (err) {
+      toast.error(err.userMessage || 'Gagal mengunggah jurnal')
+    } finally {
+      setManualUploading(false)
     }
   }
 
@@ -250,11 +282,52 @@ const SearchPage = () => {
       )}
 
       {!loading && hasSearched && results.length === 0 && (
-        <EmptyState
-          icon={Search}
-          title="Tidak ada paper ditemukan"
-          description="Coba ubah kata kunci atau filter pencarian"
-        />
+        <div className="max-w-2xl mx-auto space-y-4">
+          <EmptyState
+            icon={Search}
+            title="Tidak ada paper ditemukan"
+            description="Coba ubah kata kunci atau filter pencarian. Jika Anda sudah punya jurnal sendiri, unggah saja di bawah."
+          />
+
+          <section className="rounded-2xl border border-primary/25 bg-primary/[0.045] p-5">
+            <div className="flex items-start gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary shrink-0">
+                <Upload className="w-5 h-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Alternatif</p>
+                <h2 className="font-semibold mt-1">Punya jurnal sendiri? Unggah ke koleksi.</h2>
+                <p className="text-sm text-muted-foreground mt-1">Jurnal PDF akan disimpan agar bisa dicari dan dipakai dalam analisis berikutnya.</p>
+
+                {!manualUploadResult ? (
+                  <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                    <label className="flex-1 cursor-pointer rounded-lg border border-dashed bg-card px-3 py-2.5 text-sm text-muted-foreground hover:border-primary/50 transition-colors">
+                      <input type="file" accept=".pdf,application/pdf" onChange={handleManualFile} className="sr-only" />
+                      {manualFile ? manualFile.name : 'Pilih jurnal PDF…'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleManualUpload}
+                      disabled={!manualFile || manualUploading}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {manualUploading ? <Loader className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      {manualUploading ? 'Mengunggah…' : 'Unggah Jurnal'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-lg border bg-card p-3">
+                    <p className="text-sm font-medium">{manualUploadResult.message || 'Jurnal berhasil disimpan.'}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => navigate('/documents')} className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-secondary transition-colors">Lihat Koleksi</button>
+                      <button type="button" onClick={() => navigate('/')} className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">Analisis Jurnal</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
       )}
 
       {!loading && results.length > 0 && (
@@ -375,12 +448,15 @@ const SearchPage = () => {
             </div>
           )}
 
-          {selectionResult.suggestions?.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Lightbulb className="w-4 h-4 text-amber-500" />
-                <h4 className="font-semibold text-sm">Saran Arah Penelitian</h4>
-              </div>
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Lightbulb className="w-4 h-4 text-amber-500" />
+              <h4 className="font-semibold text-sm">Arah Penelitian yang Didukung Paper Bertanda</h4>
+            </div>
+            {selectionResult.suggestion_note && (
+              <p className="text-xs text-muted-foreground mb-3">{selectionResult.suggestion_note}</p>
+            )}
+            {selectionResult.suggestions?.length > 0 ? (
               <div className="space-y-2">
                 {selectionResult.suggestions.map((s, i) => (
                   <div key={i} className="rounded-lg border bg-card p-4">
@@ -388,16 +464,38 @@ const SearchPage = () => {
                       <div className="w-6 h-6 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0 text-xs font-bold">
                         {i + 1}
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-medium text-sm">{s.title}</p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-sm">{s.title}</p>
+                          {s.gap_type && <Badge variant="info">{s.gap_type}</Badge>}
+                        </div>
                         {s.rationale && <p className="text-xs text-muted-foreground mt-1">{s.rationale}</p>}
+                        {s.basis && (
+                          <p className="mt-2 rounded-md bg-secondary/70 px-2.5 py-2 text-xs text-muted-foreground">
+                            <strong className="text-foreground">Dasar dari abstrak:</strong> {s.basis}
+                          </p>
+                        )}
+                        {s.source_papers?.length > 0 && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <BookOpen className="w-3.5 h-3.5 text-primary" />
+                            {s.source_papers.map((title, sourceIndex) => (
+                              <span key={`${title}-${sourceIndex}`} className="rounded-full border bg-primary/5 px-2 py-0.5 text-[11px] text-muted-foreground">
+                                {title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-4 text-sm text-muted-foreground">
+                Bukti dari abstrak paper bertanda belum cukup untuk membuat arah penelitian yang kuat. Coba tandai paper yang lebih berhubungan atau baca detail hasil pencarian terlebih dahulu.
+              </div>
+            )}
+          </div>
         </div>
       )}
 

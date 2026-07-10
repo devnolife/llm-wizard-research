@@ -158,3 +158,48 @@ def test_graph_endpoint_uses_requested_job_snapshot_not_experiment_fallback(clie
     assert response.json()["source"] == "job_snapshot"
     assert response.json()["job_id"] == "graph-job"
     assert {node["label"] for node in response.json()["nodes"]} == {"Method A", "Dataset B"}
+
+
+def test_uploaded_paper_similarity_is_a_scoped_percentage():
+    class EmbeddingModel:
+        def encode(self, texts, show_progress_bar=False):
+            assert show_progress_bar is False
+            return [[1.0, 0.0], [0.6, 0.8]]
+
+    class VectorStore:
+        embedding_model = EmbeddingModel()
+
+    papers = [{"content": "paper one"}, {"content": "paper two"}]
+
+    analysis._add_uploaded_paper_similarity(papers, VectorStore())
+
+    assert [paper["similarity_percent"] for paper in papers] == [60, 60]
+
+
+def test_marked_paper_suggestions_require_two_known_source_titles():
+        parsed = analysis._parse_selection_json(
+                '''{
+                    "suggestions": [
+                        {
+                            "title": "Arah yang didukung",
+                            "rationale": "Ada kontras metode pada dua paper.",
+                            "basis": "Paper pertama memakai A, paper kedua memakai B.",
+                            "source_papers": ["Paper Alpha", "Paper Beta"],
+                            "gap_type": "FRAGMENTATION"
+                        },
+                        {
+                            "title": "Arah generik",
+                            "source_papers": ["Paper Alpha"]
+                        }
+                    ]
+                }'''
+        )
+
+        grounded = analysis._ground_selection_suggestions(
+                parsed["suggestions"],
+                [{"title": "Paper Alpha"}, {"title": "Paper Beta"}],
+        )
+
+        assert len(grounded) == 1
+        assert grounded[0]["source_papers"] == ["Paper Alpha", "Paper Beta"]
+        assert grounded[0]["gap_type"] == "FRAGMENTATION"

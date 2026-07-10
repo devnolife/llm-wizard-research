@@ -103,6 +103,37 @@ def _conversation_lock(conversation_id: str) -> Lock:
         return _CONVERSATION_LOCKS.setdefault(conversation_id, Lock())
 
 
+def _add_uploaded_paper_similarity(papers, vector_store) -> None:
+    """Attach each paper's mean semantic similarity to the other uploads.
+
+    The score is deliberately scoped to the current upload set, not the shared
+    corpus.  It gives a researcher a quick indication of topical overlap while
+    preserving the detailed evidence analysis elsewhere in the result.
+    """
+    for paper in papers:
+        paper["similarity_percent"] = None
+    if len(papers) < 2:
+        return
+
+    try:
+        import numpy as np
+
+        texts = [str(paper.get("content", ""))[:6000] for paper in papers]
+        embeddings = np.asarray(
+            vector_store.embedding_model.encode(texts, show_progress_bar=False),
+            dtype=float,
+        )
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        normalized = embeddings / np.maximum(norms, 1e-12)
+        similarity_matrix = normalized @ normalized.T
+        for index, paper in enumerate(papers):
+            other_scores = np.delete(similarity_matrix[index], index)
+            average = float(np.clip(other_scores.mean(), 0.0, 1.0))
+            paper["similarity_percent"] = round(average * 100)
+    except Exception as exc:
+        logger.warning(f"Could not calculate uploaded-paper similarity: {exc}")
+
+
 def translate_to_indonesian(glm, text):
     """Translate text to Indonesian using LLM"""
     if not text:
@@ -343,7 +374,7 @@ def reset_chat(conversation_id: str):
 
 
 def _parse_selection_json(raw: str) -> dict:
-    """Parse LLM JSON output for the marked-papers analysis."""
+    """Parse grounded JSON output for the marked-papers analysis."""
     import json as _json
     import re as _re
     text = raw.strip()
@@ -360,12 +391,18 @@ def _parse_selection_json(raw: str) -> dict:
             sugg = []
             for s in data.get("suggestions", []):
                 if isinstance(s, dict):
+                    raw_sources = s.get("source_papers", s.get("supporting_papers", s.get("papers", [])))
+                    if isinstance(raw_sources, str):
+                        raw_sources = [raw_sources]
                     sugg.append({
-                        "title": s.get("title", s.get("judul", "")),
-                        "rationale": s.get("rationale", s.get("alasan", "")),
+                        "title": str(s.get("title", s.get("judul", ""))).strip(),
+                        "rationale": str(s.get("rationale", s.get("alasan", ""))).strip(),
+                        "basis": str(s.get("basis", s.get("evidence", s.get("bukti", "")))).strip(),
+                        "source_papers": [str(p).strip() for p in raw_sources if str(p).strip()][:5] if isinstance(raw_sources, list) else [],
+                        "gap_type": str(s.get("gap_type", "")).strip().upper(),
                     })
                 elif isinstance(s, str):
-                    sugg.append({"title": s, "rationale": ""})
+                    sugg.append({"title": s, "rationale": "", "basis": "", "source_papers": [], "gap_type": ""})
             return {
                 "common_keywords": [str(k) for k in data.get("common_keywords", data.get("kata_kunci", []))],
                 "shared_themes": [str(t) for t in data.get("shared_themes", data.get("tema", []))],
@@ -375,6 +412,46 @@ def _parse_selection_json(raw: str) -> dict:
     except (_json.JSONDecodeError, ValueError):
         pass
     return {"common_keywords": [], "shared_themes": [], "suggestions": [], "summary": text[:500]}
+
+
+def _ground_selection_suggestions(suggestions: list, papers: list[dict]) -> list[dict]:
+    """Keep only research directions tied to at least two marked papers.
+
+    The marked-paper flow receives abstracts rather than full text.  Requiring
+    cited titles prevents generic algorithm/domain combinations from being
+    presented as evidence-backed synthesis opportunities.
+    """
+    known_titles = [str(p.get("title", "")).strip() for p in papers if p.get("title")]
+
+    def _normalise(title: str) -> str:
+        import re
+        return re.sub(r"\s+", " ", title.lower()).strip()
+
+    def _match_title(candidate: str) -> str | None:
+        candidate_norm = _normalise(candidate)
+        if not candidate_norm:
+            return None
+        for title in known_titles:
+            title_norm = _normalise(title)
+            if candidate_norm == title_norm or candidate_norm in title_norm or title_norm in candidate_norm:
+                return title
+        return None
+
+    grounded = []
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict) or not suggestion.get("title"):
+            continue
+        sources = []
+        for source in suggestion.get("source_papers", []):
+            matched = _match_title(str(source))
+            if matched and matched not in sources:
+                sources.append(matched)
+        if len(sources) < 2:
+            continue
+        suggestion["source_papers"] = sources
+        suggestion["basis"] = str(suggestion.get("basis", "")).strip()
+        grounded.append(suggestion)
+    return grounded[:3]
 
 
 def _parse_weaknesses_json(raw: str) -> dict:
@@ -553,29 +630,40 @@ async def analyze_selection(request: MarkedPapersRequest):
             f"Paper {i + 1}:\n"
             f"Judul: {p.get('title', 'Tanpa Judul')}\n"
             f"Tahun: {p.get('year', '-')}\n"
-            f"Abstrak: {str(p.get('abstract', '') or '')[:500]}"
+            f"Abstrak: {str(p.get('abstract', '') or '')[:800]}"
             for i, p in enumerate(papers)
         ])
 
         topic_line = f"Topik/kata kunci pencarian awal: {request.query}\n\n" if request.query else ""
 
         prompt = (
-            "Anda adalah asisten peneliti. Pengguna telah menandai beberapa paper secara manual. "
-            "Analisis paper-paper berikut dan temukan benang merahnya. Gunakan Bahasa Indonesia.\n\n"
+            "Anda adalah asisten peneliti yang sangat ketat terhadap bukti. Pengguna telah menandai beberapa paper. "
+            "Analisis HANYA berdasarkan judul, tahun, dan abstrak yang diberikan; jangan menambahkan metode, hasil, "
+            "dataset, atau konteks yang tidak tertulis. Gunakan Bahasa Indonesia.\n\n"
             f"{topic_line}{paper_block}\n\n"
             "Tugas:\n"
-            "1. common_keywords: daftar 5-8 kata kunci/konsep/metode yang SAMA atau berulang di paper-paper tersebut.\n"
-            "2. shared_themes: 2-4 tema bersama (apa yang sama-sama dikerjakan paper-paper ini).\n"
-            "3. suggestions: 3-5 saran arah penelitian baru yang bisa dikembangkan dari gabungan paper ini, "
-            "masing-masing dengan 'title' (judul singkat) dan 'rationale' (alasan singkat).\n"
-            "4. summary: ringkasan 1-2 kalimat.\n\n"
+            "1. common_keywords: 3-5 kata kunci/konsep yang BENAR-BENAR muncul atau jelas tersirat pada minimal dua paper.\n"
+            "2. shared_themes: 1-3 tema bersama yang didukung minimal dua paper.\n"
+            "3. suggestions: maksimal 3 arah penelitian. HANYA buat saran jika ada hubungan/kontras nyata antar minimal dua paper. "
+            "JANGAN membuat saran sekadar menggabungkan nama algoritma + domain, dan JANGAN mengubah setiap kata kunci menjadi proposal baru. "
+            "Jika bukti tidak cukup, kembalikan suggestions sebagai array kosong.\n"
+            "4. Untuk setiap suggestion WAJIB isi: title (spesifik), rationale (mengapa hubungan/kontras paper menciptakan peluang), "
+            "basis (bukti ringkas dari abstrak), source_papers (tepat dua atau lebih judul paper dari input), dan gap_type "
+            "(FRAGMENTATION, INCONSISTENCY, atau INCOMPLETENESS).\n"
+            "5. summary: ringkasan 1-2 kalimat.\n\n"
             "Kembalikan HANYA JSON (tanpa teks lain) dengan struktur: "
             '{"common_keywords": [...], "shared_themes": [...], '
-            '"suggestions": [{"title": "...", "rationale": "..."}], "summary": "..."}'
+            '"suggestions": [{"title": "...", "rationale": "...", "basis": "...", '
+            '"source_papers": ["judul persis dari input", "judul persis dari input"], "gap_type": "FRAGMENTATION"}], '
+            '"summary": "..."}'
         )
 
-        raw = glm.generate(prompt, max_tokens=800, format="json")
+        raw = glm.generate(prompt, max_tokens=1000, format="json")
         result = _parse_selection_json(raw if isinstance(raw, str) else str(raw))
+        result["suggestions"] = _ground_selection_suggestions(result["suggestions"], papers)
+        result["suggestion_note"] = (
+            "Hanya arah penelitian yang ditautkan ke minimal dua paper bertanda yang ditampilkan."
+        )
         result["paper_count"] = len(papers)
         result["papers"] = [p.get("title", "Tanpa Judul") for p in papers]
         return result
@@ -1145,6 +1233,8 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                     "title": processed_doc.title or source_name,
                     "chunk_index": chunk.chunk_index,
                 }
+                if processed_doc.metadata.get("year"):
+                    metadata["year"] = int(processed_doc.metadata["year"])
                 section = chunk.metadata.get("section") if chunk.metadata else None
                 if section:
                     metadata["section"] = section
@@ -1155,6 +1245,7 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
             paper_contents.append({
                 "source": source_name,
                 "title": processed_doc.title or source_name,
+                "year": processed_doc.metadata.get("year"),
                 "content": " ".join(c.content for c in processed_doc.chunks[:10]),
                 "full_content": processed_doc.content or " ".join(
                     c.content for c in processed_doc.chunks
@@ -1166,6 +1257,8 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                 ),
                 "already_indexed": already_indexed,
             })
+
+            _add_uploaded_paper_similarity(paper_contents, vector_store)
 
         record_job_event(
             job_id,
@@ -1677,7 +1770,13 @@ JSON:"""
                 "files_processed": len(pdf_paths),
                 "papers": [p["title"] for p in paper_contents],
                 "papers_info": [
-                    {"title": p["title"], "source": p["source"], "already_indexed": p["already_indexed"]}
+                    {
+                        "title": p["title"],
+                        "source": p["source"],
+                        "year": p.get("year"),
+                        "similarity_percent": p.get("similarity_percent"),
+                        "already_indexed": p["already_indexed"],
+                    }
                     for p in paper_contents
                 ],
                 "new_papers": new_papers,
