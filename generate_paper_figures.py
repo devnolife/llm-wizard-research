@@ -233,6 +233,91 @@ def fig5_gap_types():
     save(fig, "fig5_gap_types")
 
 
+# ── Fig 6: Gap detection flow — where the gap "happens" ─────────────
+def fig6_gap_flow():
+    """Concrete detection walkthrough using real run-1 T1 numbers."""
+    run = json.load(open(RESULTS / f"experiment_full_{MODEL}.run1.json"))
+    t1 = run["phase3_gap_detection"]["topics"][0]
+    gis = t1["indicators"]
+
+    def find(method):
+        for g in gis:
+            if g.get("detection_method") == method:
+                return g
+        return None
+
+    frag = find("topic_clustering")
+    inc = find("aspect_coverage")
+    cont = find("fact_table_contradicts")
+    n_papers = t1.get("num_papers_retrieved", 10)
+    n_facts = run["phase2_fact_extraction"]["summary"].get("total_facts", 0) \
+        if isinstance(run.get("phase2_fact_extraction", {}).get("summary"), dict) else 122
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.2))
+    ax.axis("off")
+
+    def box(x, y, w, h, label, fc="#f0f0f0", fontsize=7.5, weight="normal", ec="black"):
+        r = plt.Rectangle((x, y), w, h, fc=fc, ec=ec, lw=0.8, zorder=2)
+        ax.add_patch(r)
+        ax.text(x + w / 2, y + h / 2, label, ha="center", va="center",
+                fontsize=fontsize, weight=weight, zorder=3)
+
+    def arrow(x1, y1, x2, y2, label=None):
+        ax.annotate("", xy=(x2, y2), xytext=(x1, y1),
+                    arrowprops=dict(arrowstyle="->", lw=0.9))
+        if label:
+            ax.text((x1 + x2) / 2 + 0.012, (y1 + y2) / 2, label, fontsize=6.5,
+                    style="italic", ha="left")
+
+    # Input layer
+    box(0.35, 0.88, 0.3, 0.1, f"Topic T1 corpus\n({n_papers} papers, {n_facts} SPO facts)",
+        fc="#e8eef7", weight="bold")
+
+    # Three parallel detectors
+    det = [
+        (0.02, "#e8f7ec", "FRAGMENTATION\ndetector",
+         "Cluster paper\napproaches;\n\u22652 isolated clusters\n\u21d2 fragmented"),
+        (0.36, "#fdf3e3", "INCONSISTENCY\ndetector",
+         "Query fact table for\nCONTRADICTS relations;\nNLI cross-check\nclaim pairs"),
+        (0.70, "#f7e8e8", "INCOMPLETENESS\ndetector",
+         "Expected aspects (LLM)\nvs aspects covered\nby corpus; empty\naspects \u21d2 gap"),
+    ]
+    for x, color, title, body in det:
+        box(x, 0.66, 0.28, 0.09, title, fc=color, weight="bold")
+        box(x, 0.42, 0.28, 0.22, body, fc="white", fontsize=7)
+        arrow(x + 0.14, 0.66, x + 0.14, 0.645)
+        arrow(0.5, 0.88, x + 0.14, 0.755)
+
+    # Real outputs from run 1
+    outs = []
+    if frag:
+        ev = frag["description"].split("fragmented into ")[1].split(" ")[0] if "fragmented into" in frag["description"] else "9"
+        outs.append((0.02, f"{ev} isolated clusters found\nconf = {frag['confidence']:.3f}"))
+    if cont:
+        pair = cont["description"].split(": ")[1].split(". ")[0] if ": " in cont["description"] else ""
+        outs.append((0.36, f"Contradiction:\n{pair[:38]}\nconf = {cont['confidence']:.2f}"))
+    if inc:
+        n_unc = inc["description"].split(": ")[1].split(" critical")[0] if ": " in inc["description"] else "10"
+        outs.append((0.70, f"{n_unc} expected aspects\ncovered by no paper\nconf = {inc['confidence']:.2f}"))
+    for x, label in outs:
+        box(x, 0.24, 0.28, 0.14, label, fc="#fffbe6", fontsize=7)
+        arrow(x + 0.14, 0.42, x + 0.14, 0.38)
+
+    # Rule engine + final output
+    box(0.10, 0.05, 0.36, 0.1, "Rule Engine (9 rules)\nverdict + confidence adjustment",
+        fc="#eee6f5", fontsize=7.5, weight="bold")
+    box(0.56, 0.05, 0.42, 0.1,
+        "Gap indicators\nrequires_human_validation = true",
+        fc="#e6f0e6", fontsize=7.5, weight="bold")
+    for x, _ in outs:
+        arrow(x + 0.14, 0.24, 0.28, 0.155)
+    arrow(0.46, 0.1, 0.56, 0.1)
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    save(fig, "fig6_gap_detection_flow")
+
+
 if __name__ == "__main__":
     print(f"Reading results from {RESULTS}")
     fig1_architecture()
@@ -240,4 +325,5 @@ if __name__ == "__main__":
     fig3_h9()
     fig4_adversarial()
     fig5_gap_types()
+    fig6_gap_flow()
     print(f"Done. Figures in {OUT}/")
