@@ -283,7 +283,10 @@ class GapAnalyzer:
         """
         indicators = []
         
-        # Method 1: Check FactTable for CONTRADICTS relations
+        # Method 1: Check FactTable for CONTRADICTS relations.
+        # Each raw CONTRADICTS fact is validated before it may become an
+        # inconsistency indicator (guards against extraction artifacts such
+        # as method names being flagged as "contradicting" each other).
         if self.fact_table:
             from ..knowledge.fact_table import PredicateType
             contradictions = self.fact_table.query(
@@ -293,6 +296,16 @@ class GapAnalyzer:
             for contradiction in contradictions:
                 subject = self.fact_table.get_entity(contradiction.subject_id)
                 obj = self.fact_table.get_entity(contradiction.object_id)
+                
+                valid, adjusted_conf, reason = self._validate_contradiction(
+                    contradiction, subject, obj
+                )
+                if not valid:
+                    logger.debug(
+                        f"Discarded CONTRADICTS fact "
+                        f"{contradiction.subject_id} vs {contradiction.object_id}: {reason}"
+                    )
+                    continue
                 
                 subject_name = subject.name if subject else contradiction.subject_id
                 object_name = obj.name if obj else contradiction.object_id
@@ -304,9 +317,9 @@ class GapAnalyzer:
                         f"vs '{object_name}'. No study has resolved this "
                         f"inconsistency."
                     ),
-                    confidence=contradiction.confidence,
+                    confidence=adjusted_conf,
                     related_papers=[contradiction.source_paper],
-                    evidence=[contradiction.source],
+                    evidence=[contradiction.source] + ([reason] if reason else []),
                     suggested_directions=[
                         f"Investigate conditions under which each finding holds",
                         f"Design a study that reconciles these contradictory findings",
@@ -327,6 +340,71 @@ class GapAnalyzer:
             indicators.extend(llm_contradictions)
         
         return indicators
+    
+    def _validate_contradiction(self, fact, subject, obj):
+        """
+        Validate a raw CONTRADICTS fact before it becomes an inconsistency
+        indicator. Guards against extraction artifacts (e.g. two method names
+        in a "however" sentence being flagged as a scientific contradiction).
+        
+        Checks:
+        1. Both entities must exist and be FINDING-type (comparable claims —
+           a METHOD cannot "contradict" another METHOD).
+        2. Entity names must be substantive (not short acronyms/labels).
+        3. If a RelationClassifier is available, the source sentence must be
+           confirmed as CONTRADICTION by the 3-layer classifier; unconfirmed
+           facts are kept only with reduced confidence.
+        
+        Returns:
+            (valid: bool, adjusted_confidence: float, reason: str)
+        """
+        from ..knowledge.fact_table import EntityType
+        
+        # Check 1: comparable claim types
+        if subject is None or obj is None:
+            return False, 0.0, "entity missing from fact table"
+        if subject.entity_type != EntityType.FINDING or obj.entity_type != EntityType.FINDING:
+            return False, 0.0, (
+                f"non-comparable entity types "
+                f"({subject.entity_type.value} vs {obj.entity_type.value})"
+            )
+        
+        # Check 2: substantive claim names — a genuine finding statement is
+        # longer than a bare model/method label like 'SSD' or 'ResNet'.
+        min_words = 3
+        if (len(subject.name.split()) < min_words
+                or len(obj.name.split()) < min_words):
+            return False, 0.0, "entity names too short to be claim statements"
+        
+        # Check 3: classifier verification of the source sentence
+        if self.relation_classifier and fact.source:
+            try:
+                from ..validation.relation_classifier import RelationType
+                classified = self.relation_classifier.classify(
+                    entity_a=subject.name,
+                    entity_b=obj.name,
+                    text_context=fact.source,
+                    semantic_similarity=1.0,  # already co-mentioned in source
+                )
+                if classified.relation_type != RelationType.CONTRADICTION:
+                    return False, 0.0, (
+                        f"classifier verdict: {classified.relation_type.value} "
+                        f"(not contradiction)"
+                    )
+                if classified.rule_validated:
+                    return True, min(fact.confidence, classified.confidence), (
+                        "verified by 3-layer classifier"
+                    )
+                # Contradiction detected but not rule-validated: keep, but
+                # cap confidence to reflect the weaker evidence.
+                return True, min(fact.confidence, classified.confidence, 0.5), (
+                    "classifier detected contradiction (unvalidated) — confidence capped"
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(f"Contradiction verification failed: {exc}")
+        
+        # No classifier available: keep with pattern-level confidence cap.
+        return True, min(fact.confidence, 0.5), "unverified (no classifier) — confidence capped"
     
     # -------------------------------------------------------------------
     # Indicator 3: COLLECTIVE INCOMPLETENESS

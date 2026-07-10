@@ -119,7 +119,9 @@ class TestInconsistency:
         ft_based = [i for i in inc if i.detection_method == "fact_table_contradicts"]
         assert len(ft_based) == 1
         assert "Dropout improves accuracy" in ft_based[0].description
-        assert ft_based[0].confidence == pytest.approx(0.8)
+        # Without a RelationClassifier the contradiction is unverified, so
+        # its confidence is capped at 0.5 (was raw fact confidence 0.8).
+        assert ft_based[0].confidence == pytest.approx(0.5)
 
     def test_llm_detected_contradiction(self, divergent_papers):
         llm = MagicMock()
@@ -149,6 +151,81 @@ class TestInconsistency:
         indicators = ga.analyze_gaps("test topic", divergent_papers, depth="quick")
         inc = [i for i in indicators if i.indicator_type == IndicatorType.INCONSISTENCY]
         assert inc == []
+
+
+# ===================================================================
+# Contradiction validation filter (false-positive guard)
+# ===================================================================
+
+class TestContradictionValidation:
+    """CONTRADICTS facts must be validated before becoming indicators."""
+
+    @staticmethod
+    def _ft(subj_type, obj_type, subj_name, obj_name, confidence=0.7):
+        ft = FactTable()
+        ft.add_entity(Entity("e_a", subj_type, subj_name))
+        ft.add_entity(Entity("e_b", obj_type, obj_name))
+        ft.add_fact(Fact(
+            fact_id="c1", subject_id="e_a",
+            predicate=PredicateType.CONTRADICTS, object_id="e_b",
+            source="However, results differ across studies.",
+            source_paper="paper_x", confidence=confidence,
+        ))
+        return ft
+
+    def test_method_vs_method_discarded(self, divergent_papers):
+        """Two METHOD entities (e.g. 'Residual Networks' vs 'SSD') are not a
+        scientific contradiction — extraction artifact must be discarded."""
+        ft = self._ft(EntityType.METHOD, EntityType.METHOD,
+                      "Residual Networks", "SSD")
+        ga = GapAnalyzer(fact_table=ft)
+        indicators = ga.analyze_gaps("test topic", divergent_papers, depth="standard")
+        assert [i for i in indicators
+                if i.detection_method == "fact_table_contradicts"] == []
+
+    def test_short_finding_names_discarded(self, divergent_papers):
+        """FINDING entities whose names are bare labels (<3 words) are not
+        comparable claim statements."""
+        ft = self._ft(EntityType.FINDING, EntityType.FINDING, "ResNet", "SSD")
+        ga = GapAnalyzer(fact_table=ft)
+        indicators = ga.analyze_gaps("test topic", divergent_papers, depth="standard")
+        assert [i for i in indicators
+                if i.detection_method == "fact_table_contradicts"] == []
+
+    def test_classifier_confirmation_keeps_indicator(self, divergent_papers):
+        """A classifier-confirmed contradiction keeps min(fact, classifier) conf."""
+        from app.core.validation.relation_classifier import RelationType
+        ft = self._ft(EntityType.FINDING, EntityType.FINDING,
+                      "Dropout improves accuracy", "Dropout reduces accuracy",
+                      confidence=0.8)
+        classifier = MagicMock()
+        classified = MagicMock()
+        classified.relation_type = RelationType.CONTRADICTION
+        classified.rule_validated = True
+        classified.confidence = 0.75
+        classifier.classify.return_value = classified
+        ga = GapAnalyzer(fact_table=ft, relation_classifier=classifier)
+        indicators = ga.analyze_gaps("test topic", divergent_papers, depth="standard")
+        ft_based = [i for i in indicators
+                    if i.detection_method == "fact_table_contradicts"]
+        assert len(ft_based) == 1
+        assert ft_based[0].confidence == pytest.approx(0.75)
+
+    def test_classifier_rejection_discards_indicator(self, divergent_papers):
+        """If the 3-layer classifier says CO_OCCURRENCE, the fact is dropped."""
+        from app.core.validation.relation_classifier import RelationType
+        ft = self._ft(EntityType.FINDING, EntityType.FINDING,
+                      "Dropout improves accuracy", "Dropout reduces accuracy")
+        classifier = MagicMock()
+        classified = MagicMock()
+        classified.relation_type = RelationType.CO_OCCURRENCE
+        classified.rule_validated = False
+        classified.confidence = 0.3
+        classifier.classify.return_value = classified
+        ga = GapAnalyzer(fact_table=ft, relation_classifier=classifier)
+        indicators = ga.analyze_gaps("test topic", divergent_papers, depth="standard")
+        assert [i for i in indicators
+                if i.detection_method == "fact_table_contradicts"] == []
 
 
 # ===================================================================
