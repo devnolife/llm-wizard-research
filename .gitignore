@@ -49,6 +49,11 @@ data/processed/*
 *.parquet
 *.db
 *.sqlite
+# Keep final experiment results & manifests (thesis reproducibility)
+!backend/experiments/results/experiment_*.json
+!backend/experiments/results/multirun_stats_*.md
+!research_papers/papers_manifest.json
+backend/experiments/results/backup_pre_k3/
 
 # ChromaDB
 chroma_db/

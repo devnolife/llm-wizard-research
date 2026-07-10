@@ -1,0 +1,1201 @@
+{
+  "experiment_info": {
+    "timestamp": "2026-06-11T00:44:36.389802",
+    "model": "gpt-oss:latest",
+    "mode": "no-rule-engine",
+    "papers_dir": "/home/devnolife/wizard-research/research_papers",
+    "topics": {
+      "T1": "deep learning architectures and optimization techniques",
+      "T2": "computer vision object detection and image recognition",
+      "T3": "natural language processing and attention mechanisms",
+      "T4": "efficient deep learning deployment on resource-constrained edge devices"
+    },
+    "system": "Wizard Research — Neuro-Symbolic Agentic Gap Detection"
+  },
+  "phase1_ingestion": {
+    "papers": [
+      {
+        "filename": "resnet_paper.pdf",
+        "title": "Deep Residual Learning for Image Recognition"
+      },
+      {
+        "filename": "densenet_paper.pdf",
+        "title": "Densely Connected Convolutional Networks"
+      },
+      {
+        "filename": "adam_paper.pdf",
+        "title": "Adam: A Method for Stochastic Optimization"
+      },
+      {
+        "filename": "batchnorm_paper.pdf",
+        "title": "Batch Normalization: Accelerating Deep Network Training"
+      },
+      {
+        "filename": "layernorm_paper.pdf",
+        "title": "Layer Normalization"
+      },
+      {
+        "filename": "gan_paper.pdf",
+        "title": "Generative Adversarial Nets"
+      },
+      {
+        "filename": "yolo_paper.pdf",
+        "title": "You Only Look Once: Unified, Real-Time Object Detection"
+      },
+      {
+        "filename": "faster_rcnn_paper.pdf",
+        "title": "Faster R-CNN: Towards Real-Time Object Detection"
+      },
+      {
+        "filename": "ssd_paper.pdf",
+        "title": "SSD: Single Shot MultiBox Detector"
+      },
+      {
+        "filename": "mask_rcnn_paper.pdf",
+        "title": "Mask R-CNN"
+      },
+      {
+        "filename": "efficientnet_paper.pdf",
+        "title": "EfficientNet: Rethinking Model Scaling for CNNs"
+      },
+      {
+        "filename": "vit_paper.pdf",
+        "title": "An Image is Worth 16x16 Words: Transformers for Image Recognition"
+      },
+      {
+        "filename": "attention_is_all_you_need.pdf",
+        "title": "Attention Is All You Need"
+      },
+      {
+        "filename": "bert_paper.pdf",
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers"
+      },
+      {
+        "filename": "gpt3_paper.pdf",
+        "title": "Language Models are Few-Shot Learners (GPT-3)"
+      },
+      {
+        "filename": "t5_paper.pdf",
+        "title": "Exploring the Limits of Transfer Learning with T5"
+      },
+      {
+        "filename": "roberta_paper.pdf",
+        "title": "RoBERTa: A Robustly Optimized BERT Pretraining Approach"
+      },
+      {
+        "filename": "electra_paper.pdf",
+        "title": "ELECTRA: Pre-training Text Encoders as Discriminators"
+      },
+      {
+        "filename": "mobilenet_paper.pdf",
+        "title": "MobileNets: Efficient CNNs for Mobile Vision Applications"
+      },
+      {
+        "filename": "mobilenetv2_paper.pdf",
+        "title": "MobileNetV2: Inverted Residuals and Linear Bottlenecks"
+      },
+      {
+        "filename": "distilbert_paper.pdf",
+        "title": "DistilBERT, a distilled version of BERT"
+      },
+      {
+        "filename": "distillation_paper.pdf",
+        "title": "Distilling the Knowledge in a Neural Network"
+      },
+      {
+        "filename": "squeezenet_paper.pdf",
+        "title": "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters"
+      }
+    ],
+    "total_chunks": 0,
+    "total_chars": 0,
+    "total_time": 0,
+    "skipped": true,
+    "vector_store_count": 3146
+  },
+  "phase2_fact_extraction": {
+    "papers": [
+      {
+        "paper": "Deep Residual Learning for Image Recognition",
+        "num_facts": 2,
+        "extraction_stats": {
+          "paper_id": "resnet_paper.pdf",
+          "entities_extracted": 7,
+          "llm_facts_extracted": 2,
+          "pattern_facts_extracted": 0,
+          "total_facts": 2
+        },
+        "facts_sample": [
+          {
+            "subject": "neural network",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.9
+          },
+          {
+            "subject": "neural network",
+            "predicate": "EVALUATED_ON",
+            "object": "imagenet",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 47.63
+      },
+      {
+        "paper": "Densely Connected Convolutional Networks",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "densenet_paper.pdf",
+          "entities_extracted": 5,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 65.29
+      },
+      {
+        "paper": "Adam: A Method for Stochastic Optimization",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "adam_paper.pdf",
+          "entities_extracted": 1,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 39.88
+      },
+      {
+        "paper": "Batch Normalization: Accelerating Deep Network Training",
+        "num_facts": 1,
+        "extraction_stats": {
+          "paper_id": "batchnorm_paper.pdf",
+          "entities_extracted": 3,
+          "llm_facts_extracted": 1,
+          "pattern_facts_extracted": 0,
+          "total_facts": 1
+        },
+        "facts_sample": [
+          {
+            "subject": "Fractalnet",
+            "predicate": "APPLIES_TO",
+            "object": "imagenet",
+            "confidence": 0.55
+          }
+        ],
+        "extraction_time": 53.19
+      },
+      {
+        "paper": "Layer Normalization",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "layernorm_paper.pdf",
+          "entities_extracted": 0,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 35.11
+      },
+      {
+        "paper": "Generative Adversarial Nets",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "gan_paper.pdf",
+          "entities_extracted": 1,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 39.15
+      },
+      {
+        "paper": "You Only Look Once: Unified, Real-Time Object Detection",
+        "num_facts": 1,
+        "extraction_stats": {
+          "paper_id": "yolo_paper.pdf",
+          "entities_extracted": 25,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 1,
+          "total_facts": 1
+        },
+        "facts_sample": [
+          {
+            "subject": "PASCAL VOC",
+            "predicate": "EXTENDS",
+            "object": "COCO",
+            "confidence": 0.6
+          }
+        ],
+        "extraction_time": 65.1
+      },
+      {
+        "paper": "Faster R-CNN: Towards Real-Time Object Detection",
+        "num_facts": 3,
+        "extraction_stats": {
+          "paper_id": "faster_rcnn_paper.pdf",
+          "entities_extracted": 12,
+          "llm_facts_extracted": 3,
+          "pattern_facts_extracted": 0,
+          "total_facts": 3
+        },
+        "facts_sample": [
+          {
+            "subject": "CNN",
+            "predicate": "EVALUATED_ON",
+            "object": "imagenet",
+            "confidence": 0.4
+          },
+          {
+            "subject": "CNN",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.9
+          },
+          {
+            "subject": "CNN",
+            "predicate": "REQUIRES_DATA",
+            "object": "imagenet",
+            "confidence": 0.4
+          }
+        ],
+        "extraction_time": 72.3
+      },
+      {
+        "paper": "SSD: Single Shot MultiBox Detector",
+        "num_facts": 2,
+        "extraction_stats": {
+          "paper_id": "ssd_paper.pdf",
+          "entities_extracted": 4,
+          "llm_facts_extracted": 2,
+          "pattern_facts_extracted": 0,
+          "total_facts": 2
+        },
+        "facts_sample": [
+          {
+            "subject": "neural network",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.8
+          },
+          {
+            "subject": "CNN",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.6
+          }
+        ],
+        "extraction_time": 52.11
+      },
+      {
+        "paper": "Mask R-CNN",
+        "num_facts": 2,
+        "extraction_stats": {
+          "paper_id": "mask_rcnn_paper.pdf",
+          "entities_extracted": 11,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 2,
+          "total_facts": 2
+        },
+        "facts_sample": [
+          {
+            "subject": "Mask R-CNN",
+            "predicate": "EXTENDS",
+            "object": "Faster R-CNN",
+            "confidence": 0.6
+          },
+          {
+            "subject": "Mask R-CNN",
+            "predicate": "APPLIES_TO",
+            "object": "Faster R-CNN",
+            "confidence": 0.6
+          }
+        ],
+        "extraction_time": 77.97
+      },
+      {
+        "paper": "EfficientNet: Rethinking Model Scaling for CNNs",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "efficientnet_paper.pdf",
+          "entities_extracted": 30,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 75.17
+      },
+      {
+        "paper": "An Image is Worth 16x16 Words: Transformers for Image Recognition",
+        "num_facts": 6,
+        "extraction_stats": {
+          "paper_id": "vit_paper.pdf",
+          "entities_extracted": 10,
+          "llm_facts_extracted": 6,
+          "pattern_facts_extracted": 0,
+          "total_facts": 6
+        },
+        "facts_sample": [
+          {
+            "subject": "GPT",
+            "predicate": "EVALUATED_ON",
+            "object": "imagenet",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Transformer",
+            "predicate": "APPLIES_TO",
+            "object": "imagenet",
+            "confidence": 0.9
+          },
+          {
+            "subject": "GPT",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Transformer",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.7
+          },
+          {
+            "subject": "GPT",
+            "predicate": "APPLIES_TO",
+            "object": "imagenet",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 56.43
+      },
+      {
+        "paper": "Attention Is All You Need",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "attention_is_all_you_need.pdf",
+          "entities_extracted": 0,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 37.42
+      },
+      {
+        "paper": "BERT: Pre-training of Deep Bidirectional Transformers",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "bert_paper.pdf",
+          "entities_extracted": 17,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 75.39
+      },
+      {
+        "paper": "Language Models are Few-Shot Learners (GPT-3)",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "gpt3_paper.pdf",
+          "entities_extracted": 6,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 43.75
+      },
+      {
+        "paper": "Exploring the Limits of Transfer Learning with T5",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "t5_paper.pdf",
+          "entities_extracted": 2,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 41.34
+      },
+      {
+        "paper": "RoBERTa: A Robustly Optimized BERT Pretraining Approach",
+        "num_facts": 1,
+        "extraction_stats": {
+          "paper_id": "roberta_paper.pdf",
+          "entities_extracted": 7,
+          "llm_facts_extracted": 1,
+          "pattern_facts_extracted": 0,
+          "total_facts": 1
+        },
+        "facts_sample": [
+          {
+            "subject": "BERT",
+            "predicate": "EVALUATED_ON",
+            "object": "GLUE",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 46.03
+      },
+      {
+        "paper": "ELECTRA: Pre-training Text Encoders as Discriminators",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "electra_paper.pdf",
+          "entities_extracted": 4,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 74.89
+      },
+      {
+        "paper": "MobileNets: Efficient CNNs for Mobile Vision Applications",
+        "num_facts": 1,
+        "extraction_stats": {
+          "paper_id": "mobilenet_paper.pdf",
+          "entities_extracted": 14,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 1,
+          "total_facts": 1
+        },
+        "facts_sample": [
+          {
+            "subject": "MobileNet",
+            "predicate": "EXTENDS",
+            "object": "COCO",
+            "confidence": 0.6
+          }
+        ],
+        "extraction_time": 74.93
+      },
+      {
+        "paper": "MobileNetV2: Inverted Residuals and Linear Bottlenecks",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "mobilenetv2_paper.pdf",
+          "entities_extracted": 6,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 74.72
+      },
+      {
+        "paper": "DistilBERT, a distilled version of BERT",
+        "num_facts": 5,
+        "extraction_stats": {
+          "paper_id": "distilbert_paper.pdf",
+          "entities_extracted": 14,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 0,
+          "total_facts": 5
+        },
+        "facts_sample": [
+          {
+            "subject": "BERT",
+            "predicate": "EVALUATED_ON",
+            "object": "SQuAD",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "ACHIEVES",
+            "object": "accuracy",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "APPLIES_TO",
+            "object": "GLUE",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "APPLIES_TO",
+            "object": "SQuAD",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "EVALUATED_ON",
+            "object": "GLUE",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 76.35
+      },
+      {
+        "paper": "Distilling the Knowledge in a Neural Network",
+        "num_facts": 1,
+        "extraction_stats": {
+          "paper_id": "distillation_paper.pdf",
+          "entities_extracted": 2,
+          "llm_facts_extracted": 1,
+          "pattern_facts_extracted": 0,
+          "total_facts": 1
+        },
+        "facts_sample": [
+          {
+            "subject": "neural network",
+            "predicate": "EVALUATED_ON",
+            "object": "MNIST",
+            "confidence": 0.99
+          }
+        ],
+        "extraction_time": 42.04
+      },
+      {
+        "paper": "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters",
+        "num_facts": 0,
+        "extraction_stats": {
+          "paper_id": "squeezenet_paper.pdf",
+          "entities_extracted": 33,
+          "llm_facts_extracted": 0,
+          "pattern_facts_extracted": 0,
+          "total_facts": 0
+        },
+        "facts_sample": [],
+        "extraction_time": 75.08
+      }
+    ],
+    "total_facts": 25,
+    "total_time": 1341.28,
+    "fact_table_stats": {
+      "total_entities": 75,
+      "total_facts": 25,
+      "total_inferred_facts": 0,
+      "entities_by_type": {
+        "METHOD": 38,
+        "DATASET": 9,
+        "METRIC": 3,
+        "DOMAIN": 5,
+        "PAPER": 16,
+        "CONSTRAINT": 1,
+        "FINDING": 3
+      },
+      "facts_by_predicate": {
+        "EVALUATED_ON": 8,
+        "ACHIEVES": 7,
+        "APPLIES_TO": 6,
+        "EXTENDS": 3,
+        "REQUIRES_DATA": 1
+      },
+      "papers_indexed": 11
+    },
+    "all_facts": [
+      {
+        "fact_id": "5b1f6dcd",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "SQuAD",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "Comparison on downstream tasks: IMDb (test accuracy) and SQuAD 1.1 (EM/F1 on dev set).",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "33ee0498",
+        "subject": "neural network",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.9,
+        "source_paper": "resnet_paper.pdf",
+        "evidence": "Surpassing human-level performance on imagenet classification.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "af502f29",
+        "subject": "neural network",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "resnet_paper.pdf",
+        "evidence": "Surpassing human-level performance on imagenet classification.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "597825a0",
+        "subject": "neural network",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.8,
+        "source_paper": "ssd_paper.pdf",
+        "evidence": "from 63.4% mAP for YOLO to 74.3% mAP for our SSD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "7d8a88b1",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "SQuAD",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "Comparison on downstream tasks: IMDb (test accuracy) and SQuAD 1.1 (EM/F1 on dev set).",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "7f3629ba",
+        "subject": "CNN",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.9,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "shows compelling accuracy and speed",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "6ec3e450",
+        "subject": "CNN",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_DATA",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.4,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "Imagenet large scale visual recognition challenge",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "1e4d9460",
+        "subject": "PASCAL VOC",
+        "subject_type": "DATASET",
+        "predicate": "EXTENDS",
+        "object": "COCO",
+        "object_type": "DATASET",
+        "confidence": 0.6,
+        "source_paper": "yolo_paper.pdf",
+        "evidence": "This pipeline has prevailed on detection benchmarks since the Selec- tive Search work [1] through th",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "7c843481",
+        "subject": "Transformer",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "train the model on image classification in supervised fashion. When trained on mid-sized datasets such as ImageNet...",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "ee51c75e",
+        "subject": "GPT",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.95,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "achieving a maximal accuracy of 72% on ImageNet.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "d12d149b",
+        "subject": "Fractalnet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.55,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "Fractalnet: Ultra-deep neural networks without residuals.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "8bb8467c",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "Comparison on the dev sets of the GLUE benchmark.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "14c39386",
+        "subject": "Mask R-CNN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Faster R-CNN",
+        "object_type": "METHOD",
+        "confidence": 0.6,
+        "source_paper": "mask_rcnn_paper.pdf",
+        "evidence": "Mask R-CNN is simple to implement and train given the Faster R-CNN framework, which facilitates a wi",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "3e5a97d6",
+        "subject": "GPT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "image GPT (iGPT) applies Transformers to image pixels after reducing image resolution and color space... achieving a maximal accuracy of 72% on ImageNet.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "50eabbe9",
+        "subject": "Transformer",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.7,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "yield modest accuracies of a few percentage points below ResNets of comparable size.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "59ac5bc7",
+        "subject": "MobileNet",
+        "subject_type": "METHOD",
+        "predicate": "EXTENDS",
+        "object": "COCO",
+        "object_type": "DATASET",
+        "confidence": 0.6,
+        "source_paper": "mobilenet_paper.pdf",
+        "evidence": "We report results for MobileNet trained for object detection on COCO data based on the recent work t",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "d85d100e",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "GLUE",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "our improved pretraining procedure, which we call RoBERTa, achieves state-of-the-art results on GLUE",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "ddccf0e8",
+        "subject": "neural network",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "MNIST",
+        "object_type": "DATASET",
+        "confidence": 0.99,
+        "source_paper": "distillation_paper.pdf",
+        "evidence": "trained a single large neural net with two hidden layers of 1200 rectified linear hidden units on all 60,000 training cases.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "9da83ba0",
+        "subject": "CNN",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.6,
+        "source_paper": "ssd_paper.pdf",
+        "evidence": "from 63.4% mAP for YOLO to 74.3% mAP for our SSD",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "7cf560bc",
+        "subject": "Mask R-CNN",
+        "subject_type": "METHOD",
+        "predicate": "EXTENDS",
+        "object": "Faster R-CNN",
+        "object_type": "METHOD",
+        "confidence": 0.6,
+        "source_paper": "mask_rcnn_paper.pdf",
+        "evidence": "The method, called Mask R-CNN, extends Faster R-CNN by adding a branch for predicting an object mask",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "4ff50eb9",
+        "subject": "GPT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "image GPT (iGPT) applies Transformers to image pixels after reducing image resolution and color space... achieving a maximal accuracy of 72% on ImageNet.",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "028b0e9e",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "ACHIEVES",
+        "object": "accuracy",
+        "object_type": "METRIC",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "BERT-base 89.0",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "875e3ce1",
+        "subject": "CNN",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.4,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "Imagenet large scale visual recognition challenge",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "91202d01",
+        "subject": "Transformer",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "imagenet",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "train the model on image classification in supervised fashion. When trained on mid-sized datasets such as ImageNet...",
+        "extraction_method": "llm"
+      },
+      {
+        "fact_id": "36c304bc",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "EVALUATED_ON",
+        "object": "GLUE",
+        "object_type": "DATASET",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "Comparison on the dev sets of the GLUE benchmark.",
+        "extraction_method": "llm"
+      }
+    ]
+  },
+  "phase3_gap_detection": {
+    "topics": [
+      {
+        "topic": "deep learning architectures and optimization techniques",
+        "topic_key": "T1",
+        "num_papers_retrieved": 10,
+        "total_indicators": 2,
+        "indicators": [
+          {
+            "type": "IndicatorType.FRAGMENTATION",
+            "description": "Literature on 'deep learning architectures and optimization techniques' appears fragmented into 8 distinct clusters with different approaches. No integrative framework found.",
+            "confidence": 0.85,
+            "adjusted_confidence": 0.85,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 8,
+            "suggested_directions": [
+              "Develop an integrative framework that unifies the 8 approaches",
+              "Conduct a systematic review comparing methodological paradigms"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "description": "LLM-detected contradictions in 'deep learning architectures and optimization techniques' literature. These require human verification.",
+            "confidence": 0.5,
+            "adjusted_confidence": 0.5,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 1,
+            "suggested_directions": [
+              "Verify these contradictions manually",
+              "Design study to reconcile contradictory findings"
+            ]
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 0
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 2
+        },
+        "confidence_scores": [
+          0.85,
+          0.5
+        ],
+        "analysis_time": 12.33,
+        "avg_confidence": 0.675,
+        "max_confidence": 0.85,
+        "min_confidence": 0.5
+      },
+      {
+        "topic": "computer vision object detection and image recognition",
+        "topic_key": "T2",
+        "num_papers_retrieved": 10,
+        "total_indicators": 4,
+        "indicators": [
+          {
+            "type": "IndicatorType.FRAGMENTATION",
+            "description": "Literature on 'computer vision object detection and image recognition' appears fragmented into 10 distinct clusters with different approaches. No integrative framework found.",
+            "confidence": 0.85,
+            "adjusted_confidence": 0.85,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 10,
+            "suggested_directions": [
+              "Develop an integrative framework that unifies the 10 approaches",
+              "Conduct a systematic review comparing methodological paradigms"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCOMPLETENESS",
+            "description": "Collective incompleteness detected for 'computer vision object detection and image recognition': 10 critical aspect(s) not addressed by any of the 10 papers analyzed.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 2,
+            "suggested_directions": [
+              "Investigate: Benchmark datasets and evaluation protocols",
+              "Investigate: Model architectures (CNNs, Transformers, hybrid models, etc.)",
+              "Investigate: Training strategies and data augmentation techniques"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCOMPLETENESS",
+            "description": "Methodological incompleteness: all 10 papers use similar methodology (unidentified). Alternative methodological approaches are absent.",
+            "confidence": 0.6,
+            "adjusted_confidence": 0.6,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 1,
+            "suggested_directions": [
+              "Apply alternative methodological approaches to this topic",
+              "Conduct a mixed-methods study"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "description": "LLM-detected contradictions in 'computer vision object detection and image recognition' literature. These require human verification.",
+            "confidence": 0.5,
+            "adjusted_confidence": 0.5,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 1,
+            "suggested_directions": [
+              "Verify these contradictions manually",
+              "Design study to reconcile contradictory findings"
+            ]
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 2
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 4
+        },
+        "confidence_scores": [
+          0.85,
+          0.8,
+          0.6,
+          0.5
+        ],
+        "analysis_time": 13.38,
+        "avg_confidence": 0.688,
+        "max_confidence": 0.85,
+        "min_confidence": 0.5
+      },
+      {
+        "topic": "natural language processing and attention mechanisms",
+        "topic_key": "T3",
+        "num_papers_retrieved": 10,
+        "total_indicators": 3,
+        "indicators": [
+          {
+            "type": "IndicatorType.FRAGMENTATION",
+            "description": "Literature on 'natural language processing and attention mechanisms' appears fragmented into 10 distinct clusters with different approaches. No integrative framework found.",
+            "confidence": 0.85,
+            "adjusted_confidence": 0.85,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 10,
+            "suggested_directions": [
+              "Develop an integrative framework that unifies the 10 approaches",
+              "Conduct a systematic review comparing methodological paradigms"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCOMPLETENESS",
+            "description": "Collective incompleteness detected for 'natural language processing and attention mechanisms': 10 critical aspect(s) not addressed by any of the 10 papers analyzed.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 2,
+            "suggested_directions": [
+              "Investigate: Evolution and taxonomy of attention mechanisms in NLP",
+              "Investigate: Comparative performance across core NLP tasks (translation, summarization, QA, etc.)",
+              "Investigate: Architectural variations (self‑attention, cross‑attention, multi‑head, sparse, hierarchical)"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCOMPLETENESS",
+            "description": "Methodological incompleteness: all 10 papers use similar methodology (unidentified). Alternative methodological approaches are absent.",
+            "confidence": 0.6,
+            "adjusted_confidence": 0.6,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 1,
+            "suggested_directions": [
+              "Apply alternative methodological approaches to this topic",
+              "Conduct a mixed-methods study"
+            ]
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 0,
+          "INCOMPLETENESS": 2
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 3
+        },
+        "confidence_scores": [
+          0.85,
+          0.8,
+          0.6
+        ],
+        "analysis_time": 11.31,
+        "avg_confidence": 0.75,
+        "max_confidence": 0.85,
+        "min_confidence": 0.6
+      },
+      {
+        "topic": "efficient deep learning deployment on resource-constrained edge devices",
+        "topic_key": "T4",
+        "num_papers_retrieved": 10,
+        "total_indicators": 3,
+        "indicators": [
+          {
+            "type": "IndicatorType.FRAGMENTATION",
+            "description": "Literature on 'efficient deep learning deployment on resource-constrained edge devices' appears fragmented into 9 distinct clusters with different approaches. No integrative framework found.",
+            "confidence": 0.85,
+            "adjusted_confidence": 0.85,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 9,
+            "suggested_directions": [
+              "Develop an integrative framework that unifies the 9 approaches",
+              "Conduct a systematic review comparing methodological paradigms"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCOMPLETENESS",
+            "description": "Collective incompleteness detected for 'efficient deep learning deployment on resource-constrained edge devices': 10 critical aspect(s) not addressed by any of the 10 papers analyzed.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 2,
+            "suggested_directions": [
+              "Investigate: Model compression techniques (pruning, low‑rank factorization, weight sharing)",
+              "Investigate: Quantization strategies (fixed‑point, mixed‑precision, binary/ternary networks)",
+              "Investigate: Knowledge distillation and teacher‑student frameworks for lightweight models"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "description": "LLM-detected contradictions in 'efficient deep learning deployment on resource-constrained edge devices' literature. These require human verification.",
+            "confidence": 0.5,
+            "adjusted_confidence": 0.5,
+            "verdict": "None",
+            "requires_human_validation": true,
+            "evidence_count": 1,
+            "suggested_directions": [
+              "Verify these contradictions manually",
+              "Design study to reconcile contradictory findings"
+            ]
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 1
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 3
+        },
+        "confidence_scores": [
+          0.85,
+          0.8,
+          0.5
+        ],
+        "analysis_time": 12.34,
+        "avg_confidence": 0.717,
+        "max_confidence": 0.85,
+        "min_confidence": 0.5
+      }
+    ],
+    "total_time": 49.37
+  },
+  "phase4_rule_engine": {
+    "summary": {},
+    "total_time": 0,
+    "skipped": true
+  },
+  "phase5_adversarial": {
+    "summary": {},
+    "total_time": 0,
+    "skipped": true
+  },
+  "overall_metrics": {
+    "total_pipeline_time_seconds": 1390.65,
+    "papers_processed": 23,
+    "total_chunks_ingested": 0,
+    "total_facts_extracted": 25,
+    "total_gap_indicators": 12,
+    "topics_analyzed": 4,
+    "avg_confidence": 0.708,
+    "avg_adjusted_confidence": 0.708,
+    "rule_engine_pass_rate": 0,
+    "rule_engine_flag_rate": 0,
+    "rule_engine_reject_rate": 0,
+    "rule_engine_rejection_rate_RERR": 0,
+    "adversarial_accuracy": null
+  }
+}

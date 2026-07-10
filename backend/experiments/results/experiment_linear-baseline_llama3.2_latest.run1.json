@@ -1,0 +1,465 @@
+{
+  "experiment_info": {
+    "timestamp": "2026-07-09T23:55:13.982584",
+    "model": "llama3.2:latest",
+    "mode": "linear-baseline",
+    "seed": 43,
+    "papers_dir": "/home/devnolife/wizard-research/research_papers",
+    "topics": {
+      "T1": "deep learning architectures and optimization techniques",
+      "T2": "computer vision object detection and image recognition",
+      "T3": "natural language processing and attention mechanisms",
+      "T4": "efficient deep learning deployment on resource-constrained edge devices"
+    },
+    "system": "Wizard Research — Neuro-Symbolic Agentic Gap Detection"
+  },
+  "phase1_ingestion": {
+    "papers": [
+      {
+        "filename": "resnet_paper.pdf",
+        "title": "Deep Residual Learning for Image Recognition"
+      },
+      {
+        "filename": "densenet_paper.pdf",
+        "title": "Densely Connected Convolutional Networks"
+      },
+      {
+        "filename": "adam_paper.pdf",
+        "title": "Adam: A Method for Stochastic Optimization"
+      },
+      {
+        "filename": "batchnorm_paper.pdf",
+        "title": "Batch Normalization: Accelerating Deep Network Training"
+      },
+      {
+        "filename": "layernorm_paper.pdf",
+        "title": "Layer Normalization"
+      },
+      {
+        "filename": "gan_paper.pdf",
+        "title": "Generative Adversarial Nets"
+      },
+      {
+        "filename": "yolo_paper.pdf",
+        "title": "You Only Look Once: Unified, Real-Time Object Detection"
+      },
+      {
+        "filename": "faster_rcnn_paper.pdf",
+        "title": "Faster R-CNN: Towards Real-Time Object Detection"
+      },
+      {
+        "filename": "ssd_paper.pdf",
+        "title": "SSD: Single Shot MultiBox Detector"
+      },
+      {
+        "filename": "mask_rcnn_paper.pdf",
+        "title": "Mask R-CNN"
+      },
+      {
+        "filename": "efficientnet_paper.pdf",
+        "title": "EfficientNet: Rethinking Model Scaling for CNNs"
+      },
+      {
+        "filename": "vit_paper.pdf",
+        "title": "An Image is Worth 16x16 Words: Transformers for Image Recognition"
+      },
+      {
+        "filename": "attention_is_all_you_need.pdf",
+        "title": "Attention Is All You Need"
+      },
+      {
+        "filename": "bert_paper.pdf",
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers"
+      },
+      {
+        "filename": "gpt3_paper.pdf",
+        "title": "Language Models are Few-Shot Learners (GPT-3)"
+      },
+      {
+        "filename": "t5_paper.pdf",
+        "title": "Exploring the Limits of Transfer Learning with T5"
+      },
+      {
+        "filename": "roberta_paper.pdf",
+        "title": "RoBERTa: A Robustly Optimized BERT Pretraining Approach"
+      },
+      {
+        "filename": "electra_paper.pdf",
+        "title": "ELECTRA: Pre-training Text Encoders as Discriminators"
+      },
+      {
+        "filename": "mobilenet_paper.pdf",
+        "title": "MobileNets: Efficient CNNs for Mobile Vision Applications"
+      },
+      {
+        "filename": "mobilenetv2_paper.pdf",
+        "title": "MobileNetV2: Inverted Residuals and Linear Bottlenecks"
+      },
+      {
+        "filename": "distilbert_paper.pdf",
+        "title": "DistilBERT, a distilled version of BERT"
+      },
+      {
+        "filename": "distillation_paper.pdf",
+        "title": "Distilling the Knowledge in a Neural Network"
+      },
+      {
+        "filename": "squeezenet_paper.pdf",
+        "title": "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters"
+      }
+    ],
+    "total_chunks": 0,
+    "total_chars": 0,
+    "total_time": 0,
+    "skipped": true,
+    "vector_store_count": 3146
+  },
+  "phase2_fact_extraction": {
+    "papers": [],
+    "total_facts": 0,
+    "total_time": 0,
+    "skipped": true
+  },
+  "phase3_gap_detection": {
+    "topics": [
+      {
+        "topic": "deep learning architectures and optimization techniques",
+        "topic_key": "T1",
+        "num_papers_retrieved": 10,
+        "total_indicators": 5,
+        "indicators": [
+          {
+            "type": "INCONSISTENCY",
+            "description": "The relationship between shortcut connections and optimization methods is not fully understood, leading to inconsistent results across studies.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "There is a lack of research on the application of genetic algorithms and reinforcement learning to architectural search for deep learning models with specific architectures (e.g., CNNs, RNNs).",
+            "confidence": 0.6,
+            "adjusted_confidence": 0.6,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "The impact of nonlinearity stability on the convergence of optimization methods in deep learning is not thoroughly studied.",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "There is a need for more research on the connection between the degradation problem and the optimization of neural network architectures, particularly in terms of balancing width, depth, and resolutio",
+            "confidence": 0.7,
+            "adjusted_confidence": 0.7,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCONSISTENCY",
+            "description": "The effectiveness of compound scaling methods in achieving better accuracy and efficiency for deep learning models is not consistently evaluated across studies.",
+            "confidence": 0.5,
+            "adjusted_confidence": 0.5,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 2,
+          "INCONSISTENCY": 2,
+          "INCOMPLETENESS": 1
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 5
+        },
+        "confidence_scores": [
+          0.8,
+          0.6,
+          0.9,
+          0.7,
+          0.5
+        ],
+        "avg_confidence": 0.7,
+        "analysis_time": 11.3
+      },
+      {
+        "topic": "computer vision object detection and image recognition",
+        "topic_key": "T2",
+        "num_papers_retrieved": 10,
+        "total_indicators": 5,
+        "indicators": [
+          {
+            "type": "INCOMPLETENESS",
+            "description": "The impact of object size and shape variations on the performance of real-time object detection systems like YOLO.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "There is a lack of studies that investigate the effect of contextual information on object detection, particularly in multi-object scenes.",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "No comprehensive evaluation of YOLO's performance on diverse datasets, including those with varying lighting conditions, occlusions, and complex backgrounds.",
+            "confidence": 0.7,
+            "adjusted_confidence": 0.7,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCONSISTENCY",
+            "description": "The relationship between object detection accuracy and the quality of default boxes used in YOLO is not thoroughly explored.",
+            "confidence": 0.6,
+            "adjusted_confidence": 0.6,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "There is a need for studies that investigate the application of YOLO in various computer vision applications, such as autonomous vehicles, robotics, and human-computer interaction.",
+            "confidence": 0.5,
+            "adjusted_confidence": 0.5,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 2,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 2
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 5
+        },
+        "confidence_scores": [
+          0.8,
+          0.9,
+          0.7,
+          0.6,
+          0.5
+        ],
+        "avg_confidence": 0.7,
+        "analysis_time": 9.92
+      },
+      {
+        "topic": "natural language processing and attention mechanisms",
+        "topic_key": "T3",
+        "num_papers_retrieved": 10,
+        "total_indicators": 5,
+        "indicators": [
+          {
+            "type": "INCOMPLETENESS",
+            "description": "The impact of attention mechanisms on anaphora resolution is not thoroughly explored.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCONSISTENCY",
+            "description": "There is a discrepancy in the interpretation of the role of self-attention in learning task-independent sentence representations.",
+            "confidence": 0.6,
+            "adjusted_confidence": 0.6,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "The relationship between attention distance and the structure of sentences is not fully understood.",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "No study evaluates the effectiveness of fine-tuning language models from human preferences on downstream tasks.",
+            "confidence": 0.7,
+            "adjusted_confidence": 0.7,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCONSISTENCY",
+            "description": "The interpretation of attention maps and their application to computing attention from output tokens to input space is not consistently explained across studies.",
+            "confidence": 0.5,
+            "adjusted_confidence": 0.5,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 2,
+          "INCOMPLETENESS": 2
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 5
+        },
+        "confidence_scores": [
+          0.8,
+          0.6,
+          0.9,
+          0.7,
+          0.5
+        ],
+        "avg_confidence": 0.7,
+        "analysis_time": 9.36
+      },
+      {
+        "topic": "efficient deep learning deployment on resource-constrained edge devices",
+        "topic_key": "T4",
+        "num_papers_retrieved": 10,
+        "total_indicators": 5,
+        "indicators": [
+          {
+            "type": "INCOMPLETENESS",
+            "description": "The impact of transfer learning on low-resource tasks in edge devices is not thoroughly explored.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "FRAGMENTATION",
+            "description": "There is a lack of studies comparing the performance of different fine-tuning strategies for adapter layers in edge devices.",
+            "confidence": 0.6,
+            "adjusted_confidence": 0.6,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "The optimization difficulties faced by deep plain nets and ResNets are not fully understood in edge device settings.",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCONSISTENCY",
+            "description": "The use of tied embeddings for generator and discriminator in ELECTRA is not consistently evaluated across different edge devices.",
+            "confidence": 0.5,
+            "adjusted_confidence": 0.5,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          },
+          {
+            "type": "INCOMPLETENESS",
+            "description": "The performance of adapter layers with different inner dimensionality (32, 128, 512, 2048) is not thoroughly compared in edge device settings.",
+            "confidence": 0.7,
+            "adjusted_confidence": 0.7,
+            "verdict": "NONE",
+            "requires_human_validation": true,
+            "evidence_count": 0,
+            "suggested_directions": []
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 3
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 5
+        },
+        "confidence_scores": [
+          0.8,
+          0.6,
+          0.9,
+          0.5,
+          0.7
+        ],
+        "avg_confidence": 0.7,
+        "analysis_time": 10.09
+      }
+    ],
+    "total_time": 40.66
+  },
+  "phase4_rule_engine": {
+    "summary": {},
+    "total_time": 0,
+    "skipped": true
+  },
+  "phase5_adversarial": {
+    "summary": {},
+    "total_time": 0,
+    "skipped": true
+  },
+  "overall_metrics": {
+    "total_pipeline_time_seconds": 40.66,
+    "papers_processed": 23,
+    "total_chunks_ingested": 0,
+    "total_facts_extracted": 0,
+    "total_gap_indicators": 20,
+    "topics_analyzed": 4,
+    "avg_confidence": 0.7,
+    "avg_adjusted_confidence": 0.7,
+    "rule_engine_pass_rate": 0,
+    "rule_engine_flag_rate": 0,
+    "rule_engine_reject_rate": 0,
+    "rule_engine_rejection_rate_RERR": 0,
+    "adversarial_accuracy": null
+  }
+}
