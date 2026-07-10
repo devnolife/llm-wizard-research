@@ -437,11 +437,19 @@ class GapAnalyzer:
                         {c.lower() for c in covered_aspects}]
             
             if uncovered:
+                # Ground each uncovered aspect against the corpus vocabulary:
+                # aspects whose terms never appear anywhere in the analyzed
+                # papers are likely parametric LLM knowledge (pre-training
+                # bias), so they carry less evidential weight than aspects
+                # whose terminology IS present but never systematically covered.
+                grounded, ungrounded = self._ground_aspects(uncovered, papers)
+                
                 # Calibrated: confidence scales with the measured coverage gap
-                # (fraction of expected aspects that no paper addresses), not a
-                # fixed magic number.
+                # (fraction of expected aspects that no paper addresses),
+                # weighted by how many of those aspects are corpus-grounded.
                 coverage_gap = len(uncovered) / max(1, len(expected_aspects))
-                conf = round(0.3 + 0.6 * coverage_gap, 3)
+                grounding_ratio = len(grounded) / max(1, len(uncovered))
+                conf = round((0.3 + 0.6 * coverage_gap) * (0.6 + 0.4 * grounding_ratio), 3)
                 indicators.append(GapIndicator(
                     indicator_type=GapIndicatorType.INCOMPLETENESS,
                     description=(
@@ -456,9 +464,13 @@ class GapAnalyzer:
                         f"Covered aspects: {', '.join(list(covered_aspects)[:5])}",
                         f"Coverage gap: {len(uncovered)}/{len(expected_aspects)} "
                         f"expected aspects uncovered ({coverage_gap:.0%}).",
+                        f"Corpus grounding: {len(grounded)}/{len(uncovered)} "
+                        f"uncovered aspects have terminology present in the corpus"
+                        + (f"; ungrounded (parametric): {', '.join(ungrounded[:3])}"
+                           if ungrounded else "") + ".",
                     ],
                     suggested_directions=[
-                        f"Investigate: {aspect}" for aspect in uncovered[:3]
+                        f"Investigate: {aspect}" for aspect in (grounded + ungrounded)[:3]
                     ],
                     detection_method="aspect_coverage",
                 ))
@@ -873,6 +885,39 @@ List contradictions (if none found, say "No contradictions detected"):"""
         
         return covered
     
+    def _ground_aspects(
+        self,
+        aspects: List[str],
+        papers: List[Dict[str, Any]],
+    ) -> tuple:
+        """
+        Split uncovered aspects into corpus-grounded vs ungrounded.
+
+        An aspect is *grounded* when at least one of its content words appears
+        somewhere in the analyzed papers' text — meaning the topic exists in
+        the corpus but is not systematically covered. Ungrounded aspects come
+        purely from the LLM's parametric knowledge and may reflect
+        pre-training bias rather than a real coverage gap in this corpus.
+        """
+        stopwords = {
+            "the", "a", "an", "and", "or", "of", "for", "in", "on", "to",
+            "with", "by", "from", "vs", "versus", "such", "as", "e.g",
+        }
+        corpus_text = " ".join(
+            p.get("content", "").lower() for p in papers
+        )
+        grounded, ungrounded = [], []
+        for aspect in aspects:
+            words = [
+                w.strip(".,()") for w in aspect.lower().split()
+                if len(w) > 3 and w.lower() not in stopwords
+            ]
+            if words and any(w in corpus_text for w in words):
+                grounded.append(aspect)
+            else:
+                ungrounded.append(aspect)
+        return grounded, ungrounded
+
     def _identify_expected_aspects(self, topic: str) -> List[str]:
         """Use LLM to identify expected aspects for a research topic."""
         if not self.llm:

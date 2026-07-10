@@ -260,6 +260,17 @@ class TestIncompleteness:
         assert meth[0].confidence == pytest.approx(0.64)
         assert "deep learning" in meth[0].description
 
+    def test_aspect_grounding_splits_parametric_aspects(self, homogeneous_papers):
+        """Aspects absent from the corpus vocabulary are marked ungrounded
+        (parametric LLM knowledge) and reduce indicator confidence."""
+        ga = GapAnalyzer()
+        grounded, ungrounded = ga._ground_aspects(
+            ["detection accuracy analysis", "quantum cryptography ethics"],
+            homogeneous_papers,  # contents mention detection/accuracy, not quantum
+        )
+        assert grounded == ["detection accuracy analysis"]
+        assert ungrounded == ["quantum cryptography ethics"]
+
 
 # ===================================================================
 # Rule Engine integration
