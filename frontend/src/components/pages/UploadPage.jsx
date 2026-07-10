@@ -1,9 +1,8 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Upload, FileText, X, Loader } from 'lucide-react'
+import { Upload, FileText, X, Loader, Search, Lightbulb, BookOpen, ArrowRight } from 'lucide-react'
 import { analysisService } from '../../services/analysisService'
-import api from '../../services/api'
-import { useToast } from '../../contexts/ToastContext'
+import useToast from '../../hooks/useToast'
 
 const UploadPage = () => {
   const toast = useToast()
@@ -13,19 +12,6 @@ const UploadPage = () => {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState(null)
-  const [stats, setStats] = useState({ papers: '-', chunks: '-' })
-
-  useEffect(() => {
-    api.get('/api/stats')
-      .then(({ data: d }) => {
-        setStats({
-          papers: d.total_documents ?? d.document_count ?? '-',
-          chunks: d.total_chunks ?? '-',
-        })
-      })
-      .catch(() => { })
-  }, [])
-
   const handleDragOver = useCallback((e) => {
     e.preventDefault()
     setIsDragging(true)
@@ -81,92 +67,77 @@ const UploadPage = () => {
   }
 
   return (
-    <div className="relative w-full px-6 lg:px-10 py-12 max-w-6xl mx-auto">
-      {/* Hero */}
-      <div className="mb-10 reveal">
-        <span className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/5 px-3 py-1 text-xs font-medium text-primary mb-5">
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-          </span>
-          Neuro-Symbolic Agentic Analysis
-        </span>
-        <h1 className="font-display text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.05] mb-4">
-          Temukan <span className="text-gradient">celah penelitian</span>
-          <br className="hidden sm:block" /> dari paper yang Anda unggah.
+    <div className="relative w-full px-6 lg:px-10 py-12 max-w-5xl mx-auto">
+      <header className="mb-8 max-w-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary mb-3">Mulai dari sini</p>
+        <h1 className="font-display text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.04] mb-4">
+          Unggah jurnal.<br />Ikuti <span className="text-gradient">satu jalur sederhana.</span>
         </h1>
-        <p className="text-base md:text-lg text-muted-foreground max-w-2xl leading-relaxed">
-          Unggah paper PDF — AI mengekstrak topik, membangun knowledge graph, dan
-          mendeteksi indikator <em className="not-italic text-foreground font-medium">synthesis gap</em>
-          {' '}(fragmentasi, inkonsistensi, ketidaklengkapan) untuk arah penelitian baru.
+        <p className="text-base text-muted-foreground leading-relaxed">
+          Tidak perlu memahami semua menu di awal. Mulai dengan jurnal Anda; sistem akan memandu Anda sampai menemukan gap, solusi, dan jurnal pendukungnya.
         </p>
-      </div>
+      </header>
 
-      {/* How it works */}
-      <div className="rounded-2xl border bg-card/80 p-6 mb-8 shadow-soft">
-        <p className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <span className="h-1 w-6 rounded-full bg-primary" />
-          Cara kerja — 3 langkah
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 reveal">
-          {[
-            { step: '1', title: 'Unggah Paper', desc: 'Pilih satu atau beberapa file PDF paper penelitian, lalu klik Analisis.' },
-            { step: '2', title: 'AI Menganalisis', desc: 'Sistem membaca isi paper, mengekstrak topik & fakta, lalu mencari celah penelitian (~2-5 menit).' },
-            { step: '3', title: 'Lihat Hasil', desc: 'Hasil tampil per tab: Ringkasan → Gap Penelitian → Rekomendasi. Gap = ide penelitian baru untuk Anda.' },
-          ].map(({ step, title, desc }) => (
-            <div key={step} className="flex gap-3.5">
-              <div className="grid h-8 w-8 place-items-center rounded-xl bg-primary/10 text-primary text-sm font-bold flex-shrink-0 ring-1 ring-inset ring-primary/20">{step}</div>
-              <div>
-                <p className="text-sm font-semibold">{title}</p>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8 reveal">
+      <ol className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-8" aria-label="Alur penelitian sederhana">
         {[
-          { label: 'Paper Terindeks', value: stats.papers },
-          { label: 'Chunk di Vector DB', value: typeof stats.chunks === 'number' ? stats.chunks.toLocaleString() : stats.chunks },
-          { label: 'Waktu Analisis Rata-rata', value: '~2 menit' },
-        ].map((stat, idx) => (
-          <div key={idx} className="rounded-2xl border bg-card/80 p-5 lift">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{stat.label}</p>
-            <p className="font-display text-3xl font-bold mt-1.5 tabular-nums">{stat.value}</p>
-          </div>
-        ))}
-      </div>
+          { number: '01', title: 'Unggah jurnal', desc: 'Pilih PDF Anda.', icon: Upload, active: true },
+          { number: '02', title: 'Lihat gap', desc: 'Temukan celah utama.', icon: Search },
+          { number: '03', title: 'Pilih solusi', desc: 'Dapatkan arah riset.', icon: Lightbulb },
+          { number: '04', title: 'Cari pendukung', desc: 'Temukan jurnal terkait.', icon: BookOpen },
+        ].map((step) => {
+          const StepIcon = step.icon
+          return (
+            <li key={step.number} className={`relative rounded-xl border p-4 ${step.active ? 'border-primary/40 bg-primary/5 shadow-sm' : 'bg-card/65'}`}>
+              <div className="flex items-center justify-between mb-4">
+                <span className={`font-mono text-[11px] font-bold ${step.active ? 'text-primary' : 'text-muted-foreground'}`}>{step.number}</span>
+                <StepIcon className={`w-4 h-4 ${step.active ? 'text-primary' : 'text-muted-foreground'}`} />
+              </div>
+              <p className="text-sm font-semibold">{step.title}</p>
+              <p className="text-xs text-muted-foreground mt-1">{step.desc}</p>
+            </li>
+          )
+        })}
+      </ol>
 
       {/* Upload Area */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={`group relative rounded-2xl border-2 border-dashed p-12 text-center transition-all duration-300 ${isDragging
-          ? 'border-primary bg-primary/5 scale-[1.01]'
-          : 'border-border hover:border-primary/50 hover:bg-primary/[0.03]'
-          }`}
-      >
-        <input
-          type="file"
-          multiple
-          accept=".pdf"
-          onChange={handleFileInput}
-          className="hidden"
-          id="file-input"
-          disabled={uploading}
-        />
-        <label htmlFor="file-input" className="cursor-pointer block">
-          <span className={`mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl transition-all duration-300 ${isDragging ? 'bg-primary text-primary-foreground scale-110' : 'bg-primary/10 text-primary group-hover:scale-105'}`}>
-            <Upload className="w-7 h-7" />
-          </span>
-          <p className="text-lg font-semibold mb-1">Letakkan file PDF di sini</p>
-          <p className="text-sm text-muted-foreground">atau klik untuk memilih dari perangkat Anda</p>
-          <p className="text-xs text-muted-foreground mt-2">Format: File PDF maksimal 50MB</p>
-        </label>
-      </div>
+      <section className="rounded-2xl border bg-card/80 p-2 shadow-soft">
+        <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary mb-1">Langkah 1 dari 4</p>
+            <h2 className="text-xl font-semibold">Unggah jurnal yang ingin dibandingkan</h2>
+          </div>
+          <ArrowRight className="w-5 h-5 text-primary mt-1" aria-hidden="true" />
+        </div>
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          role="region"
+          aria-label="Area unggah jurnal PDF"
+          className={`group relative mx-3 mb-3 rounded-xl border-2 border-dashed p-10 text-center transition-all duration-300 ${isDragging
+            ? 'border-primary bg-primary/5 scale-[1.01]'
+            : 'border-border hover:border-primary/50 hover:bg-primary/[0.03]'
+            }`}
+        >
+          <input
+            type="file"
+            multiple
+            accept=".pdf"
+            onChange={handleFileInput}
+            className="hidden"
+            id="file-input"
+            disabled={uploading}
+          />
+          <label htmlFor="file-input" className="cursor-pointer block">
+            <span className={`mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl transition-all duration-300 ${isDragging ? 'bg-primary text-primary-foreground scale-110' : 'bg-primary/10 text-primary group-hover:scale-105'}`}>
+              <Upload className="w-7 h-7" />
+            </span>
+            <p className="text-lg font-semibold mb-1">Pilih jurnal PDF Anda</p>
+            <p className="text-sm text-muted-foreground">Tarik file ke sini atau klik untuk memilih. Disarankan 2–5 jurnal.</p>
+            <p className="text-xs text-muted-foreground mt-2">PDF maksimal 50MB per file</p>
+          </label>
+        </div>
+      </section>
 
       {/* File List */}
       {files.length > 0 && (
@@ -189,6 +160,7 @@ const UploadPage = () => {
                 <button
                   onClick={() => removeFile(index)}
                   className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={`Hapus ${file.name}`}
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -204,7 +176,7 @@ const UploadPage = () => {
           onClick={handleUploadAndAnalyze}
           className="mt-6 w-full py-3.5 px-4 rounded-xl bg-primary text-primary-foreground font-semibold shadow-glow transition-all duration-200 hover:bg-primary/90 hover:shadow-lg active:scale-[0.99]"
         >
-          Unggah &amp; Auto-Analisis ({files.length} file)
+          Lanjut: Temukan Gap dari {files.length} Jurnal
         </button>
       )}
 
@@ -240,19 +212,6 @@ const UploadPage = () => {
         </div>
       )}
 
-      {/* Features */}
-      <div className="mt-12 grid gap-4 md:grid-cols-3">
-        {[
-          { title: 'Ekstraksi Topik', desc: 'AI mengidentifikasi arah penelitian tiap paper secara otomatis.' },
-          { title: 'Deteksi Gap', desc: 'Menyingkap sudut yang kurang diteliti dan pertanyaan yang belum terjawab.' },
-          { title: 'Rekomendasi', desc: 'Mengubah insight menjadi langkah berikutnya yang jelas dan berbukti.' },
-        ].map((feature, idx) => (
-          <div key={idx} className="rounded-lg border bg-card p-5">
-            <h4 className="font-medium mb-1">{feature.title}</h4>
-            <p className="text-sm text-muted-foreground">{feature.desc}</p>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }

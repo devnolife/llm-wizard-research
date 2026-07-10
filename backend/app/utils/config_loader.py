@@ -8,7 +8,7 @@ import os
 import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -35,8 +35,12 @@ class LLMConfig:
     base_url: str = "http://localhost:11434"
     model_name: str = "llama3.2:latest"
     temperature: float = 0.7
+    top_p: float = 0.9
     max_tokens: int = 2048
-    context_window: int = 4096
+    context_window: int = 8192
+    timeout: int = 120
+    keep_alive: str = "30m"
+    num_parallel: int = 4
 
 
 @dataclass
@@ -46,6 +50,7 @@ class VectorDBConfig:
     collection_name: str = "research_papers_ml"
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     distance_metric: str = "cosine"
+    batch_size: int = 100
 
 
 @dataclass
@@ -63,7 +68,7 @@ class RetrievalConfig:
     top_k: int = 5
     chunk_size: int = 512
     chunk_overlap: int = 50
-    min_relevance_score: float = 0.7
+    min_relevance_score: float = 0.15
     rerank_enabled: bool = True
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     chunk_strategy: str = "sections"
@@ -73,13 +78,16 @@ class RetrievalConfig:
 class APIConfig:
     """API configuration"""
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 8001
     workers: int = 4
     reload: bool = False
     cors_origins: list = field(default_factory=lambda: [
         "http://localhost:5173",
         "http://localhost:3000",
     ])
+    cors_enabled: bool = True
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 60
 
 
 @dataclass
@@ -89,6 +97,22 @@ class DataConfig:
     processed_path: str = "./data/processed"
     allowed_file_types: list = field(default_factory=lambda: ["pdf"])
     max_file_size_mb: int = 50
+
+
+@dataclass
+class QueueConfig:
+    """Durable local analysis queue configuration."""
+    max_workers: int = 2
+    max_attempts: int = 2
+    retention_days: int = 30
+    telemetry_retention_days: int = 14
+
+
+@dataclass
+class TelemetryConfig:
+    """Metadata-only operational event retention."""
+    enabled: bool = True
+    retention_days: int = 14
 
 
 @dataclass
@@ -127,6 +151,7 @@ class OCRConfig:
     min_chars_per_page: int = 50  # below this avg -> treat as scanned, try OCR
     ngram_size: int = 35
     ngram_window: int = 128
+    validate_service_on_startup: bool = False
 
 
 @dataclass
@@ -138,6 +163,8 @@ class AppConfig:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     api: APIConfig = field(default_factory=APIConfig)
     data: DataConfig = field(default_factory=DataConfig)
+    queue: QueueConfig = field(default_factory=QueueConfig)
+    telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     rule_engine: RuleConfig = field(default_factory=RuleConfig)
     fact_extraction: FactExtractionConfig = field(default_factory=FactExtractionConfig)
     ocr: OCRConfig = field(default_factory=OCRConfig)
@@ -169,10 +196,10 @@ class ConfigLoader:
     def _find_config_file(self) -> Optional[str]:
         """Find config file in standard locations"""
         possible_paths = [
+            str(self.PROJECT_ROOT / "backend" / "config.yaml"),
             "./configs/config.yaml",
             "./config.yaml",
             "../configs/config.yaml",
-            str(self.PROJECT_ROOT / "backend" / "config.yaml"),
         ]
         
         for path in possible_paths:
@@ -223,8 +250,12 @@ class ConfigLoader:
             base_url=os.getenv("OLLAMA_BASE_URL") or yaml_config.get("llm", {}).get("base_url", "http://localhost:11434"),
             model_name=os.getenv("OLLAMA_MODEL") or yaml_config.get("llm", {}).get("model_name", "llama3.2:latest"),
             temperature=float(os.getenv("LLM_TEMPERATURE", yaml_config.get("llm", {}).get("temperature", 0.7))),
+            top_p=float(os.getenv("LLM_TOP_P", yaml_config.get("llm", {}).get("top_p", 0.9))),
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", yaml_config.get("llm", {}).get("max_tokens", 2048))),
-            context_window=int(os.getenv("LLM_CONTEXT_WINDOW", yaml_config.get("llm", {}).get("context_window", 4096))),
+            context_window=int(os.getenv("LLM_CONTEXT_WINDOW", yaml_config.get("llm", {}).get("context_window", 8192))),
+            timeout=int(os.getenv("LLM_TIMEOUT", yaml_config.get("llm", {}).get("timeout", 120))),
+            keep_alive=os.getenv("OLLAMA_KEEP_ALIVE") or yaml_config.get("llm", {}).get("keep_alive", "30m"),
+            num_parallel=int(os.getenv("OLLAMA_NUM_PARALLEL", yaml_config.get("llm", {}).get("num_parallel", 4))),
         )
         
         # Vector DB Configuration
@@ -233,8 +264,9 @@ class ConfigLoader:
                 os.getenv("CHROMA_PERSIST_DIRECTORY") or yaml_config.get("vector_db", {}).get("persist_directory", "./chroma_db")
             ),
             collection_name=os.getenv("CHROMA_COLLECTION_NAME") or yaml_config.get("vector_db", {}).get("collection_name", "research_papers"),
-            embedding_model=os.getenv("EMBEDDING_MODEL") or yaml_config.get("vector_db", {}).get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2"),
+            embedding_model=os.getenv("EMBEDDING_MODEL") or yaml_config.get("vector_db", {}).get("embedding_model", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
             distance_metric=yaml_config.get("vector_db", {}).get("distance_metric", "cosine"),
+            batch_size=int(os.getenv("VECTOR_DB_BATCH_SIZE", yaml_config.get("vector_db", {}).get("batch_size", 100))),
         )
         
         # Neo4j Configuration
@@ -250,7 +282,7 @@ class ConfigLoader:
             top_k=int(os.getenv("RETRIEVAL_TOP_K", yaml_config.get("retrieval", {}).get("top_k", 5))),
             chunk_size=int(os.getenv("CHUNK_SIZE", yaml_config.get("retrieval", {}).get("chunk_size", 512))),
             chunk_overlap=int(os.getenv("CHUNK_OVERLAP", yaml_config.get("retrieval", {}).get("chunk_overlap", 50))),
-            min_relevance_score=float(os.getenv("MIN_RELEVANCE_SCORE", yaml_config.get("retrieval", {}).get("min_relevance_score", 0.7))),
+            min_relevance_score=float(os.getenv("MIN_RELEVANCE_SCORE", yaml_config.get("retrieval", {}).get("min_relevance_score", 0.15))),
             rerank_enabled=str(os.getenv("RERANK_ENABLED", yaml_config.get("retrieval", {}).get("rerank_enabled", True))).lower() in ("1", "true", "yes"),
             reranker_model=os.getenv("RERANKER_MODEL", yaml_config.get("retrieval", {}).get("reranker_model", "cross-encoder/ms-marco-MiniLM-L-6-v2")),
             chunk_strategy=os.getenv("CHUNK_STRATEGY", yaml_config.get("retrieval", {}).get("chunk_strategy", "sections")),
@@ -259,13 +291,16 @@ class ConfigLoader:
         # API Configuration
         api_config = APIConfig(
             host=os.getenv("API_HOST") or yaml_config.get("api", {}).get("host", "0.0.0.0"),
-            port=int(os.getenv("API_PORT", yaml_config.get("api", {}).get("port", 8000))),
+            port=int(os.getenv("API_PORT", yaml_config.get("api", {}).get("port", 8001))),
             workers=int(os.getenv("API_WORKERS", yaml_config.get("api", {}).get("workers", 4))),
             reload=yaml_config.get("api", {}).get("reload", False),
             cors_origins=yaml_config.get("api", {}).get("cors_origins", [
                 "http://localhost:5173",
                 "http://localhost:3000",
             ]),
+            cors_enabled=_env_bool("CORS_ENABLED", yaml_config.get("api", {}).get("cors_enabled", True)),
+            rate_limit_enabled=_env_bool("RATE_LIMIT_ENABLED", yaml_config.get("api", {}).get("rate_limit_enabled", True)),
+            rate_limit_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", yaml_config.get("api", {}).get("rate_limit_per_minute", 60))),
         )
         
         # Data Configuration
@@ -313,6 +348,22 @@ class ConfigLoader:
             min_chars_per_page=int(os.getenv("OCR_MIN_CHARS_PER_PAGE", ocr_cfg.get("min_chars_per_page", 50))),
             ngram_size=int(os.getenv("OCR_NGRAM_SIZE", ocr_cfg.get("ngram_size", 35))),
             ngram_window=int(os.getenv("OCR_NGRAM_WINDOW", ocr_cfg.get("ngram_window", 128))),
+            validate_service_on_startup=_env_bool(
+                "OCR_VALIDATE_ON_STARTUP", ocr_cfg.get("validate_service_on_startup", False)
+            ),
+        )
+
+        queue_cfg = yaml_config.get("analysis_queue", {})
+        queue_config = QueueConfig(
+            max_workers=int(os.getenv("ANALYSIS_QUEUE_WORKERS", queue_cfg.get("max_workers", 2))),
+            max_attempts=int(os.getenv("ANALYSIS_JOB_MAX_ATTEMPTS", queue_cfg.get("max_attempts", 2))),
+            retention_days=int(os.getenv("ANALYSIS_JOB_RETENTION_DAYS", queue_cfg.get("retention_days", 30))),
+            telemetry_retention_days=int(os.getenv("TELEMETRY_RETENTION_DAYS", queue_cfg.get("telemetry_retention_days", 14))),
+        )
+        telemetry_cfg = yaml_config.get("telemetry", {})
+        telemetry_config = TelemetryConfig(
+            enabled=_env_bool("TELEMETRY_ENABLED", telemetry_cfg.get("enabled", True)),
+            retention_days=int(os.getenv("TELEMETRY_RETENTION_DAYS", telemetry_cfg.get("retention_days", queue_config.telemetry_retention_days))),
         )
         
         # Main Configuration
@@ -323,6 +374,8 @@ class ConfigLoader:
             retrieval=retrieval_config,
             api=api_config,
             data=data_config,
+            queue=queue_config,
+            telemetry=telemetry_config,
             rule_engine=rule_config,
             fact_extraction=fact_config,
             ocr=ocr_config,
@@ -330,12 +383,40 @@ class ConfigLoader:
             log_file=os.getenv("LOG_FILE") or yaml_config.get("log_file", "./logs/app.log"),
         )
         
+        self._validate_config(app_config)
         logger.info("Configuration loaded successfully")
         return app_config
+
+    @staticmethod
+    def _validate_config(config: AppConfig) -> None:
+        """Fail fast for values that would make local workers unsafe."""
+        if config.llm.timeout <= 0 or config.llm.context_window <= 0:
+            raise ValueError("LLM timeout and context_window must be positive")
+        if not 0 <= config.llm.temperature <= 2:
+            raise ValueError("LLM temperature must be between 0 and 2")
+        if not 0 < config.llm.top_p <= 1:
+            raise ValueError("LLM top_p must be in (0, 1]")
+        if config.llm.num_parallel < 1:
+            raise ValueError("LLM num_parallel must be at least 1")
+        if config.queue.max_workers < 1 or config.queue.max_workers > 2:
+            raise ValueError("analysis_queue.max_workers must be between 1 and 2")
+        if config.queue.max_attempts < 1:
+            raise ValueError("analysis_queue.max_attempts must be at least 1")
+        if config.ocr.dpi < 72 or config.ocr.concurrency < 1 or config.ocr.timeout < 1:
+            raise ValueError("OCR dpi, concurrency, and timeout must be positive")
     
     def get_config(self) -> AppConfig:
         """Get the loaded configuration"""
         return self.config
+
+    def get_effective_config_summary(self) -> Dict[str, Any]:
+        """Return the active config with credentials redacted for diagnostics."""
+        summary = asdict(self.config)
+        for section in ("neo4j",):
+            if section in summary and "password" in summary[section]:
+                summary[section]["password"] = "***" if summary[section]["password"] else ""
+        summary["config_path"] = str(self.config_path) if self.config_path else None
+        return summary
     
     def reload(self):
         """Reload configuration"""
@@ -354,14 +435,19 @@ class ConfigLoader:
                 "base_url": self.config.llm.base_url,
                 "model_name": self.config.llm.model_name,
                 "temperature": self.config.llm.temperature,
+                "top_p": self.config.llm.top_p,
                 "max_tokens": self.config.llm.max_tokens,
                 "context_window": self.config.llm.context_window,
+                "timeout": self.config.llm.timeout,
+                "keep_alive": self.config.llm.keep_alive,
+                "num_parallel": self.config.llm.num_parallel,
             },
             "vector_db": {
                 "persist_directory": self.config.vector_db.persist_directory,
                 "collection_name": self.config.vector_db.collection_name,
                 "embedding_model": self.config.vector_db.embedding_model,
                 "distance_metric": self.config.vector_db.distance_metric,
+                "batch_size": self.config.vector_db.batch_size,
             },
             "neo4j": {
                 "uri": self.config.neo4j.uri,
@@ -380,6 +466,10 @@ class ConfigLoader:
                 "port": self.config.api.port,
                 "workers": self.config.api.workers,
                 "reload": self.config.api.reload,
+                "cors_origins": self.config.api.cors_origins,
+                "cors_enabled": self.config.api.cors_enabled,
+                "rate_limit_enabled": self.config.api.rate_limit_enabled,
+                "rate_limit_per_minute": self.config.api.rate_limit_per_minute,
             },
             "data": {
                 "raw_path": self.config.data.raw_path,
@@ -387,6 +477,9 @@ class ConfigLoader:
                 "allowed_file_types": self.config.data.allowed_file_types,
                 "max_file_size_mb": self.config.data.max_file_size_mb,
             },
+            "analysis_queue": asdict(self.config.queue),
+            "telemetry": asdict(self.config.telemetry),
+            "ocr": asdict(self.config.ocr),
             "log_level": self.config.log_level,
             "log_file": self.config.log_file,
         }
@@ -412,9 +505,16 @@ def get_config() -> AppConfig:
 
 def reload_config():
     """Reload global configuration"""
-    global _config_loader
     if _config_loader is not None:
         _config_loader.reload()
+
+
+def get_effective_config_summary() -> Dict[str, Any]:
+    """Expose a redacted runtime configuration summary to diagnostics tools."""
+    global _config_loader
+    if _config_loader is None:
+        _config_loader = ConfigLoader()
+    return _config_loader.get_effective_config_summary()
 
 
 # Example usage

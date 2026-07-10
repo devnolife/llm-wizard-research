@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { FileText, Trash2, Search, Database, BarChart3, RefreshCw, Loader } from 'lucide-react'
-import { useToast } from '../../contexts/ToastContext'
+import useToast from '../../hooks/useToast'
 import { documentService } from '../../services/documentService'
 import EmptyState from '../common/EmptyState'
 import Badge from '../common/Badge'
@@ -15,7 +15,7 @@ const DocumentsPage = () => {
   const [searching, setSearching] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const data = await documentService.getStats()
       setStats(data)
@@ -24,9 +24,9 @@ const DocumentsPage = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [toast])
 
-  useEffect(() => { fetchStats() }, [])
+  useEffect(() => { fetchStats() }, [fetchStats])
 
   const handleSearch = async (e) => {
     e.preventDefault()
@@ -157,6 +157,7 @@ const DocumentsPage = () => {
                   onClick={() => handleDelete(result.id, result.metadata?.title)}
                   className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors flex-shrink-0"
                   title="Hapus dokumen"
+                  aria-label={`Hapus dokumen ${result.metadata?.title || result.id || ''}`}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

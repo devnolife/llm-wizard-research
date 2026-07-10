@@ -11,8 +11,7 @@ from collections import defaultdict
 
 from loguru import logger
 
-from .vector_store import VectorStore, SearchResult, Document
-from ...utils.document_processor import DocumentProcessor
+from .vector_store import VectorStore, Document
 
 
 @dataclass

@@ -18,7 +18,6 @@ References:
 """
 
 from typing import Dict, Any, List, Optional
-from collections import defaultdict
 
 from loguru import logger
 
@@ -222,12 +221,6 @@ class GapDetectorAgent:
             return result
         
         try:
-            papers_summary = "\n\n".join([
-                f"- {p.get('metadata', {}).get('title', 'Unknown')}: "
-                f"{p.get('content', '')[:300]}"
-                for p in papers[:5]
-            ])
-            
             llm_gaps = self.llm.detect_gaps(
                 context=query,
                 papers=[p.get('metadata', {}).get('title', '') for p in papers[:10]]

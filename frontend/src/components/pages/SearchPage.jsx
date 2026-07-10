@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search, ExternalLink, Calendar, Users, BookOpen, Filter, ChevronDown, Loader, CheckCircle2, Circle, Sparkles, Lightbulb, Tag, X } from 'lucide-react'
-import { useToast } from '../../contexts/ToastContext'
+import useToast from '../../hooks/useToast'
 import { paperService } from '../../services/paperService'
 import Badge from '../common/Badge'
 import EmptyState from '../common/EmptyState'
@@ -18,7 +19,11 @@ const SOURCES = [
 
 const SearchPage = () => {
   const toast = useToast()
-  const [query, setQuery] = useState('')
+  const [searchParams] = useSearchParams()
+  const suggestedQuery = searchParams.get('q') || ''
+  const isSolutionSearch = searchParams.get('from') === 'solution'
+  const autoSearchQuery = useRef(null)
+  const [query, setQuery] = useState(() => suggestedQuery)
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -68,9 +73,8 @@ const SearchPage = () => {
     }
   }
 
-  const handleSearch = async (e) => {
-    e.preventDefault()
-    if (!query.trim()) return
+  const searchPapers = useCallback(async (queryText) => {
+    if (!queryText.trim()) return
     if (selectedSources.length === 0) {
       toast.warning('Pilih minimal satu sumber')
       return
@@ -79,7 +83,7 @@ const SearchPage = () => {
     setLoading(true)
     setHasSearched(true)
     try {
-      const response = await paperService.searchExternalPapers(query, {
+      const response = await paperService.searchExternalPapers(queryText, {
         sources: selectedSources,
         max_results: maxResults,
         year_from: yearFrom ? parseInt(yearFrom) : undefined,
@@ -93,7 +97,19 @@ const SearchPage = () => {
     } finally {
       setLoading(false)
     }
+  }, [maxResults, selectedSources, toast, yearFrom, yearTo])
+
+  const handleSearch = (e) => {
+    e.preventDefault()
+    searchPapers(query)
   }
+
+  useEffect(() => {
+    if (!suggestedQuery || autoSearchQuery.current === suggestedQuery) return
+    autoSearchQuery.current = suggestedQuery
+    setQuery(suggestedQuery)
+    searchPapers(suggestedQuery)
+  }, [searchPapers, suggestedQuery])
 
   const handleIngest = async (paper) => {
     try {
@@ -108,21 +124,28 @@ const SearchPage = () => {
     <div className="w-full px-6 lg:px-10 py-12">
       {/* Header */}
       <div className="mb-6 reveal">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Cari Paper</h1>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary mb-2">
+          {isSolutionSearch ? 'Langkah 4 dari 4' : 'Literatur pendukung'}
+        </p>
+        <h1 className="text-3xl font-bold tracking-tight mb-2">
+          {isSolutionSearch ? 'Cari Jurnal Pendukung' : 'Cari Paper'}
+        </h1>
         <p className="text-muted-foreground">
-          Cari paper dari database eksternal untuk menambah bahan literatur Anda.
+          {isSolutionSearch
+            ? 'Mulai dari kata kunci solusi di bawah, lalu tandai jurnal yang paling dapat memperkuat arah penelitian Anda.'
+            : 'Cari paper dari database eksternal untuk menambah bahan literatur Anda.'}
         </p>
       </div>
 
       <PageHelp
         icon={Search}
-        title="Yang akan Anda lihat di sini"
-        description="Hasil berupa daftar paper dari database eksternal (bukan koleksi Anda)."
-        items={[
-          'Tiap hasil menampilkan judul, penulis, tahun, abstrak, dan tautan sumber.',
-          'Tandai 3-5 paper yang relevan, lalu klik "Analisis Tanda" untuk menemukan kata kunci yang sama dan saran arah penelitian.',
-          'Filter berdasarkan sumber (arXiv, Semantic Scholar, CORE, CrossRef, PubMed, Europe PMC) dan rentang tahun.',
-        ]}
+        title={isSolutionSearch ? 'Cari bukti pendukung untuk solusi Anda' : 'Yang akan Anda lihat di sini'}
+        description={isSolutionSearch
+          ? 'Baca abstrak hasil pencarian, tandai yang relevan, lalu simpan atau analisis beberapa paper pilihan.'
+          : 'Hasil berupa daftar paper dari database eksternal (bukan koleksi Anda).'}
+        items={isSolutionSearch
+          ? ['Kata kunci sudah diisi otomatis. Anda tetap dapat mengubahnya sebelum atau sesudah pencarian.']
+          : ['Tandai 3–5 paper relevan untuk melihat tema bersama dan saran arah penelitian.']}
         className="mb-8"
       />
 
@@ -133,7 +156,8 @@ const SearchPage = () => {
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Cari paper penelitian..."
+            placeholder="Masukkan kata kunci solusi atau topik..."
+            aria-label="Kata kunci pencarian jurnal"
             className="flex-1 px-4 py-3 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
           />
           <button

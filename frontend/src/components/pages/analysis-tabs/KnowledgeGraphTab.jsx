@@ -2,19 +2,19 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Loader, Share2 } from 'lucide-react'
 import api from '../../../services/api'
 
-const KnowledgeGraphTab = () => {
+const KnowledgeGraphTab = ({ jobId }) => {
   const canvasRef = useRef(null)
   const [kgData, setKgData] = useState(null)
   const [kgLoading, setKgLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    api.get('/api/kg/graph')
+    api.get('/api/kg/graph', { params: { job_id: jobId } })
       .then(res => { if (!cancelled) setKgData(res.data) })
       .catch(() => { if (!cancelled) setKgData({ nodes: [], edges: [], stats: { total_nodes: 0, total_edges: 0 } }) })
       .finally(() => { if (!cancelled) setKgLoading(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [jobId])
 
   const drawGraph = useCallback(() => {
     if (!kgData || !canvasRef.current) return

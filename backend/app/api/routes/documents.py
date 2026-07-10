@@ -158,6 +158,8 @@ async def delete_document(doc_id: str):
             return {"message": f"Document {doc_id} deleted successfully"}
         else:
             raise HTTPException(status_code=404, detail="Document not found")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Document deletion failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Document deletion failed")

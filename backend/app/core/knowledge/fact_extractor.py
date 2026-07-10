@@ -469,8 +469,6 @@ class FactExtractor:
     ) -> List[Entity]:
         """Fallback pattern-based entity extraction when LLM is unavailable."""
         entities = []
-        text_lower = text.lower()
-        
         # Simple pattern matching for common entity types
         # Method detection
         method_patterns = [
@@ -608,7 +606,6 @@ class FactExtractor:
         Supplements LLM extraction with pattern-based detection.
         """
         facts = []
-        text_lower = text.lower()
         sentences = self._split_sentences(text)
         
         for sentence in sentences:

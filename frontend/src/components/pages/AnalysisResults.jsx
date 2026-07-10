@@ -4,7 +4,7 @@ import {
   CheckCircle, AlertTriangle, Loader, FileText, Database, Tag,
   ArrowRight, Zap, Shield, Download, FileDown,
 } from 'lucide-react'
-import { useToast } from '../../contexts/ToastContext'
+import useToast from '../../hooks/useToast'
 import { analysisService } from '../../services/analysisService'
 import Term from '../common/Term'
 import useAnalysisJob from '../../hooks/useAnalysisJob'
@@ -33,9 +33,27 @@ const AnalysisResults = () => {
   const [advancedMode, setAdvancedMode] = useState(false)
   const [showFullAnalysis, setShowFullAnalysis] = useState(false)
 
-  const { loading, progress, progressMsg, data, error } = useAnalysisJob(jobId, language, {
+  const { loading, progress, progressMsg, data, error, status, cancel, retry } = useAnalysisJob(jobId, language, {
     onComplete: () => toast.success('Analisis selesai!'),
   })
+
+  const cancelAnalysis = async () => {
+    try {
+      await cancel()
+      toast.info('Permintaan pembatalan dikirim')
+    } catch (err) {
+      toast.error(err.userMessage || 'Gagal membatalkan analisis')
+    }
+  }
+
+  const retryAnalysis = async () => {
+    try {
+      await retry()
+      toast.info('Analisis dijadwalkan ulang')
+    } catch (err) {
+      toast.error(err.userMessage || 'Gagal menjadwalkan ulang analisis')
+    }
+  }
 
   const parsedRecommendations = useMemo(() => parseRecommendations(data?.recommendations), [data?.recommendations])
   const parsedGaps = useMemo(() => parseGaps(data?.gaps), [data?.gaps])
@@ -122,6 +140,15 @@ const AnalysisResults = () => {
 
   const downloadResults = () => downloadResultsJson(data, deepAnalysis, jobId)
 
+  const findSupportingPapers = () => {
+    const query = simpleData?.primaryRec?.title || simpleData?.primaryGap?.title || data?.topics?.[0]
+    if (!query) {
+      toast.warning('Belum ada kata kunci solusi untuk dicari')
+      return
+    }
+    navigate(`/search?${new URLSearchParams({ q: query, from: 'solution' })}`)
+  }
+
   const exportPdf = async () => {
     try {
       toast.info('Membuat PDF...')
@@ -177,6 +204,14 @@ const AnalysisResults = () => {
               )
             })}
           </div>
+          {['queued', 'running', 'processing'].includes(status) && (
+            <button
+              onClick={cancelAnalysis}
+              className="mt-6 w-full rounded-lg border border-destructive/30 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
+            >
+              Batalkan Analisis
+            </button>
+          )}
         </div>
       </div>
     )
@@ -188,11 +223,16 @@ const AnalysisResults = () => {
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-6">
         <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center max-w-md">
           <AlertTriangle className="w-12 h-12 text-destructive mx-auto mb-4" />
-          <h2 className="text-xl font-bold mb-2">Analisis Gagal</h2>
+          <h2 className="text-xl font-bold mb-2">{status === 'cancelled' ? 'Analisis Dibatalkan' : 'Analisis Gagal'}</h2>
           <p className="text-sm text-muted-foreground mb-6">{error}</p>
-          <button onClick={() => navigate('/')} className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors">
-            Coba Lagi
-          </button>
+          <div className="flex justify-center gap-3">
+            <button onClick={retryAnalysis} className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors">
+              Jalankan Ulang
+            </button>
+            <button onClick={() => navigate('/')} className="px-6 py-2.5 rounded-lg border font-medium hover:bg-secondary transition-colors">
+              Unggah Baru
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -200,7 +240,14 @@ const AnalysisResults = () => {
 
   // ── Tampilan Ringkas Awal (default) ────────────────────
   if (!showFullAnalysis) {
-    return <SimpleResultsView simpleData={simpleData} data={data} onShowFull={() => setShowFullAnalysis(true)} />
+    return (
+      <SimpleResultsView
+        simpleData={simpleData}
+        data={data}
+        onShowFull={() => setShowFullAnalysis(true)}
+        onFindSources={findSupportingPapers}
+      />
+    )
   }
 
   // ── Main Render ────────────────────────────────────────
@@ -211,7 +258,7 @@ const AnalysisResults = () => {
     gaps: { data, parsedGaps, deepAnalysis, deepLoading, runDeepAnalysis },
     recommendations: { parsedRecommendations, expandedRecs, setExpandedRecs, deepAnalysis, deepLoading, runDeepAnalysis },
     roadmap: { parsedRoadmap },
-    'knowledge-graph': {},
+    'knowledge-graph': { jobId },
     pipeline: { data },
   }
   const tabComponents = { proposal: ProposalTab, overview: OverviewTab, topics: TopicsTab, gaps: GapsTab, recommendations: RecommendationsTab, roadmap: RoadmapTab, 'knowledge-graph': KnowledgeGraphTab, pipeline: PipelineTab }

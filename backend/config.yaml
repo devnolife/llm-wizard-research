@@ -117,6 +117,35 @@ performance:
   parallel_processing: true
   max_workers: 4
 
+# Durable local analysis queue. SQLite coordinates exactly this many worker
+# threads; the value is intentionally capped at two by the config loader to
+# protect the local Ollama/ChromaDB deployment.
+analysis_queue:
+  max_workers: 2
+  max_attempts: 2
+  retention_days: 30
+  telemetry_retention_days: 14
+
+# Metadata-only operational events. Prompts, PDF text, raw queries, and chat
+# content are deliberately excluded from the event store.
+telemetry:
+  enabled: true
+  retention_days: 14
+
+# Optional Unlimited-OCR fallback for scanned PDFs. OCR remains best-effort:
+# unavailable service keeps the native pypdf result instead of failing ingest.
+ocr:
+  enabled: false
+  service_url: "http://127.0.0.1:10000"
+  image_mode: "gundam"
+  dpi: 200
+  concurrency: 4
+  timeout: 1200
+  min_chars_per_page: 50
+  ngram_size: 35
+  ngram_window: 128
+  validate_service_on_startup: false
+
 # Rule-Based Validation Layer Configuration
 rule_engine:
   enabled: true

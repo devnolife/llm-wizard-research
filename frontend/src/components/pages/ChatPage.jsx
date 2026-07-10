@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, Loader, Trash2, MessageSquare } from 'lucide-react'
-import { useToast } from '../../contexts/ToastContext'
+import useToast from '../../hooks/useToast'
 import { analysisService } from '../../services/analysisService'
 import EmptyState from '../common/EmptyState'
 import PageHelp from '../common/PageHelp'
@@ -59,9 +59,14 @@ const ChatPage = () => {
     }
   }
 
-  const clearChat = () => {
-    setMessages([])
-    toast.info('Chat dibersihkan')
+  const clearChat = async () => {
+    try {
+      await analysisService.clearChat(conversationId)
+      setMessages([])
+      toast.info('Chat dibersihkan')
+    } catch (err) {
+      toast.error(err.userMessage || 'Gagal menghapus chat')
+    }
   }
 
   return (
@@ -77,6 +82,7 @@ const ChatPage = () => {
             onClick={clearChat}
             className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
             title="Hapus chat"
+            aria-label="Hapus chat"
           >
             <Trash2 className="w-4 h-4" />
           </button>
@@ -168,6 +174,7 @@ const ChatPage = () => {
           type="submit"
           disabled={loading || !input.trim()}
           className="px-4 py-3 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Kirim pesan"
         >
           {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
         </button>

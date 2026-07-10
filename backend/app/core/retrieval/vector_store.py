@@ -6,7 +6,8 @@ Manages document embeddings, storage, and semantic search using ChromaDB.
 
 import os
 import uuid
-from typing import List, Dict, Optional, Any, Tuple, Union
+from threading import RLock
+from typing import List, Dict, Optional, Any, Union
 from dataclasses import dataclass
 import numpy as np
 
@@ -70,6 +71,9 @@ class VectorStore:
         self.collection_name = collection_name
         self.embedding_model_name = embedding_model
         self.distance_metric = distance_metric
+        # Chroma's persistent local client is shared by the two analysis
+        # workers. Serialize mutations while allowing concurrent reads.
+        self._write_lock = RLock()
         
         # Create persist directory if it doesn't exist
         os.makedirs(persist_directory, exist_ok=True)
@@ -168,12 +172,15 @@ class VectorStore:
             else:
                 clean_metadata[key] = str(value)
         
-        # ChromaDB rejects empty metadata dicts — use None instead
-        self.collection.add(
-            documents=[content_str],
-            metadatas=[clean_metadata] if clean_metadata else None,
-            ids=[doc_id]
-        )
+        # ChromaDB rejects empty metadata dicts — use None instead.
+        # Local persistent Chroma is not safe for competing writes from
+        # multiple analysis worker threads.
+        with self._write_lock:
+            self.collection.add(
+                documents=[content_str],
+                metadatas=[clean_metadata] if clean_metadata else None,
+                ids=[doc_id]
+            )
         
         logger.info(f"Added document: {doc_id}")
         return doc_id
@@ -203,11 +210,12 @@ class VectorStore:
             # ChromaDB rejects empty metadata dicts — substitute None per document
             batch_metadatas = [doc.metadata if doc.metadata else None for doc in batch]
             
-            self.collection.add(
-                documents=batch_contents,
-                metadatas=batch_metadatas,
-                ids=batch_ids
-            )
+            with self._write_lock:
+                self.collection.add(
+                    documents=batch_contents,
+                    metadatas=batch_metadatas,
+                    ids=batch_ids
+                )
             
             doc_ids.extend(batch_ids)
             logger.info(f"Added batch {i//batch_size + 1}: {len(batch)} documents")
@@ -312,7 +320,8 @@ class VectorStore:
             True if successful, False otherwise
         """
         try:
-            self.collection.delete(ids=[doc_id])
+            with self._write_lock:
+                self.collection.delete(ids=[doc_id])
             logger.info(f"Deleted document: {doc_id}")
             return True
         except Exception as e:
@@ -366,6 +375,24 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Failed to count by source '{source}': {e}")
             return 0
+
+    def delete_by_metadata(self, filter_metadata: Dict[str, Any]) -> int:
+        """Delete chunks matching a metadata filter and return their count.
+
+        Analysis retries use ``analysis_job_id`` so they can clean only their
+        own chunks rather than clearing the shared research corpus.
+        """
+        try:
+            with self._write_lock:
+                existing = self.collection.get(where=filter_metadata, include=[])
+                ids = existing.get("ids", [])
+                if ids:
+                    self.collection.delete(ids=ids)
+            logger.info(f"Deleted {len(ids)} documents matching metadata filter")
+            return len(ids)
+        except Exception as e:
+            logger.error(f"Failed to delete documents by metadata: {e}")
+            return 0
     
     def get_all_documents(
         self,
@@ -410,8 +437,9 @@ class VectorStore:
         """Delete all documents in the collection"""
         try:
             # Delete collection and recreate
-            self.client.delete_collection(self.collection_name)
-            self.collection = self._get_or_create_collection()
+            with self._write_lock:
+                self.client.delete_collection(self.collection_name)
+                self.collection = self._get_or_create_collection()
             logger.info(f"Cleared collection: {self.collection_name}")
         except Exception as e:
             logger.error(f"Failed to clear collection: {e}")

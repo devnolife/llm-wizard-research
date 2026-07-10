@@ -5,7 +5,7 @@ Provides structured access to the Knowledge Graph: query facts,
 find entity neighborhoods, discover paths, and get statistics.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from loguru import logger
 
 
@@ -75,7 +75,6 @@ class KGQuerierTool:
             )
             facts = raw if isinstance(raw, list) else []
         elif self.fact_table:
-            from ...knowledge.fact_table import Fact
             raw = self.fact_table.query(
                 subject_id=subject, predicate=predicate, object_id=obj
             )

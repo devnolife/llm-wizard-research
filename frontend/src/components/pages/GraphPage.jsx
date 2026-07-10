@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import ForceGraph2D from 'react-force-graph-2d'
 import { Share2, RefreshCw, Search, X, Loader } from 'lucide-react'
-import { useDarkMode } from '../../contexts/DarkModeContext'
-import { useToast } from '../../contexts/ToastContext'
+import useDarkMode from '../../hooks/useDarkMode'
+import useToast from '../../hooks/useToast'
 import api from '../../services/api'
 
 // VOSviewer cluster palette
@@ -26,6 +27,8 @@ const GraphPage = () => {
   const toast = useToast()
   const fgRef = useRef()
   const containerRef = useRef()
+  const [searchParams] = useSearchParams()
+  const jobId = searchParams.get('jobId') || undefined
 
   const [data, setData] = useState({ nodes: [], links: [] })
   const [clusters, setClusters] = useState([])
@@ -41,7 +44,9 @@ const GraphPage = () => {
   const fetchGraph = useCallback(async (degree = minDegree) => {
     setLoading(true)
     try {
-      const res = await api.get('/api/graph', { params: { min_degree: degree, max_nodes: 300 } })
+      const res = await api.get('/api/graph', {
+        params: { min_degree: degree, max_nodes: 300, job_id: jobId },
+      })
       const d = res.data
       // react-force-graph mutates objects; give it fresh copies
       setData({
@@ -57,9 +62,9 @@ const GraphPage = () => {
     } finally {
       setLoading(false)
     }
-  }, [minDegree, toast])
+  }, [minDegree, toast, jobId])
 
-  useEffect(() => { fetchGraph() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchGraph() }, [fetchGraph])
 
   // Responsive canvas size
   useEffect(() => {

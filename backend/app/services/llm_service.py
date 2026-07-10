@@ -6,9 +6,8 @@ This module provides a comprehensive interface for interacting with local LLMs
 structured JSON output, streaming support, and error handling.
 """
 
-import json
-import logging
 import os
+import threading
 from typing import Any, Callable, Dict, List, Optional, Generator, Union
 from dataclasses import dataclass
 import time
@@ -130,6 +129,9 @@ class GLMInterface:
     """
     _MAX_TRANSIENT_RETRIES = 2
     _TRANSIENT_RETRY_DELAYS = (1, 2)
+    _semaphore_lock = threading.Lock()
+    _request_semaphore: threading.BoundedSemaphore | None = None
+    _semaphore_capacity = 0
     
     def __init__(self, config: Optional[ModelConfig] = None):
         """
@@ -140,10 +142,31 @@ class GLMInterface:
         """
         self.config = config or ModelConfig()
         self.client = ollama.Client(host=self.config.base_url, timeout=self.config.timeout)
-        self.conversation_history: List[ChatMessage] = []
+        self.configure_concurrency(self.config.max_parallel)
         
         logger.info(f"Initialized GLM Interface with model: {self.config.model_name}")
         logger.info(f"Ollama base URL: {self.config.base_url}")
+
+    @classmethod
+    def configure_concurrency(cls, max_parallel: int) -> None:
+        """Set the process-wide upper bound for local Ollama requests.
+
+        The application shares one local Ollama server between API calls and
+        the two durable analysis workers.  Limiting at this boundary prevents
+        nested batch/thread pools from exhausting CPU or GPU memory.
+        """
+        capacity = max(1, int(max_parallel))
+        with cls._semaphore_lock:
+            if cls._request_semaphore is None or cls._semaphore_capacity != capacity:
+                cls._request_semaphore = threading.BoundedSemaphore(capacity)
+                cls._semaphore_capacity = capacity
+
+    @classmethod
+    def _acquire_request_slot(cls) -> threading.BoundedSemaphore:
+        if cls._request_semaphore is None:
+            cls.configure_concurrency(1)
+        assert cls._request_semaphore is not None
+        return cls._request_semaphore
 
     def _is_transient_error(self, error: Exception) -> bool:
         """Return True for connection/timeout/5xx errors that are safe to retry."""
@@ -284,8 +307,8 @@ class GLMInterface:
         messages.append({"role": "user", "content": prompt})
         
         options = {
-            "temperature": temperature or self.config.temperature,
-            "num_predict": max_tokens or self.config.max_tokens,
+            "temperature": self.config.temperature if temperature is None else temperature,
+            "num_predict": self.config.max_tokens if max_tokens is None else max_tokens,
             "top_p": self.config.top_p,
             "num_ctx": self.config.num_ctx,
         }
@@ -369,30 +392,31 @@ class GLMInterface:
         if format:
             kwargs["format"] = format
         
-        try:
-            response = self._call_with_retries(
-                "chat",
-                lambda: self.client.chat(
-                    model=self.config.model_name,
-                    messages=messages,
-                    options=options,
-                    stream=False,
-                    keep_alive=self.config.keep_alive,
-                    **kwargs
+        with self._acquire_request_slot():
+            try:
+                response = self._call_with_retries(
+                    "chat",
+                    lambda: self.client.chat(
+                        model=self.config.model_name,
+                        messages=messages,
+                        options=options,
+                        stream=False,
+                        keep_alive=self.config.keep_alive,
+                        **kwargs
+                    )
                 )
-            )
-        except TypeError:
-            # Older ollama clients may not accept `keep_alive` — retry without it.
-            response = self._call_with_retries(
-                "chat",
-                lambda: self.client.chat(
-                    model=self.config.model_name,
-                    messages=messages,
-                    options=options,
-                    stream=False,
-                    **kwargs
+            except TypeError:
+                # Older ollama clients may not accept `keep_alive` — retry without it.
+                response = self._call_with_retries(
+                    "chat",
+                    lambda: self.client.chat(
+                        model=self.config.model_name,
+                        messages=messages,
+                        options=options,
+                        stream=False,
+                        **kwargs
+                    )
                 )
-            )
         
         elapsed = time.time() - start_time
         content = response['message']['content']
@@ -409,17 +433,18 @@ class GLMInterface:
         for attempt in range(self._MAX_TRANSIENT_RETRIES + 1):
             yielded_content = False
             try:
-                stream = self.client.chat(
-                    model=self.config.model_name,
-                    messages=messages,
-                    options=options,
-                    stream=True
-                )
-                
-                for chunk in stream:
-                    if 'message' in chunk and 'content' in chunk['message']:
-                        yielded_content = True
-                        yield chunk['message']['content']
+                with self._acquire_request_slot():
+                    stream = self.client.chat(
+                        model=self.config.model_name,
+                        messages=messages,
+                        options=options,
+                        stream=True
+                    )
+
+                    for chunk in stream:
+                        if 'message' in chunk and 'content' in chunk['message']:
+                            yielded_content = True
+                            yield chunk['message']['content']
                 return
             except Exception as e:
                 if (
@@ -439,7 +464,8 @@ class GLMInterface:
         message: str,
         role: str = "user",
         use_history: bool = True,
-        max_history: int = 10
+        max_history: int = 10,
+        history: Optional[List[Union[ChatMessage, Dict[str, str]]]] = None,
     ) -> str:
         """
         Chat with conversation history
@@ -447,26 +473,24 @@ class GLMInterface:
         Args:
             message: User message
             role: Message role ('user' or 'system')
-            use_history: Whether to include conversation history
+            use_history: Whether to include the supplied conversation history
             max_history: Maximum number of history messages to include
+            history: Session-owned messages loaded by the caller.  The shared
+                LLM client intentionally never retains a user's history.
             
         Returns:
             Assistant's response
         """
-        # Add user message to history
-        self.conversation_history.append(ChatMessage(role=role, content=message))
-        
-        # Prepare messages for API
-        messages = []
-        if use_history:
-            # Use last N messages
-            history_to_use = self.conversation_history[-max_history:]
-            messages = [
-                {"role": msg.role, "content": msg.content}
-                for msg in history_to_use
-            ]
-        else:
-            messages = [{"role": role, "content": message}]
+        # Prepare messages from the session-owned history.  This removes the
+        # former process-global history leak between independent users.
+        messages: List[Dict[str, str]] = []
+        if use_history and history:
+            for item in history[-max_history:]:
+                if isinstance(item, ChatMessage):
+                    messages.append({"role": item.role, "content": item.content})
+                elif isinstance(item, dict) and item.get("role") and item.get("content") is not None:
+                    messages.append({"role": str(item["role"]), "content": str(item["content"])})
+        messages.append({"role": role, "content": message})
         
         # Generate response
         options = {
@@ -476,29 +500,36 @@ class GLMInterface:
             "num_ctx": self.config.num_ctx,
         }
         
-        response = self._call_with_retries(
-            "chat",
-            lambda: self.client.chat(
-                model=self.config.model_name,
-                messages=messages,
-                options=options,
-                stream=False
-            )
-        )
+        with self._acquire_request_slot():
+            try:
+                response = self._call_with_retries(
+                    "chat",
+                    lambda: self.client.chat(
+                        model=self.config.model_name,
+                        messages=messages,
+                        options=options,
+                        stream=False,
+                        keep_alive=self.config.keep_alive,
+                    )
+                )
+            except TypeError:
+                response = self._call_with_retries(
+                    "chat",
+                    lambda: self.client.chat(
+                        model=self.config.model_name,
+                        messages=messages,
+                        options=options,
+                        stream=False,
+                    )
+                )
         
         assistant_response = response['message']['content']
-        
-        # Add assistant response to history
-        self.conversation_history.append(
-            ChatMessage(role="assistant", content=assistant_response)
-        )
         
         return assistant_response
     
     def clear_history(self):
-        """Clear conversation history"""
-        self.conversation_history = []
-        logger.info("Conversation history cleared")
+        """Legacy no-op; histories are owned by durable chat sessions now."""
+        logger.debug("clear_history() ignored; caller-owned session history is stateless")
     
     def analyze_research(self, content: str) -> str:
         """

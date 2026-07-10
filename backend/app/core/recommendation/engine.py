@@ -4,9 +4,8 @@ Recommendation Engine
 Generates personalized research recommendations using multiple strategies.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
-import numpy as np
 
 from loguru import logger
 

@@ -1,14 +1,9 @@
-"""
-Pytest configuration
-"""
+"""Shared pytest configuration for the installed backend package."""
 
-import pytest
-import sys
 from pathlib import Path
 
-# Add src to path
-src_path = Path(__file__).parent.parent / "src"
-sys.path.insert(0, str(src_path))
+import pytest
+from loguru import logger
 
 
 @pytest.fixture(scope="session")
@@ -17,8 +12,10 @@ def test_data_dir():
     return Path(__file__).parent / "test_data"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def setup_logging():
-    """Setup logging for tests"""
-    from loguru import logger
-    logger.add("logs/test.log", rotation="10 MB")
+    """Use one bounded test log sink instead of adding one per test case."""
+    Path("logs").mkdir(exist_ok=True)
+    sink_id = logger.add("logs/test.log", rotation="10 MB", level="WARNING")
+    yield
+    logger.remove(sink_id)

@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from pathlib import Path
 from pydantic import BaseModel
-from typing import Optional
 from loguru import logger
 import os
 

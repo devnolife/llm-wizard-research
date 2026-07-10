@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { analysisService } from '../services/analysisService'
 
 // Track analysis job progress via SSE with polling fallback.
@@ -9,6 +9,27 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
   const [progressMsg, setProgressMsg] = useState('')
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
+  const [status, setStatus] = useState('queued')
+  const [refreshToken, setRefreshToken] = useState(0)
+
+  const cancel = useCallback(async () => {
+    const response = await analysisService.cancelAnalysis(jobId)
+    setStatus(response.status)
+    setProgressMsg(response.message || 'Pembatalan diminta...')
+    return response
+  }, [jobId])
+
+  const retry = useCallback(async () => {
+    const response = await analysisService.retryAnalysis(jobId)
+    setError(null)
+    setData(null)
+    setStatus(response.status)
+    setProgress(response.progress || 0)
+    setProgressMsg(response.message || 'Menjadwalkan ulang analisis...')
+    setLoading(true)
+    setRefreshToken(value => value + 1)
+    return response
+  }, [jobId])
 
   useEffect(() => {
     let cancelled = false
@@ -21,17 +42,18 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
         try {
           const response = await analysisService.getAnalysisStatus(jobId, language)
           if (cancelled) return
+          setStatus(response.status || 'unknown')
           if (response.status === 'completed') {
             setData(response.results)
             setProgress(100)
             setLoading(false)
             onComplete?.()
-          } else if (response.status === 'processing') {
+          } else if (['queued', 'processing', 'running'].includes(response.status)) {
             setProgress(response.progress || 0)
-            setProgressMsg(response.message || 'Memproses...')
+            setProgressMsg(response.message || (response.status === 'queued' ? 'Menunggu worker...' : 'Memproses...'))
             timerId = setTimeout(fetchResults, 2000)
-          } else if (response.status === 'failed') {
-            setError(response.error || 'Analisis gagal')
+          } else if (['failed', 'interrupted', 'cancelled'].includes(response.status)) {
+            setError(response.error || response.message || 'Analisis gagal')
             setLoading(false)
           }
         } catch (err) {
@@ -51,16 +73,22 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
         try {
           const payload = JSON.parse(event.data)
           if (payload.type === 'complete') {
+            setStatus('completed')
             setData(payload.results)
             setProgress(100)
             setLoading(false)
             onComplete?.()
             es.close()
           } else if (payload.type === 'error') {
+            setStatus(payload.status || 'failed')
             setError(payload.error || payload.message || 'Analisis gagal')
             setLoading(false)
             es.close()
+          } else if (payload.type === 'phase') {
+            const phase = payload.phase || payload.data?.phase
+            if (phase) setProgressMsg(`Tahap: ${phase}`)
           } else {
+            setStatus(payload.status || 'running')
             setProgress(payload.progress || 0)
             setProgressMsg(payload.message || 'Memproses...')
           }
@@ -80,9 +108,9 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
       if (timerId) clearTimeout(timerId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId, language])
+  }, [jobId, language, refreshToken])
 
-  return { loading, progress, progressMsg, data, error }
+  return { loading, progress, progressMsg, data, error, status, cancel, retry }
 }
 
 export default useAnalysisJob

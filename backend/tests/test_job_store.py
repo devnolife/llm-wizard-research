@@ -52,3 +52,45 @@ def test_save_job_writes_valid_json_atomically_without_leftover_tmp():
     assert set(data) == {"job-1", "job-2"}
     assert not list(SCRATCH_DIR.glob("*.tmp"))
     assert not list(SCRATCH_DIR.glob(".*.tmp"))
+
+
+def test_sqlite_claims_each_queued_job_once():
+    store_path = SCRATCH_DIR / "analysis_jobs.sqlite3"
+    job_store.load_jobs(store_path)
+    job_store.save_job("job-1", {"status": "queued", "payload": {"pdf_paths": ["a.pdf"]}})
+    job_store.save_job("job-2", {"status": "queued", "payload": {"pdf_paths": ["b.pdf"]}})
+
+    first = job_store.claim_next_job()
+    second = job_store.claim_next_job()
+    third = job_store.claim_next_job()
+
+    assert {first["job_id"], second["job_id"]} == {"job-1", "job-2"}
+    assert first["status"] == second["status"] == "running"
+    assert third is None
+
+
+def test_sqlite_conversations_are_isolated_and_clearable():
+    store_path = SCRATCH_DIR / "analysis_jobs.sqlite3"
+    job_store.load_jobs(store_path)
+    job_store.append_conversation_message("a", "user", "paper A")
+    job_store.append_conversation_message("b", "user", "paper B")
+    job_store.append_conversation_message("a", "assistant", "answer A")
+
+    assert [item["content"] for item in job_store.get_conversation_messages("a")] == ["paper A", "answer A"]
+    assert [item["content"] for item in job_store.get_conversation_messages("b")] == ["paper B"]
+    assert job_store.clear_conversation("a")
+    assert job_store.get_conversation_messages("a") == []
+
+
+def test_sqlite_requeues_running_job_after_restart():
+    store_path = SCRATCH_DIR / "analysis_jobs.sqlite3"
+    job_store.load_jobs(store_path)
+    job_store.save_job(
+        "job-1",
+        {"status": "running", "progress": 40, "payload": {"pdf_paths": ["a.pdf"]}},
+    )
+
+    jobs = job_store.load_jobs(store_path)
+
+    assert jobs["job-1"]["status"] == "queued"
+    assert "di-restart" in jobs["job-1"]["message"]

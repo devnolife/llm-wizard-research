@@ -9,7 +9,7 @@ References:
     - revisi.md Section 9: Skema Fakta Knowledge Graph (Tabel SPO)
 """
 
-from typing import Dict, Any, List, Optional, Tuple, Set
+from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 import networkx as nx
 from collections import defaultdict
@@ -167,14 +167,8 @@ class KnowledgeGraphBuilder:
             )
             self.add_paper(paper)
         
-        # Extract and add citations (simplified)
-        # In production, use proper citation parsing
-        for doc in documents:
-            doc_id = doc.get("doc_id", doc.get("id"))
-            # Placeholder for citation extraction
-            # citations = extract_citations(doc.get("content", ""))
-            # for cited_id in citations:
-            #     self.add_citation(CitationEdge(doc_id, cited_id))
+        # Citation extraction is intentionally deferred until a structured
+        # parser is introduced; paper nodes are still available for analysis.
         
         logger.info(f"Knowledge graph built: {self.graph.number_of_nodes()} nodes, {self.graph.number_of_edges()} edges")
     

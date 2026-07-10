@@ -90,6 +90,11 @@ cd wizard-research
 make setup
 ```
 
+For a reproducible CPU-safe backend environment, install [uv](https://docs.astral.sh/uv/)
+and run `make install-backend-locked`; the lock is refreshed with
+`make lock-backend`. The standard `make install` remains available for existing
+GPU/local environments.
+
 ### Start Ollama
 
 ```bash
@@ -171,7 +176,28 @@ all `OCR_*` env vars.
 make test              # Run all tests
 make test-unit         # Unit tests only
 make test-integration  # Integration tests only
+make test-api          # Mocked FastAPI contract tests (no Ollama/OCR required)
 ```
+
+## Analysis jobs and runtime diagnostics
+
+Uploaded analysis inputs are stored per job and processed by a local SQLite
+queue (maximum two concurrent jobs). Each job has its own FactTable, Knowledge
+Graph, agent state, and retrieval scope; only its uploaded PDFs contribute to
+its result. Jobs can be cancelled or retried from the result page and recover
+after a backend restart while their retained inputs remain within the configured
+retention window.
+
+Inspect the effective, redacted configuration with:
+
+```bash
+make runtime-doctor
+make runtime-doctor OCR=1  # additionally probe OCR when enabled
+```
+
+Operational telemetry stores only metadata such as job phase, duration, status,
+and counts. It intentionally excludes PDF text, prompts, raw queries, chat
+messages, and credentials.
 
 ---
 

@@ -28,6 +28,10 @@ import sys
 import json
 import random
 import time
+import hashlib
+import importlib.metadata
+import platform
+import subprocess
 from pathlib import Path
 from datetime import datetime
 from dataclasses import asdict
@@ -79,6 +83,88 @@ def seed_python_rngs(seed: int):
     # Ollama/LLM sampling is server-side and not fully determinized by this;
     # the seed still makes Python-side sampling, shuffling, and bootstraps repeatable.
     logger.info(f"Python-side RNG seed: {seed}")
+
+
+def _sha256_file(path: Path) -> str | None:
+    """Hash a local reproducibility artifact without loading it all at once."""
+    if not path.exists():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _git_value(*args: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=PROJECT_DIR,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return completed.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def capture_experiment_provenance(model_name: str, seed: int, config) -> dict:
+    """Capture additive, content-free provenance for a result JSON envelope."""
+    requirements_path = BACKEND_DIR / "requirements.txt"
+    lock_path = BACKEND_DIR / "requirements.lock"
+    direct_packages = []
+    if requirements_path.exists():
+        for line in requirements_path.read_text(encoding="utf-8").splitlines():
+            name = line.split("#", 1)[0].strip().split(">", 1)[0].split("=", 1)[0].strip()
+            if name and not name.startswith("-"):
+                direct_packages.append(name.split("[", 1)[0])
+    dependency_versions = {}
+    for name in sorted(set(direct_packages)):
+        try:
+            dependency_versions[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            dependency_versions[name] = "not-installed"
+
+    manifest_hash = _sha256_file(MANIFEST_PATH)
+    papers = []
+    for pdf in sorted(PAPERS_DIR.glob("*.pdf")):
+        papers.append({"file": pdf.name, "size_bytes": pdf.stat().st_size, "sha256": _sha256_file(pdf)})
+
+    config_payload = asdict(config)
+    config_payload.get("neo4j", {}).pop("password", None)
+    canonical_config = json.dumps(config_payload, sort_keys=True, default=str).encode()
+    model_digest = None
+    try:
+        import requests
+
+        models = requests.get(f"{config.llm.base_url}/api/tags", timeout=5).json().get("models", [])
+        for model in models:
+            if model.get("name") == model_name or model.get("model") == model_name:
+                model_digest = model.get("digest")
+                break
+    except Exception:
+        # The runner already performs its own connectivity check. Provenance
+        # remains useful even when a server does not expose a digest.
+        pass
+    return {
+        "schema_version": "2.0",
+        "seed": seed,
+        "git_commit": _git_value("rev-parse", "HEAD"),
+        "git_dirty": bool(_git_value("status", "--porcelain")),
+        "config_sha256": hashlib.sha256(canonical_config).hexdigest(),
+        "requirements_sha256": _sha256_file(requirements_path),
+        "requirements_lock_sha256": _sha256_file(lock_path),
+        "manifest_sha256": manifest_hash,
+        "papers": papers,
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "dependencies": dependency_versions,
+        "model_identifier": model_name,
+        "model_digest": model_digest,
+    }
 
 
 def load_topics(topic_filter=None, custom_topics=None):
@@ -143,7 +229,12 @@ def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False)
         model_name=model_name,
         base_url=config.llm.base_url,
         temperature=0.3,  # Lower for reproducibility
-        max_tokens=2048,
+        top_p=config.llm.top_p,
+        max_tokens=config.llm.max_tokens,
+        timeout=config.llm.timeout,
+        num_ctx=config.llm.context_window,
+        keep_alive=config.llm.keep_alive,
+        max_parallel=config.llm.num_parallel,
     )
     llm = GLMInterface(model_cfg)
 
@@ -158,7 +249,22 @@ def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False)
 
     relation_classifier = RelationClassifier(llm_interface=llm, nli_model=nli_model)
     kg_builder = KnowledgeGraphBuilder()
-    doc_processor = DocumentProcessor(chunk_size=512, chunk_overlap=50)
+    doc_processor = DocumentProcessor(
+        chunk_size=config.retrieval.chunk_size,
+        chunk_overlap=config.retrieval.chunk_overlap,
+        chunk_strategy=config.retrieval.chunk_strategy,
+        ocr_enabled=config.ocr.enabled,
+        ocr_options={
+            "service_url": config.ocr.service_url,
+            "image_mode": config.ocr.image_mode,
+            "dpi": config.ocr.dpi,
+            "concurrency": config.ocr.concurrency,
+            "timeout": config.ocr.timeout,
+            "ngram_size": config.ocr.ngram_size,
+            "ngram_window": config.ocr.ngram_window,
+        },
+        ocr_min_chars_per_page=config.ocr.min_chars_per_page,
+    )
 
     # Ablation: only no-rule-engine / linear-baseline remove the symbolic
     # validation layer (H7). full / nli / no-nli keep the Rule Engine so the
@@ -835,7 +941,18 @@ def phase5_adversarial_validation():
     return results
 
 
-def compile_results(phase1, phase2, phase3, phase4, phase5, mode, model_name, topics, seed):
+def compile_results(
+    phase1,
+    phase2,
+    phase3,
+    phase4,
+    phase5,
+    mode,
+    model_name,
+    topics,
+    seed,
+    provenance=None,
+):
     """Compile all results into a single JSON report."""
     report = {
         "experiment_info": {
@@ -846,6 +963,7 @@ def compile_results(phase1, phase2, phase3, phase4, phase5, mode, model_name, to
             "papers_dir": str(PAPERS_DIR),
             "topics": topics,
             "system": "Wizard Research — Neuro-Symbolic Agentic Gap Detection",
+            **(provenance or {}),
         },
         "phase1_ingestion": phase1,
         "phase2_fact_extraction": phase2,
@@ -1038,10 +1156,12 @@ def main():
         phase5_results = {"summary": {}, "total_time": 0, "skipped": True}
 
     # Compile and save
+    provenance = capture_experiment_provenance(model_name, args.seed, get_config())
     report = compile_results(
         phase1_results, phase2_results, phase3_results,
         phase4_results, phase5_results,
         mode=args.mode, model_name=model_name, topics=topics, seed=args.seed,
+        provenance=provenance,
     )
 
     model_slug = model_name.replace(":", "_").replace("/", "_")

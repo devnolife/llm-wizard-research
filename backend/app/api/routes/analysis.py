@@ -8,7 +8,7 @@ Updated to support:
 - Agent reasoning trace
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from typing import List
@@ -17,6 +17,8 @@ import asyncio
 import uuid
 import time
 import json
+import shutil
+from threading import Lock
 
 from ...models.requests import (
     RecommendationRequest,
@@ -25,39 +27,80 @@ from ...models.requests import (
     MarkedPapersRequest
 )
 from ..dependencies import (
-    get_coordinator,
-    get_gap_analyzer,
+    get_analysis_context,
+    create_ephemeral_analysis_context,
+    get_document_processor,
     get_retriever,
     get_glm_interface,
-    get_vector_store,
-    get_fact_table,
-    get_rule_engine,
-    get_knowledge_graph,
+    release_analysis_context,
 )
-from ...utils.document_processor import DocumentProcessor
 from ...utils.config_loader import get_config
-from ...utils.job_store import get_job, load_jobs, save_job
+from ...utils.job_store import (
+    append_conversation_message,
+    clear_conversation,
+    get_conversation_messages,
+    get_job,
+    get_job_events,
+    get_job_graph,
+    get_latest_completed_job,
+    is_cancel_requested,
+    record_job_event,
+    request_cancel,
+    retry_job,
+    save_job,
+)
 from ...utils.upload_validation import sanitize_filename, write_validated_pdf_upload
+from ...services.analysis_queue import get_analysis_queue
 
 router = APIRouter()
 
-# Job storage for async analysis
-_analysis_jobs = load_jobs()
-
+_CONVERSATION_LOCKS: dict[str, Lock] = {}
+_CONVERSATION_LOCKS_GUARD = Lock()
 
 def _set_analysis_job(job_id: str, **updates):
-    job = dict(_analysis_jobs.get(job_id, {}))
+    job = dict(get_job(job_id) or {})
     job.update(updates)
-    _analysis_jobs[job_id] = job
     save_job(job_id, job)
     return job
 
 
-def _get_analysis_job(job_id: str):
-    job = get_job(job_id)
-    if job is not None:
-        _analysis_jobs[job_id] = job
+@router.post("/analysis-status/{job_id}/cancel")
+async def cancel_analysis(job_id: str):
+    """Request cooperative cancellation for a queued or running analysis."""
+    job = request_cancel(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    record_job_event(job_id, "job.cancel_requested", status=job.get("status"))
     return job
+
+
+@router.post("/analysis-status/{job_id}/retry")
+async def retry_analysis(job_id: str):
+    """Queue a failed/cancelled job again using its retained input PDFs."""
+    job = retry_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=409, detail="Job cannot be retried")
+    record_job_event(job_id, "job.retry_requested", status="queued")
+    get_analysis_queue().notify()
+    return job
+
+
+def _get_analysis_job(job_id: str):
+    return get_job(job_id)
+
+
+class JobCancelled(Exception):
+    """Raised between analysis phases after a user requests cancellation."""
+
+
+def _ensure_job_active(job_id: str) -> None:
+    if is_cancel_requested(job_id):
+        raise JobCancelled("Analisis dibatalkan oleh pengguna")
+
+
+def _conversation_lock(conversation_id: str) -> Lock:
+    with _CONVERSATION_LOCKS_GUARD:
+        return _CONVERSATION_LOCKS.setdefault(conversation_id, Lock())
 
 
 def translate_to_indonesian(glm, text):
@@ -96,7 +139,8 @@ def recommend(request: RecommendationRequest):
     seconds and must not run on the event loop.
     """
     try:
-        coordinator = get_coordinator()
+        analysis_context = create_ephemeral_analysis_context()
+        coordinator = analysis_context.coordinator
         
         # Process through multi-agent system
         results = coordinator.process_research_query(
@@ -146,8 +190,9 @@ def recommend(request: RecommendationRequest):
 def detect_gaps(request: GapDetectionRequest):
     """Detect synthesis gaps using the 3-indicator model (sync → threadpool)"""
     try:
-        gap_analyzer = get_gap_analyzer()
-        retriever = get_retriever()
+        analysis_context = create_ephemeral_analysis_context()
+        gap_analyzer = analysis_context.gap_analyzer
+        retriever = analysis_context.retriever
         
         # Get relevant papers
         results = retriever.retrieve(query=request.topic, top_k=20)
@@ -186,7 +231,7 @@ def detect_gaps(request: GapDetectionRequest):
         # Get rule engine stats if available
         rule_report = {}
         try:
-            rule_engine = get_rule_engine()
+            rule_engine = analysis_context.rule_engine
             if rule_engine:
                 pass_count = sum(
                     1 for g in gap_indicators
@@ -212,7 +257,7 @@ def detect_gaps(request: GapDetectionRequest):
         # Get fact table stats
         ft_stats = {}
         try:
-            fact_table = get_fact_table()
+            fact_table = analysis_context.fact_table
             if fact_table:
                 ft_stats = fact_table.get_statistics()
         except Exception:
@@ -243,38 +288,58 @@ def detect_gaps(request: GapDetectionRequest):
 
 @router.post("/chat")
 def chat(request: ChatRequest):
-    """Chat with the research assistant (sync → threadpool)"""
+    """Chat with a durable, isolated research-assistant conversation."""
     try:
         glm = get_glm_interface()
-        
         conversation_id = getattr(request, "conversation_id", None) or str(uuid.uuid4())
-        
-        response = glm.chat(
-            message=request.message,
-            use_history=request.use_history
-        )
-        
-        # Attempt to find relevant sources
-        sources = []
-        try:
-            retriever = get_retriever()
-            results = retriever.retrieve(query=request.message, top_k=3)
-            sources = [
-                r.document.metadata.get("title", r.document.metadata.get("source", ""))
-                for r in results if r.document.metadata
-            ]
-        except Exception:
-            pass
+        message = request.message.strip()
+        if not message:
+            raise HTTPException(status_code=400, detail="Pesan tidak boleh kosong")
+        if len(message) > 8000:
+            raise HTTPException(status_code=422, detail="Pesan maksimal 8000 karakter")
+
+        with _conversation_lock(conversation_id):
+            history = get_conversation_messages(conversation_id, limit=10)
+            append_conversation_message(conversation_id, "user", message)
+            response = glm.chat(
+                message=message,
+                use_history=request.use_history,
+                history=history,
+            )
+            append_conversation_message(conversation_id, "assistant", response)
+
+            # Chat intentionally searches the explicitly shared research corpus.
+            sources = []
+            try:
+                retriever = get_retriever()
+                results = retriever.retrieve(query=message, top_k=3)
+                sources = [
+                    r.document.metadata.get("title", r.document.metadata.get("source", ""))
+                    for r in results if r.document.metadata
+                ]
+            except Exception as exc:
+                logger.warning(f"Chat source retrieval unavailable: {exc}")
         
         return {
-            "message": request.message,
+            "message": message,
             "response": response,
             "conversation_id": conversation_id,
             "sources": sources,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Chat failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/chat/{conversation_id}")
+def reset_chat(conversation_id: str):
+    """Delete only the requested durable chat session."""
+    deleted = clear_conversation(conversation_id)
+    with _CONVERSATION_LOCKS_GUARD:
+        _CONVERSATION_LOCKS.pop(conversation_id, None)
+    return {"success": True, "deleted": deleted, "conversation_id": conversation_id}
 
 
 def _parse_selection_json(raw: str) -> dict:
@@ -407,7 +472,13 @@ def _content_word_overlap(claim: str, full_norm: str) -> float:
     return hits / len(set(words))
 
 
-def _verify_paper_weaknesses(parsed, full_content, source_name="", vector_store=None):
+def _verify_paper_weaknesses(
+    parsed,
+    full_content,
+    source_name="",
+    vector_store=None,
+    analysis_job_id="",
+):
     """
     Verify each weakness point against the paper text so the output is grounded,
     not guessed.
@@ -426,10 +497,15 @@ def _verify_paper_weaknesses(parsed, full_content, source_name="", vector_store=
         # Primary: reuse the project's embeddings via the vector store.
         if vector_store is not None and source_name and text:
             try:
-                results = vector_store.search(
-                    query=text, top_k=1,
-                    filter_metadata={"source": source_name},
-                )
+                source_filter = {"source": source_name}
+                if analysis_job_id:
+                    source_filter = {
+                        "$and": [
+                            {"analysis_job_id": analysis_job_id},
+                            source_filter,
+                        ]
+                    }
+                results = vector_store.search(query=text, top_k=1, filter_metadata=source_filter)
                 if results:
                     return max(0.0, float(results[0].score))
             except Exception as e:
@@ -512,57 +588,67 @@ async def analyze_selection(request: MarkedPapersRequest):
 
 @router.post("/upload-and-analyze")
 async def upload_and_analyze(
-    background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...)
 ):
     """
     Upload PDFs and automatically analyze them.
     Returns job_id to track progress.
     """
-    temp_files = []
+    input_paths: list[Path] = []
+    job_dir: Path | None = None
     try:
         config = get_config()
         allowed_types = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
         if "pdf" not in allowed_types:
             raise HTTPException(status_code=415, detail="PDF uploads are not enabled")
-        # Generate job ID
         job_id = str(uuid.uuid4())
+        job_dir = Path(config.data.raw_path) / "analysis_jobs" / job_id
+        job_dir.mkdir(parents=True, exist_ok=False)
 
-        # Save uploaded files temporarily
-        for file in files:
+        # Inputs are retained in a per-job directory until retention cleanup so
+        # a durable queue can retry after a process restart.
+        files_metadata = []
+        for index, file in enumerate(files):
             safe_name = sanitize_filename(file.filename)
-            temp_path = Path(config.data.raw_path) / f"{uuid.uuid4()}_{safe_name}"
-            await write_validated_pdf_upload(file, temp_path, config.data.max_file_size_mb)
-            temp_files.append(temp_path)
+            input_path = job_dir / f"{index:02d}_{safe_name}"
+            await write_validated_pdf_upload(file, input_path, config.data.max_file_size_mb)
+            input_paths.append(input_path)
+            files_metadata.append({"name": safe_name})
 
-        # Initialize job status after all uploads pass validation
+        # Persist a queued job before signalling the local worker.  The payload
+        # contains only local paths/filenames, never document content.
         _set_analysis_job(
             job_id,
-            status="processing",
+            status="queued",
             progress=0,
-            message="Starting analysis...",
+            message="Menunggu worker analisis...",
             results=None,
             error=None,
             created_at=time.time(),
+            max_attempts=config.queue.max_attempts,
+            payload={
+                "pdf_paths": [str(path) for path in input_paths],
+                "input_dir": str(job_dir),
+                "files": files_metadata,
+            },
         )
-        
-        # Start background analysis
-        background_tasks.add_task(process_auto_analysis, job_id, temp_files)
+        record_job_event(job_id, "job.created", status="queued", data={"file_count": len(input_paths)})
+        get_analysis_queue().notify()
         
         return {
             "success": True,
             "job_id": job_id,
             "files_count": len(files),
-            "message": "Analysis started. Use /api/analysis-status/{job_id} to check progress."
+            "message": "Analysis queued. Use /api/analysis-status/{job_id} to check progress."
         }
     
     except HTTPException:
-        for temp_path in temp_files:
-            temp_path.unlink(missing_ok=True)
+        if job_dir:
+            shutil.rmtree(job_dir, ignore_errors=True)
         raise
     except Exception as e:
-        for temp_path in temp_files:
-            temp_path.unlink(missing_ok=True)
+        if job_dir:
+            shutil.rmtree(job_dir, ignore_errors=True)
         logger.error(f"Upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -579,27 +665,28 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    # Enrich completed results with rule_engine / fact_table info
+    # Completed jobs already persist their isolated fact-table stats.  Never
+    # consult the global singleton here: it can belong to another job.
     if job["status"] == "completed" and job.get("results"):
         results = job["results"]
+        result_changed = False
         
         # Add rule_engine_report if not present
         if "rule_engine_report" not in results:
             results["rule_engine_report"] = {}
+            result_changed = True
         
-        # Add fact_table_stats if not present
         if "fact_table_stats" not in results:
-            try:
-                ft = get_fact_table()
-                if ft:
-                    results["fact_table_stats"] = ft.get_statistics()
-            except Exception:
-                results["fact_table_stats"] = {}
+            results["fact_table_stats"] = {}
+            result_changed = True
         
         # Add reasoning_trace placeholder
         if "reasoning_trace" not in results:
             results["reasoning_trace"] = []
-        _set_analysis_job(job_id, **job)
+            result_changed = True
+        if result_changed:
+            job["results"] = results
+            _set_analysis_job(job_id, **job)
     
     # Translate if requested and job is completed
     if lang == "id" and job["status"] == "completed" and "results" in job:
@@ -1002,36 +1089,34 @@ def _parse_roadmap_text(text: str) -> list:
     return []
 
 
-def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
-    """Background task to process PDFs and run full neuro-symbolic analysis.
+def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
+    """Run one durable job with an isolated context and scoped retrieval.
 
-    NOTE: deliberately a SYNC function — FastAPI runs sync background tasks
-    in the threadpool, keeping the event loop free. Declaring it `async def`
-    (without awaits) would run the whole multi-minute LLM pipeline ON the
-    event loop and block every other request (upload timeouts).
+    The local queue calls this synchronous function from its worker pool.  It
+    intentionally does not run on FastAPI's event loop.  ``pdf_paths`` remains
+    optional for legacy/manual callers; durable queue workers load it from the
+    persisted job payload.
     """
     try:
-        _set_analysis_job(job_id, progress=5, message="Processing PDFs...")
+        job = _get_analysis_job(job_id)
+        if job is None:
+            raise RuntimeError("Analysis job not found")
+        if pdf_paths is None:
+            pdf_paths = [Path(path) for path in (job.get("payload") or {}).get("pdf_paths", [])]
+        if not pdf_paths or any(not path.exists() for path in pdf_paths):
+            raise FileNotFoundError("Input PDF for this analysis job is unavailable")
 
-        vector_store = get_vector_store()
-        document_processor = DocumentProcessor()
-        glm = get_glm_interface()
+        _ensure_job_active(job_id)
+        _set_analysis_job(job_id, status="running", progress=5, message="Processing PDFs...")
+        record_job_event(job_id, "phase.started", phase="ingestion", status="running")
 
-        # ── Step 0: Clear fact table and KG for fresh analysis ──
-        # NOTE: We keep existing vector store documents and only add new ones.
-        # Fact table and KG are per-analysis artifacts so they are cleared.
-        try:
-            ft = get_fact_table()
-            if ft:
-                ft.clear()
-        except Exception:
-            pass
-        try:
-            kg = get_knowledge_graph()
-            if kg and hasattr(kg, 'graph'):
-                kg.graph.clear()
-        except Exception:
-            pass
+        analysis_context = get_analysis_context(job_id)
+        vector_store = analysis_context.vector_store
+        document_processor = get_document_processor()
+        glm = analysis_context.llm
+
+        # Retries must not reuse partial chunks from an earlier worker attempt.
+        vector_store.delete_by_metadata({"analysis_job_id": job_id})
 
         # ── Step 1: Ingest PDFs into vector store ──────────────
         total_chunks = 0
@@ -1039,8 +1124,8 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
         new_papers = 0
         duplicate_papers = 0
         for i, pdf_path in enumerate(pdf_paths):
-            # Temp files are named "{uuid}_{original}"; recover the original name
-            # so duplicate detection & metadata use the real filename, not the UUID.
+            _ensure_job_active(job_id)
+            # Inputs are stored as "{index}_{original-name}" in their job directory.
             source_name = pdf_path.name.split('_', 1)[-1]
             _set_analysis_job(
                 job_id,
@@ -1049,31 +1134,23 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
             )
 
             processed_doc = document_processor.process_pdf(str(pdf_path))
-
-            # Skip re-indexing if this file is already in the vector store
-            already_indexed = vector_store.count_by_source(source_name) > 0
-            if already_indexed:
-                duplicate_papers += 1
-                _set_analysis_job(
-                    job_id,
-                    message=f"{source_name} sudah ada di database — melewati pengindeksan.",
-                )
-                logger.info(f"Skipping ingestion for already-indexed paper: {source_name}")
-            else:
-                for chunk in processed_doc.chunks:
-                    metadata = {
-                        "source": source_name,
-                        "title": processed_doc.title or source_name,
-                        "chunk_index": chunk.chunk_index,
-                    }
-                    # Carry section label (from section-aware chunking) so the
-                    # vector store supports section-targeted retrieval.
-                    section = chunk.metadata.get("section") if chunk.metadata else None
-                    if section:
-                        metadata["section"] = section
-                    vector_store.add_document(chunk.content, metadata)
-                    total_chunks += 1
-                new_papers += 1
+            # Each analysis is intentionally scoped to its own source chunks.
+            # Re-ingesting an identical filename is preferable to leaking data
+            # from an earlier job through the shared corpus.
+            already_indexed = False
+            for chunk in processed_doc.chunks:
+                metadata = {
+                    "analysis_job_id": job_id,
+                    "source": source_name,
+                    "title": processed_doc.title or source_name,
+                    "chunk_index": chunk.chunk_index,
+                }
+                section = chunk.metadata.get("section") if chunk.metadata else None
+                if section:
+                    metadata["section"] = section
+                vector_store.add_document(chunk.content, metadata)
+                total_chunks += 1
+            new_papers += 1
 
             paper_contents.append({
                 "source": source_name,
@@ -1089,12 +1166,19 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path]):
                 ),
                 "already_indexed": already_indexed,
             })
-            pdf_path.unlink()
+
+        record_job_event(
+            job_id,
+            "phase.completed",
+            phase="ingestion",
+            status="running",
+            data={"files_processed": len(paper_contents), "chunks": total_chunks},
+        )
 
         _set_analysis_job(job_id, progress=20, message="Extracting topics...")
+        _ensure_job_active(job_id)
 
         # ── Step 2: Extract topics from UPLOADED papers only ────
-        uploaded_sources = [p["source"] for p in paper_contents]
         sample_text = " ".join([p["content"] for p in paper_contents])
 
         topic_prompt = f"""Analisis konten penelitian berikut dan ekstrak 5 topik utama penelitian.
@@ -1203,7 +1287,9 @@ Topik:"""
                 # ("disertai dasar dari jurnal — bukan tebakan") actually holds.
                 verified = _verify_paper_weaknesses(
                     parsed_weak, p.get("full_content", ""),
-                    source_name=p.get("source", ""), vector_store=vector_store,
+                    source_name=p.get("source", ""),
+                    vector_store=vector_store,
+                    analysis_job_id=job_id,
                 )
                 out.append({
                     "title": p["title"],
@@ -1235,6 +1321,8 @@ Topik:"""
             except Exception as weak_err:
                 logger.warning(f"Paper weakness analysis failed: {weak_err}")
 
+        _ensure_job_active(job_id)
+
         # ── Step 3: Run Coordinator (full neuro-symbolic pipeline) ──
         _set_analysis_job(
             job_id,
@@ -1250,7 +1338,7 @@ Topik:"""
         fact_table_stats = {}
 
         try:
-            coordinator = get_coordinator()
+            coordinator = analysis_context.coordinator
             main_topic = topics[0] if topics else "research analysis"
 
             coordinator_result = coordinator.process_research_query(
@@ -1274,10 +1362,23 @@ Topik:"""
                 message=f"Coordinator complete ({execution_mode}). Generating summary...",
             )
 
+            _ensure_job_active(job_id)
+            record_job_event(job_id, "phase.started", phase="neuro_symbolic", status="running")
+
             logger.info(
                 f"Coordinator finished: mode={execution_mode}, "
                 f"gaps={len(gap_indicators)}, "
                 f"facts={fact_table_stats.get('total_facts', 0)}"
+            )
+            record_job_event(
+                job_id,
+                "phase.completed",
+                phase="neuro_symbolic",
+                status="running",
+                data={
+                    "indicators": len(gap_indicators),
+                    "facts": fact_table_stats.get("total_facts", 0),
+                },
             )
 
         except Exception as e:
@@ -1290,12 +1391,10 @@ Topik:"""
 
         # ── Step 4: Generate summary (always via LLM) ──────────
         _set_analysis_job(job_id, progress=75, message="Generating research summary...")
+        _ensure_job_active(job_id)
 
         if topics:
-            source_filter = {"source": {"$in": uploaded_sources}} if len(uploaded_sources) > 1 else {"source": uploaded_sources[0]}
-            search_results = vector_store.search(topics[0], top_k=15, filter_metadata=source_filter)
-            if not search_results:
-                search_results = vector_store.search(topics[0], top_k=15)
+            search_results = analysis_context.retriever.retrieve(topics[0], top_k=15)
             context = "\n\n".join(
                 [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
             )
@@ -1313,6 +1412,7 @@ Ringkasan:"""
 
         # ── Step 5: Gap detection (use coordinator result or LLM fallback) ──
         _set_analysis_job(job_id, progress=80, message="Finalizing gap analysis...")
+        _ensure_job_active(job_id)
 
         gaps = []
         if gap_indicators:
@@ -1329,17 +1429,11 @@ Ringkasan:"""
                 })
         else:
             # LLM fallback — generate structured gaps then validate via Rule Engine
-            rule_engine = None
-            try:
-                rule_engine = get_rule_engine()
-            except Exception:
-                pass
+            rule_engine = analysis_context.rule_engine
 
             for topic in topics[:3]:
-                source_filter = {"source": {"$in": uploaded_sources}} if len(uploaded_sources) > 1 else {"source": uploaded_sources[0]}
-                search_results = vector_store.search(topic, top_k=10, filter_metadata=source_filter)
-                if not search_results:
-                    search_results = vector_store.search(topic, top_k=10)
+                _ensure_job_active(job_id)
+                search_results = analysis_context.retriever.retrieve(topic, top_k=10)
                 context = "\n\n".join(
                     [f"Document {i+1}: {r.document.content}" for i, r in enumerate(search_results)]
                 )
@@ -1487,6 +1581,7 @@ JSON:"""
 
         # ── Step 7: Roadmap (always via LLM) ────────────────────
         _set_analysis_job(job_id, progress=95, message="Creating roadmap...")
+        _ensure_job_active(job_id)
 
         roadmap_topic = topics[0] if topics else "research"
         roadmap_prompt = f"""Buat peta jalan penelitian terstruktur untuk: {roadmap_topic}
@@ -1525,12 +1620,7 @@ JSON:"""
 
         # ── Assemble final results ──────────────────────────────
         if not fact_table_stats:
-            try:
-                ft = get_fact_table()
-                if ft:
-                    fact_table_stats = ft.get_statistics()
-            except Exception:
-                pass
+            fact_table_stats = analysis_context.fact_table.get_statistics()
 
         # ── Compute evaluation metrics ────────────────────────
         eval_metrics = {}
@@ -1570,6 +1660,8 @@ JSON:"""
         except Exception as eval_err:
             logger.warning(f"Evaluation metrics computation failed: {eval_err}")
 
+        _ensure_job_active(job_id)
+        graph_snapshot = analysis_context.graph_snapshot()
         _set_analysis_job(
             job_id,
             status="completed",
@@ -1602,19 +1694,41 @@ JSON:"""
                 "reasoning_trace": reasoning_trace,
                 "eval_metrics": eval_metrics,
             },
+            graph_snapshot=graph_snapshot,
+        )
+        record_job_event(
+            job_id,
+            "job.completed",
+            status="completed",
+            data={
+                "files_processed": len(pdf_paths),
+                "chunks": total_chunks,
+                "indicators": len(gaps),
+                "facts": fact_table_stats.get("total_facts", 0),
+            },
         )
 
+    except JobCancelled:
+        _set_analysis_job(
+            job_id,
+            status="cancelled",
+            message="Analisis dibatalkan oleh pengguna",
+            error=None,
+        )
+        record_job_event(job_id, "job.cancelled", status="cancelled")
     except Exception as e:
         logger.error(f"Auto-analysis failed for job {job_id}: {e}")
         _set_analysis_job(
             job_id,
             status="failed",
-            error=str(e),
-            message=f"Analysis failed: {str(e)}",
+            error="Analisis gagal. Silakan coba ulang atau periksa log server.",
+            message="Analisis gagal. Silakan coba ulang.",
         )
+        record_job_event(job_id, "job.failed", status="failed", data={"error_type": type(e).__name__})
     finally:
-        for pdf_path in pdf_paths:
-            pdf_path.unlink(missing_ok=True)
+        # Inputs stay on disk until retention cleanup so a retry can rebuild a
+        # clean scoped corpus after a restart.
+        release_analysis_context(job_id)
 
 
 # ───────────────────────────────────────────
@@ -1623,19 +1737,22 @@ JSON:"""
 
 @router.get("/kg/graph")
 async def get_kg_graph(job_id: str = None):
-    """Return KG nodes and edges for visualization.
-    
-    If job_id is provided, returns KG data from that analysis job's context.
-    Otherwise returns current global KG state.
-    """
-    kg = get_knowledge_graph()
-    data = kg.export_to_dict()
+    """Return a persisted graph snapshot for one completed analysis job."""
+    if not job_id:
+        latest = get_latest_completed_job()
+        job_id = latest.get("job_id") if latest else None
+    data = get_job_graph(job_id) if job_id else None
+    if not data:
+        raise HTTPException(status_code=404, detail="No completed analysis graph found")
+    raw_graph = data.get("raw_graph", {})
     return {
-        "nodes": data.get("nodes", []),
-        "edges": data.get("edges", []),
+        "job_id": job_id,
+        "nodes": raw_graph.get("nodes", []),
+        "edges": raw_graph.get("edges", []),
         "stats": {
-            "total_nodes": len(data.get("nodes", [])),
-            "total_edges": len(data.get("edges", [])),
+            "total_nodes": len(raw_graph.get("nodes", [])),
+            "total_edges": len(raw_graph.get("edges", [])),
+            "total_facts": len(data.get("facts", [])),
         },
     }
 
@@ -1649,35 +1766,38 @@ async def stream_analysis(job_id: str):
     """Stream analysis progress via Server-Sent Events."""
 
     async def event_generator():
-        prev_status = None
-        prev_message = None
+        previous_revision = -1
+        last_event_id = 0
         while True:
-            job = _analysis_jobs.get(job_id)
+            job = _get_analysis_job(job_id)
             if not job:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Job not found'})}\n\n"
                 return
 
             status = job.get("status", "unknown")
-            message = job.get("message", "")
-
-            if status != prev_status or message != prev_message:
+            revision = int(job.get("revision", 0))
+            if revision != previous_revision:
                 payload = {
                     "type": "progress",
                     "status": status,
-                    "message": message,
+                    "message": job.get("message", ""),
                     "progress": job.get("progress", 0),
+                    "revision": revision,
                 }
                 if status == "completed":
                     payload["type"] = "complete"
                     payload["results"] = job.get("results")
-                elif status in ("failed", "interrupted"):
+                elif status in ("failed", "interrupted", "cancelled"):
                     payload["type"] = "error"
                     payload["error"] = job.get("error", "")
                 yield f"data: {json.dumps(payload, default=str)}\n\n"
-                prev_status = status
-                prev_message = message
+                previous_revision = revision
 
-            if status in ("completed", "failed", "interrupted"):
+            for event in get_job_events(job_id, after_event_id=last_event_id):
+                last_event_id = event["id"]
+                yield f"data: {json.dumps({'type': 'phase', **event}, default=str)}\n\n"
+
+            if status in ("completed", "failed", "interrupted", "cancelled"):
                 return
 
             await asyncio.sleep(1)

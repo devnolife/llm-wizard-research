@@ -65,7 +65,12 @@ def get_glm_interface() -> GLMInterface:
             model_name=config.llm.model_name,
             base_url=config.llm.base_url,
             temperature=config.llm.temperature,
-            max_tokens=config.llm.max_tokens
+            top_p=config.llm.top_p,
+            max_tokens=config.llm.max_tokens,
+            timeout=config.llm.timeout,
+            num_ctx=config.llm.context_window,
+            keep_alive=config.llm.keep_alive,
+            max_parallel=config.llm.num_parallel,
         )
         _components["glm"] = GLMInterface(glm_config)
     return _components["glm"]
@@ -333,3 +338,26 @@ def get_document_processor() -> DocumentProcessor:
             ocr_min_chars_per_page=ocr_min_chars,
         )
     return _components["document_processor"]
+
+
+def get_analysis_context(job_id: str):
+    """Create or retrieve isolated mutable state for one analysis job."""
+    from ..core.runtime.analysis_context import analysis_contexts
+
+    return analysis_contexts.get_or_create(job_id)
+
+
+def release_analysis_context(job_id: str) -> None:
+    """Release transient per-job agent/KG state after persistence."""
+    from ..core.runtime.analysis_context import analysis_contexts
+
+    analysis_contexts.release(job_id)
+
+
+def create_ephemeral_analysis_context():
+    """Build isolated mutable state for a one-off API request over the corpus."""
+    import uuid
+
+    from ..core.runtime.analysis_context import create_analysis_context
+
+    return create_analysis_context(f"ephemeral-{uuid.uuid4()}", scope_retrieval=False)

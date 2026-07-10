@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional, Literal, TypedDict, Annotated
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
-import json
 import operator
 
 from loguru import logger
@@ -189,7 +188,6 @@ class CoordinatorAgent:
         OBSERVE: Retrieve papers, extract facts, build knowledge graph.
         """
         query = state["query"]
-        context = state.get("context", {})
         trace_entry = {
             "phase": "observe",
             "timestamp": datetime.now().isoformat(),

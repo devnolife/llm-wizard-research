@@ -4,7 +4,7 @@ RAG Tool - Retrieves relevant documents from vector store.
 Used by the Agent to search for specific information across papers.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from loguru import logger
 
 

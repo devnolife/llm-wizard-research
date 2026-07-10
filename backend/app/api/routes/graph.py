@@ -5,7 +5,7 @@ Serves the SPO Fact Base as a network graph (nodes + links) with community
 clusters, for the frontend graph visualization page.
 
 Data sources (priority):
-    1. Live FactTable singleton (populated by upload-and-analyze sessions)
+    1. Persisted snapshot for the requested/completed analysis job
     2. Latest full-mode experiment result JSON (all_facts dump)
 """
 
@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import networkx as nx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from loguru import logger
+
+from ...utils.job_store import get_job_graph, get_latest_completed_job
 
 router = APIRouter()
 
@@ -23,25 +25,16 @@ BACKEND_DIR = Path(__file__).resolve().parents[3]
 RESULTS_DIR = BACKEND_DIR / "experiments" / "results"
 
 
-def _facts_from_live_table() -> List[Dict[str, Any]]:
-    """Read facts from the in-memory FactTable (entity names resolved)."""
-    from ..dependencies import get_fact_table
-
-    ft = get_fact_table()
-    facts = []
-    for fact in ft.query():
-        subj = ft.get_entity(fact.subject_id)
-        obj = ft.get_entity(fact.object_id)
-        facts.append({
-            "subject": subj.name if subj else fact.subject_id,
-            "subject_type": subj.entity_type.value if subj else "CONCEPT",
-            "predicate": fact.predicate.value,
-            "object": obj.name if obj else fact.object_id,
-            "object_type": obj.entity_type.value if obj else "CONCEPT",
-            "confidence": float(fact.confidence),
-            "source_paper": fact.source_paper,
-        })
-    return facts
+def _facts_from_job(job_id: str | None) -> tuple[List[Dict[str, Any]], Optional[str]]:
+    """Load facts captured with a completed, isolated analysis job."""
+    if not job_id:
+        latest = get_latest_completed_job()
+        job_id = latest.get("job_id") if latest else None
+    snapshot = get_job_graph(job_id) if job_id else None
+    if not snapshot:
+        return [], None
+    facts = snapshot.get("facts", [])
+    return (facts if isinstance(facts, list) else []), job_id
 
 
 def _facts_from_experiment() -> tuple[List[Dict[str, Any]], Optional[str]]:
@@ -64,6 +57,7 @@ def _facts_from_experiment() -> tuple[List[Dict[str, Any]], Optional[str]]:
 
 @router.get("/graph")
 async def get_knowledge_graph(
+    job_id: Optional[str] = Query(None, description="Completed analysis job ID (defaults to latest)"),
     min_degree: int = Query(1, ge=1, description="Hide nodes with fewer connections"),
     max_nodes: int = Query(300, ge=10, le=2000),
 ):
@@ -73,12 +67,24 @@ async def get_knowledge_graph(
     Returns nodes (id, label, type, cluster, weight) and links
     (source, target, predicate, weight), plus cluster/stat metadata.
     """
-    source = "live_fact_table"
+    requested_job_id = job_id
+    source = "job_snapshot"
     try:
-        facts = _facts_from_live_table()
+        facts, selected_job_id = _facts_from_job(job_id)
     except Exception as e:
-        logger.warning(f"Live fact table unavailable: {e}")
+        logger.warning(f"Persisted analysis graph unavailable: {e}")
         facts = []
+        selected_job_id = None
+
+    if not facts and requested_job_id:
+        return {
+            "source": "job_snapshot_empty",
+            "job_id": requested_job_id,
+            "nodes": [],
+            "links": [],
+            "clusters": [],
+            "stats": {"nodes": 0, "links": 0, "facts": 0},
+        }
 
     if not facts:
         facts, result_file = _facts_from_experiment()
@@ -170,6 +176,7 @@ async def get_knowledge_graph(
 
     return {
         "source": source,
+        "job_id": selected_job_id,
         "nodes": nodes,
         "links": links,
         "clusters": cluster_summary,

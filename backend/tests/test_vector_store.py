@@ -10,6 +10,9 @@ from pathlib import Path
 from app.core.retrieval.vector_store import VectorStore, Document, SearchResult
 
 
+pytestmark = pytest.mark.slow
+
+
 @pytest.fixture
 def temp_dir():
     """Create temporary directory for tests"""

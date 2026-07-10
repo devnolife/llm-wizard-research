@@ -1,6 +1,6 @@
 # Wizard Research — Neuro-Symbolic Synthesis Gap Detection
 
-.PHONY: help install dev test clean docker-up docker-down backend frontend experiment db-stats db-sources db-query papers-search papers-ingest experiment-ablation-nli experiment-breakdown experiment-calibration experiment-benchmark experiment-prf experiment-retrieval experiment-errors
+.PHONY: help install install-backend-locked lock-backend dev test test-api runtime-doctor clean docker-up docker-down backend frontend experiment db-stats db-sources db-query papers-search papers-ingest experiment-ablation-nli experiment-breakdown experiment-calibration experiment-benchmark experiment-prf experiment-retrieval experiment-errors
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -18,6 +18,12 @@ install: ## Install all dependencies (backend + frontend)
 install-backend: ## Install backend dependencies only
 	cd backend && pip install -r requirements.txt
 
+install-backend-locked: ## Install the reproducible CPU-safe backend lock (requires uv)
+	cd backend && uv pip install --torch-backend cpu -r requirements.lock
+
+lock-backend: ## Refresh backend lock with CPU PyTorch wheels (requires uv)
+	uv pip compile --torch-backend cpu backend/requirements.txt --output-file backend/requirements.lock
+
 install-frontend: ## Install frontend dependencies only
 	cd frontend && npm install
 
@@ -32,13 +38,19 @@ frontend: ## Run frontend development server
 	cd frontend && npm run dev
 
 test: ## Run all tests
-	cd backend && pytest tests/
+	cd backend && python -m pytest tests/
 
 test-unit: ## Run unit tests only (core components)
-	cd backend && pytest tests/test_fact_table.py tests/test_rule_engine.py tests/test_relation_classifier.py tests/test_fact_extractor.py tests/test_gap_analyzer.py
+	cd backend && python -m pytest tests/test_fact_table.py tests/test_rule_engine.py tests/test_relation_classifier.py tests/test_fact_extractor.py tests/test_gap_analyzer.py
 
 test-integration: ## Run integration tests only
-	cd backend && pytest tests/test_integration.py
+	cd backend && python -m pytest tests/test_integration.py
+
+test-api: ## Run FastAPI contract tests with mocked dependencies
+	cd backend && python -m pytest tests/test_api.py
+
+runtime-doctor: ## Show effective redacted runtime config (add OCR=1 to probe OCR)
+	cd backend && python scripts/runtime_doctor.py $(if $(OCR),--check-ocr,)
 
 experiment-data: ## Download the 23-paper benchmark dataset from arXiv
 	cd backend && python experiments/download_papers.py

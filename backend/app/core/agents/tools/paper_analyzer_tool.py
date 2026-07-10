@@ -5,7 +5,7 @@ Extracts key findings, methods, contributions, and metadata from papers.
 Used by the Agent in its analysis phase.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from loguru import logger
 
 

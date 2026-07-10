@@ -7,7 +7,7 @@ improvement suggestions. Implements the "evaluate" phase of the
 observe→think→act→evaluate loop.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from loguru import logger
 
 

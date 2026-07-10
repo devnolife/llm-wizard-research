@@ -4,7 +4,9 @@ import { Info } from 'lucide-react'
  * Info banner that explains what a page/menu shows and what results appear there.
  * Matches the tab description banner style used on the Analysis Results page.
  */
-const PageHelp = ({ icon: Icon = Info, title, description, items = [], className = '' }) => {
+const PageHelp = ({ icon, title, description, items = [], className = '' }) => {
+  const Icon = icon || Info
+
   return (
     <div className={`flex items-start gap-3 px-4 py-3 rounded-lg bg-blue-500/5 border border-blue-500/20 ${className}`}>
       <Icon className="w-5 h-5 mt-0.5 text-blue-500 flex-shrink-0" />

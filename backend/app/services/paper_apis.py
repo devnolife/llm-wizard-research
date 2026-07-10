@@ -10,7 +10,6 @@ import asyncio
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 from dataclasses import dataclass
-import json
 from loguru import logger
 
 
@@ -269,7 +268,6 @@ class SemanticScholarAPI:
         # Get DOI from external IDs
         external_ids = item.get("externalIds", {})
         doi = external_ids.get("DOI")
-        arxiv_id = external_ids.get("ArXiv")
         
         # Get PDF URL if available
         pdf_url = None

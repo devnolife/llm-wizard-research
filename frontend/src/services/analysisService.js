@@ -22,6 +22,16 @@ export const analysisService = {
     return response.data
   },
 
+  async cancelAnalysis(jobId) {
+    const response = await api.post(`/api/analysis-status/${jobId}/cancel`)
+    return response.data
+  },
+
+  async retryAnalysis(jobId) {
+    const response = await api.post(`/api/analysis-status/${jobId}/retry`)
+    return response.data
+  },
+
   // Get recommendations
   async getRecommendations(query, options = {}) {
     const response = await api.post('/api/recommend', {
@@ -49,6 +59,11 @@ export const analysisService = {
       use_history: useHistory,
       conversation_id: conversationId,
     })
+    return response.data
+  },
+
+  async clearChat(conversationId) {
+    const response = await api.delete(`/api/chat/${conversationId}`)
     return response.data
   },
 }

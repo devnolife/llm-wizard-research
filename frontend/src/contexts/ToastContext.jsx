@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { X, CheckCircle, AlertTriangle, Info, AlertCircle } from 'lucide-react'
-
-const ToastContext = createContext()
+import { ToastContext } from './toastStore'
 
 const TOAST_ICONS = {
   success: CheckCircle,
@@ -62,26 +61,17 @@ const Toast = ({ id, message, type, onRemove }) => {
 
   return (
     <div
-      className={`pointer-events-auto flex items-start gap-3 p-3 rounded-lg border bg-card shadow-md transition-all duration-200 ${
-        visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'
-      } ${TOAST_STYLES[type]}`}
+      className={`pointer-events-auto flex items-start gap-3 p-3 rounded-lg border bg-card shadow-md transition-all duration-200 ${visible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-4'} ${TOAST_STYLES[type]}`}
     >
       <Icon className="w-4 h-4 flex-shrink-0 mt-0.5" />
       <p className="text-sm flex-1">{message}</p>
       <button
         onClick={() => onRemove(id)}
         className="flex-shrink-0 p-0.5 rounded hover:bg-secondary transition-colors text-muted-foreground"
+        aria-label="Tutup notifikasi"
       >
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
   )
 }
-
-export const useToast = () => {
-  const context = useContext(ToastContext)
-  if (!context) throw new Error('useToast must be used within ToastProvider')
-  return context
-}
-
-export default ToastContext

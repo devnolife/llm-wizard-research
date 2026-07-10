@@ -1,16 +1,21 @@
+import { lazy } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { DarkModeProvider } from './contexts/DarkModeContext'
 import { ToastProvider } from './contexts/ToastContext'
 import ErrorBoundary from './components/common/ErrorBoundary'
+import LazyBoundary from './components/common/LazyBoundary'
 import Navbar from './components/layout/Navbar'
 import UploadPage from './components/pages/UploadPage'
-import AnalysisResults from './components/pages/AnalysisResults'
-import SearchPage from './components/pages/SearchPage'
-import ChatPage from './components/pages/ChatPage'
-import DocumentsPage from './components/pages/DocumentsPage'
-import NotFoundPage from './components/pages/NotFoundPage'
-import RevisionSummaryPage from './components/pages/RevisionSummaryPage'
-import GraphPage from './components/pages/GraphPage'
+
+const AnalysisResults = lazy(() => import('./components/pages/AnalysisResults'))
+const SearchPage = lazy(() => import('./components/pages/SearchPage'))
+const ChatPage = lazy(() => import('./components/pages/ChatPage'))
+const DocumentsPage = lazy(() => import('./components/pages/DocumentsPage'))
+const NotFoundPage = lazy(() => import('./components/pages/NotFoundPage'))
+const RevisionSummaryPage = lazy(() => import('./components/pages/RevisionSummaryPage'))
+const GraphPage = lazy(() => import('./components/pages/GraphPage'))
+
+const routeElement = (element) => <ErrorBoundary>{element}</ErrorBoundary>
 
 function App() {
   return (
@@ -23,16 +28,18 @@ function App() {
               <Navbar />
               <ErrorBoundary>
                 <main>
-                  <Routes>
-                    <Route path="/" element={<UploadPage />} />
-                    <Route path="/results/:jobId" element={<AnalysisResults />} />
-                    <Route path="/search" element={<SearchPage />} />
-                    <Route path="/chat" element={<ChatPage />} />
-                    <Route path="/documents" element={<DocumentsPage />} />
-                    <Route path="/graph" element={<GraphPage />} />
-                    <Route path="/revisi" element={<RevisionSummaryPage />} />
-                    <Route path="*" element={<NotFoundPage />} />
-                  </Routes>
+                  <LazyBoundary>
+                    <Routes>
+                      <Route path="/" element={routeElement(<UploadPage />)} />
+                      <Route path="/results/:jobId" element={routeElement(<AnalysisResults />)} />
+                      <Route path="/search" element={routeElement(<SearchPage />)} />
+                      <Route path="/chat" element={routeElement(<ChatPage />)} />
+                      <Route path="/documents" element={routeElement(<DocumentsPage />)} />
+                      <Route path="/graph" element={routeElement(<GraphPage />)} />
+                      <Route path="/revisi" element={routeElement(<RevisionSummaryPage />)} />
+                      <Route path="*" element={routeElement(<NotFoundPage />)} />
+                    </Routes>
+                  </LazyBoundary>
                 </main>
               </ErrorBoundary>
             </div>

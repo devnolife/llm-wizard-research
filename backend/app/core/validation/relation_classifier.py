@@ -278,10 +278,6 @@ class RelationClassifier:
         Returns:
             (relation_type, markers_found, evidence_text)
         """
-        text_lower = text.lower()
-        entity_a_lower = entity_a.lower()
-        entity_b_lower = entity_b.lower()
-        
         # Find sentences containing both entities
         sentences = self._find_relevant_sentences(text, entity_a, entity_b)
         relevant_text = " ".join(sentences)

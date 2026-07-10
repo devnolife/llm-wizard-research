@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Share2, Sparkles } from 'lucide-react'
-import { useDarkMode } from '../../contexts/DarkModeContext'
+import useDarkMode from '../../hooks/useDarkMode'
 import ModelSelector from '../common/ModelSelector'
 
 const NAV_LINKS = [

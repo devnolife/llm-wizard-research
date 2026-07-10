@@ -1,3 +1,6 @@
+# Direct dependency manifest. Install the pinned, CPU-safe reproducibility
+# snapshot from requirements.lock with `make install-backend-locked`.
+
 # Core Dependencies
 ollama>=0.3.0
 chromadb>=0.4.22

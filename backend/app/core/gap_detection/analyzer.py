@@ -25,17 +25,14 @@ References:
 
 from typing import Dict, Any, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
-from collections import Counter
-
 from loguru import logger
-import numpy as np
 
 from ...models.responses import (
     IndicatorType,
     RuleVerdictType,
     GapIndicatorModel,
 )
-from ..knowledge.fact_table import EntityType, PredicateType
+from ..knowledge.fact_table import EntityType
 
 # Re-export for backward compatibility
 GapIndicatorType = IndicatorType
@@ -868,10 +865,6 @@ List contradictions (if none found, say "No contradictions detected"):"""
             covered.update(k.lower() for k in keywords)
             
             content = paper.get("content", "").lower()
-            # Extract section headers as aspects
-            import re
-            headers = re.findall(r'\b(introduction|methodology|results|discussion|conclusion|background|related work)\b', content)
-            
             # Extract topic-specific aspects
             aspect_terms = [
                 "effectiveness", "efficiency", "scalability", "usability",
