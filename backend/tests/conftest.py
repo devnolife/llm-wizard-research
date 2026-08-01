@@ -1,9 +1,14 @@
 """Shared pytest configuration for the installed backend package."""
 
+import os
 from pathlib import Path
 
 import pytest
 from loguru import logger
+
+# Disable API rate limiting during tests (full suite exceeds the per-minute
+# quota); the limiter itself is covered by tests/test_rate_limit.py.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 
 @pytest.fixture(scope="session")

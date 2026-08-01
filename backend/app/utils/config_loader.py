@@ -83,7 +83,6 @@ class APIConfig:
     reload: bool = False
     cors_origins: list = field(default_factory=lambda: [
         "http://localhost:5173",
-        "http://localhost:3000",
     ])
     cors_enabled: bool = True
     rate_limit_enabled: bool = True
@@ -296,7 +295,6 @@ class ConfigLoader:
             reload=yaml_config.get("api", {}).get("reload", False),
             cors_origins=yaml_config.get("api", {}).get("cors_origins", [
                 "http://localhost:5173",
-                "http://localhost:3000",
             ]),
             cors_enabled=_env_bool("CORS_ENABLED", yaml_config.get("api", {}).get("cors_enabled", True)),
             rate_limit_enabled=_env_bool("RATE_LIMIT_ENABLED", yaml_config.get("api", {}).get("rate_limit_enabled", True)),

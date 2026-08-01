@@ -100,6 +100,17 @@ if config.api.cors_enabled:
 async def add_request_telemetry(request, call_next):
     return await telemetry_middleware(request, call_next)
 
+
+# Rate limiting (sliding window per client IP; /health exempt)
+if config.api.rate_limit_enabled:
+    from .utils.rate_limit import create_rate_limit_middleware
+
+    _rate_limit = create_rate_limit_middleware(config.api.rate_limit_per_minute)
+
+    @app.middleware("http")
+    async def enforce_rate_limit(request, call_next):
+        return await _rate_limit(request, call_next)
+
 # Include routers
 app.include_router(health.router, tags=["Health"])
 app.include_router(documents.router, prefix="/api", tags=["Documents"])
