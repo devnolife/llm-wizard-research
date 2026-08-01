@@ -39,6 +39,16 @@ class AgentPhase(str, Enum):
     ERROR = "error"
 
 
+class ReasoningStep(TypedDict, total=False):
+    """Single entry in the agent's reasoning trace."""
+    phase: str
+    iteration: int
+    action: str
+    detail: str
+    timestamp: str
+    data: Dict[str, Any]
+
+
 class AgentState(TypedDict, total=False):
     """State carried through the LangGraph execution."""
     # Input
@@ -49,7 +59,7 @@ class AgentState(TypedDict, total=False):
     phase: str
     iteration: int
     max_iterations: int
-    reasoning_trace: Annotated[List[Dict[str, Any]], operator.add]
+    reasoning_trace: Annotated[List[ReasoningStep], operator.add]
     
     # Intermediate results
     retrieved_papers: List[Dict[str, Any]]
@@ -75,7 +85,7 @@ class AgentResponse:
     """Response from the coordinator."""
     success: bool
     result: Any
-    reasoning_trace: List[Dict[str, Any]] = field(default_factory=list)
+    reasoning_trace: List[ReasoningStep] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
 

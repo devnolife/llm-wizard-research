@@ -17,11 +17,35 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from threading import RLock
-from typing import Any, Iterable
+from typing import Any, Iterable, TypedDict
 
 from loguru import logger
 
 from .config_loader import get_config
+
+
+class JobRecord(TypedDict, total=False):
+    """Structured fields of a persisted analysis job.
+
+    Rows also carry arbitrary keys from ``data_json`` (payload of the
+    analysis pipeline), so this is intentionally ``total=False`` and
+    consumers may see extra keys.
+    """
+
+    job_id: str
+    status: str
+    progress: float
+    message: str
+    error: str | None
+    attempt: int
+    max_attempts: int
+    cancel_requested: bool
+    available_at: float
+    created_at: float
+    updated_at: float
+    completed_at: float | None
+    revision: int
+    graph_snapshot: dict[str, Any]
 
 
 _LOCK = RLock()
@@ -127,7 +151,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     )
 
 
-def _row_to_job(row: sqlite3.Row) -> dict[str, Any]:
+def _row_to_job(row: sqlite3.Row) -> JobRecord:
     job = _json_loads(row["data_json"], {})
     job.update(
         {
@@ -296,7 +320,7 @@ def _ensure_sqlite(path: Path | None = None) -> Path:
     return target
 
 
-def load_jobs(path: str | Path | None = None) -> dict[str, dict[str, Any]]:
+def load_jobs(path: str | Path | None = None) -> dict[str, JobRecord]:
     """Load durable jobs, requeue work interrupted by a previous process.
 
     Passing a ``.json`` path retains the original compatibility behavior.  The
@@ -358,7 +382,7 @@ def save_job(job_id: str, job: dict[str, Any]) -> None:
         _JOBS[job_id] = persisted
 
 
-def update_job(job_id: str, **updates: Any) -> dict[str, Any] | None:
+def update_job(job_id: str, **updates: Any) -> JobRecord | None:
     """Atomically merge changes into a persisted job and return its new state."""
     with _LOCK:
         if _LEGACY_MODE:
@@ -380,7 +404,7 @@ def update_job(job_id: str, **updates: Any) -> dict[str, Any] | None:
         return deepcopy(job)
 
 
-def get_job(job_id: str) -> dict[str, Any] | None:
+def get_job(job_id: str) -> JobRecord | None:
     """Return a persisted job by ID."""
     with _LOCK:
         if _LEGACY_MODE:
@@ -396,7 +420,7 @@ def get_job(job_id: str) -> dict[str, Any] | None:
         return deepcopy(job)
 
 
-def list_jobs(statuses: Iterable[str] | None = None) -> list[dict[str, Any]]:
+def list_jobs(statuses: Iterable[str] | None = None) -> list[JobRecord]:
     """Return jobs ordered from newest to oldest."""
     with _LOCK:
         target = _ensure_sqlite()
@@ -412,7 +436,7 @@ def list_jobs(statuses: Iterable[str] | None = None) -> list[dict[str, Any]]:
         return [_row_to_job(row) for row in rows]
 
 
-def claim_next_job() -> dict[str, Any] | None:
+def claim_next_job() -> JobRecord | None:
     """Atomically claim the next ready job for one local worker."""
     with _LOCK:
         target = _ensure_sqlite()
@@ -464,7 +488,7 @@ def claim_next_job() -> dict[str, Any] | None:
         return deepcopy(claimed)
 
 
-def request_cancel(job_id: str) -> dict[str, Any] | None:
+def request_cancel(job_id: str) -> JobRecord | None:
     """Request cooperative cancellation for a queued or running job."""
     job = get_job(job_id)
     if job is None or job.get("status") in _TERMINAL_STATUSES:
@@ -483,7 +507,7 @@ def request_cancel(job_id: str) -> dict[str, Any] | None:
     )
 
 
-def retry_job(job_id: str, delay_seconds: float = 0) -> dict[str, Any] | None:
+def retry_job(job_id: str, delay_seconds: float = 0) -> JobRecord | None:
     """Requeue a terminal job when its persistent input payload is available."""
     job = get_job(job_id)
     if job is None or job.get("status") not in {"failed", "cancelled", "interrupted"}:
@@ -558,7 +582,7 @@ def get_job_events(job_id: str, after_event_id: int = 0) -> list[dict[str, Any]]
     ]
 
 
-def get_latest_completed_job() -> dict[str, Any] | None:
+def get_latest_completed_job() -> JobRecord | None:
     """Return the latest completed job with a persisted result snapshot."""
     with _LOCK:
         target = _ensure_sqlite()
@@ -572,7 +596,7 @@ def get_latest_completed_job() -> dict[str, Any] | None:
     return _row_to_job(row) if row else None
 
 
-def set_job_graph(job_id: str, graph_snapshot: dict[str, Any]) -> dict[str, Any] | None:
+def set_job_graph(job_id: str, graph_snapshot: dict[str, Any]) -> JobRecord | None:
     """Persist a serializable graph snapshot alongside a completed job."""
     return update_job(job_id, graph_snapshot=graph_snapshot)
 
