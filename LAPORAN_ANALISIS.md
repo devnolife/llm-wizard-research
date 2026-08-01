@@ -16,7 +16,7 @@
 | Tes | **Sehat** — 304/304 pass (~50 dtk), tapi API/agents/tools nyaris tanpa coverage |
 | Konfigurasi | **Bermasalah** — dua .env saling bertentangan dengan skema key berbeda |
 | Dokumentasi | **Sangat lengkap tapi mulai basi** — port salah, model embedding lama, klaim loop agentic tidak persis |
-| Kesiapan eksperimen tesis | **Hampir** — H6/H7 ada hasil; H9 (nli/no-nli) belum dijalankan; statistik perlu penguatan |
+| Kesiapan eksperimen tesis | **Siap** — H6/H7/H9 lengkap (5 run/mode, seeded, Holm-corrected); lihat Addendum §9 |
 
 **Skor keseluruhan: solid untuk prototipe riset** — dengan 3 bug/masalah kritis yang layak diperbaiki sebelum sidang/publikasi.
 
@@ -47,6 +47,8 @@ EKSPERIMEN           5 fase, mode: full | no-rule-engine | linear-baseline | nli
 ---
 
 ## 3. Temuan Kritis (perbaiki dulu)
+
+> **Status per 1 Agustus 2026: seluruh K1–K7 sudah resolved** — lihat Addendum §8 (perbaikan) dan §9 (verifikasi ulang). Bagian ini dipertahankan sebagai catatan historis audit.
 
 ### K1. BUG: 3-Layer Discriminator tidak pernah aktif via NLI tool ⚠️ *terverifikasi manual*
 `nli_checker_tool.py:68` membaca `classified.layers_used`, tapi dataclass
@@ -178,3 +180,21 @@ Semua diterapkan sebagai perubahan **uncommitted** di working tree (HEAD `292568
 2. **Run H9**: `python experiments/run_experiment.py --mode nli --skip-ingest` + `--mode no-nli`
 3. Refactor jangka menengah: pecah `AnalysisResults.jsx` (2.247 baris) & 4 file inti backend; `pip freeze > requirements.lock`
 4. Commit perubahan setelah review: `git add -A && git commit`
+
+---
+
+## 9. Addendum — Verifikasi Ulang (1 Agustus 2026)
+
+Seluruh item "belum dilakukan" di §8 **sudah selesai** dan diverifikasi ulang terhadap kode aktual:
+
+| Item | Status | Bukti |
+|---|---|---|
+| Re-run eksperimen + H9 | ✅ Selesai | 5 run/mode (seeds 43–47) untuk kelima mode dgn `llama3.2:latest` + 3 run `gpt-oss:latest`; hasil di `backend/experiments/results/` (`experiment_nli_*.run1-5.json`, dst) |
+| Agregasi statistik | ✅ Selesai | `run_multi.py --skip-runs --runs 5` → `multirun_stats_llama3.2_latest.md`; H9 (nli vs no-nli): indikator 25.0±2.3 vs 15.2±1.9, U=25, p=0.0119, **p Holm=0.0716** (tidak signifikan α=0.05), Cliff's δ=1.0 (large), Δmed=11 [6,13]; H6/H7 tidak signifikan |
+| Pecah `AnalysisResults.jsx` (P1) | ✅ Selesai | Tab diekstrak ke `frontend/src/components/pages/analysis-tabs/` (10 komponen + `constants.js`); `AnalysisResults.jsx` tinggal orchestrator |
+| Job persistence (K6) | ✅ Ditingkatkan | `job_store.py` kini **SQLite** (`analysis_jobs.sqlite3`): atomic claim, recovery restart, retry backoff; `analysis_queue.py` durable dgn ThreadPoolExecutor |
+| Test suite | ✅ Hijau | **351 pass, 2 skip** (naik dari 325); `test_relation_classifier.py` + `test_rule_engine.py` = 112 pass; `test_nli_checker_tool.py` pass |
+
+**Catatan framing tesis (H9):** efek besar dan konsisten (δ=1.0, CI median tidak melewati 0) tetapi belum signifikan setelah koreksi Holm karena n run kecil — sampaikan sebagai "bukti awal efek besar; power terbatas", atau tambah jumlah run bila waktu memungkinkan.
+
+**Kesimpulan:** semua temuan kritis (K1–K7) dan P1 telah resolved di kode; laporan §3 dan §7 di atas dipertahankan sebagai catatan historis audit.
