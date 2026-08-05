@@ -93,22 +93,51 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
   ].filter(Boolean)
 
   return (
-    <div className="w-full px-6 lg:px-10 py-8 max-w-3xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-8 max-w-screen-2xl mx-auto">
       <header className="mb-7">
         <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 mb-3">
           <CheckCircle className="w-5 h-5" />
           <span className="text-sm font-semibold">Analisis selesai</span>
         </div>
         <h1 className="text-3xl font-bold tracking-tight">Dari jurnal Anda sampai gap ditemukan.</h1>
-        <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+        <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-2xl">
           Satu alur lengkap: jurnal dibaca, faktanya dibandingkan, diuji aturan logika, sampai gap dan arah solusi muncul di ujungnya.
         </p>
       </header>
 
-      {/* Satu timeline bersambung: proses + hasil */}
-      <ProcessTrace data={data} tail={tail} />
+      {/* Layout penuh: proses di kiri, hasil menempel (sticky) di kanan */}
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px] items-start">
+        <div className="min-w-0">
+          {/* Di layar kecil hasil tetap menyambung di timeline yang sama */}
+          <div className="lg:hidden">
+            <ProcessTrace data={data} tail={tail} />
+          </div>
+          <div className="hidden lg:block">
+            <ProcessTrace data={data} />
+          </div>
+        </div>
 
-      <div className="mt-7 text-center">
+        <aside className="hidden lg:block sticky top-24 space-y-4">
+          {tail.map((item, i) => {
+            const Icon = item.icon
+            return (
+              <div key={i}>
+                <p className={`mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.14em] ${item.highlight ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
+                  <Icon className="h-3.5 w-3.5" /> {item.label}
+                </p>
+                {item.content}
+              </div>
+            )
+          })}
+          <div className="pt-1 text-center">
+            <button onClick={onShowFull} className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+              Lihat semua detail analisis <ArrowRight className="inline w-3.5 h-3.5 ml-1" />
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <div className="mt-7 text-center lg:hidden">
         <button onClick={onShowFull} className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
           Saya ingin melihat semua detail analisis <ArrowRight className="inline w-3.5 h-3.5 ml-1" />
         </button>
