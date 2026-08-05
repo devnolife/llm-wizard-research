@@ -113,20 +113,59 @@ const ProcessTrace = ({ data, tail = [] }) => {
       visual: { kind: 'ingest', nPapers, nChunks: totalChunks },
       what: `Setiap PDF dibuka, teksnya diambil halaman demi halaman, lalu dipotong menjadi ${totalChunks || 'ratusan'} bagian kecil (±500 kata per bagian, disebut "potongan"). Setiap potongan diubah menjadi deretan angka (embedding) supaya komputer bisa MENGUKUR kemiripan makna antar potongan — bukan cuma mencocokkan kata.`,
       example: (
-        <ul className="space-y-2">
+        <ul className="space-y-3">
           {papers.map((p, i) => (
-            <li key={i} className="flex items-start gap-2.5 rounded-md border bg-card p-2.5">
-              <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" />
-              <div className="min-w-0 text-xs">
-                <p className="font-medium leading-snug text-foreground/90">{p.title || p.source}</p>
-                <p className="mt-0.5 text-muted-foreground">
-                  {[p.source, p.year && `tahun ${p.year}`,
-                  Number.isFinite(Number(p.similarity_percent)) && `kemiripan dengan jurnal lain: ${p.similarity_percent}%`]
-                    .filter(Boolean).join(' · ')}
-                </p>
+            <li key={i} className="rounded-md border bg-card p-2.5">
+              <div className="flex items-start gap-2.5">
+                <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" />
+                <div className="min-w-0 text-xs">
+                  <p className="font-medium leading-snug text-foreground/90">{p.title || p.source}</p>
+                  <p className="mt-0.5 text-muted-foreground">
+                    {[p.source, p.year && `tahun ${p.year}`,
+                      Number.isFinite(Number(p.num_chunks)) && `dipotong menjadi ${p.num_chunks} bagian`,
+                      Number.isFinite(Number(p.similarity_percent)) && `kemiripan dengan jurnal lain: ${p.similarity_percent}%`]
+                      .filter(Boolean).join(' · ')}
+                  </p>
+                </div>
               </div>
+              {/* Isi dokumen ASLI, terlihat digunting menjadi potongan bernomor */}
+              {(p.sample_chunks || []).length > 0 && (
+                <div className="mt-2 space-y-0">
+                  {p.sample_chunks.map((chunk, ci) => (
+                    <div key={ci}>
+                      {ci > 0 && (
+                        <div className="my-1 flex items-center gap-2 pl-1" aria-hidden="true">
+                          <span className="text-[10px]">✂️</span>
+                          <span className="flex-1 border-t border-dashed border-primary/40" />
+                          <span className="text-[9px] font-semibold uppercase tracking-wide text-primary/60">dipotong di sini</span>
+                          <span className="flex-1 border-t border-dashed border-primary/40" />
+                        </div>
+                      )}
+                      <div className="rounded-md border border-blue-400/30 bg-blue-500/[0.05] px-2.5 py-2">
+                        <p className="mb-1 text-[9px] font-bold uppercase tracking-wide text-blue-600 dark:text-blue-400">
+                          Potongan #{(chunk.chunk_index ?? ci) + 1}
+                          {chunk.section ? ` · bagian: ${chunk.section}` : ''}
+                        </p>
+                        <p className="font-serif text-[11px] leading-relaxed text-foreground/80">
+                          "{chunk.text}…"
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {Number.isFinite(Number(p.num_chunks)) && p.num_chunks > (p.sample_chunks?.length || 0) && (
+                    <p className="mt-1.5 pl-1 text-[10px] text-muted-foreground">
+                      …dan {p.num_chunks - p.sample_chunks.length} potongan lainnya dari jurnal ini.
+                    </p>
+                  )}
+                </div>
+              )}
             </li>
           ))}
+          {!papers.some(p => (p.sample_chunks || []).length > 0) && (
+            <li className="rounded-md border border-dashed bg-secondary/30 p-2.5 text-[11px] text-muted-foreground">
+              Cuplikan isi dokumen tersedia untuk analisis yang dijalankan setelah pembaruan ini — unggah ulang untuk melihat isi potongan.
+            </li>
+          )}
         </ul>
       ),
       result: `${nPapers} jurnal terbaca utuh → ${totalChunks || '—'} potongan teks siap dianalisis.`,

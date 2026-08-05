@@ -687,6 +687,17 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                 "full_content": processed_doc.content or " ".join(
                     c.content for c in processed_doc.chunks
                 ),
+                "num_chunks": len(processed_doc.chunks),
+                # Sampel potongan ASLI utk UI "lihat isi dokumen dipotong":
+                # 3 chunk pertama, teks verbatim (dipangkas 350 char).
+                "sample_chunks": [
+                    {
+                        "chunk_index": c.chunk_index,
+                        "section": (c.metadata or {}).get("section"),
+                        "text": c.content[:350],
+                    }
+                    for c in processed_doc.chunks[:3]
+                ],
                 "weakness_context": document_processor.extract_weakness_sections(
                     processed_doc.content or " ".join(
                         c.content for c in processed_doc.chunks
@@ -1213,6 +1224,8 @@ JSON:"""
                         "year": p.get("year"),
                         "similarity_percent": p.get("similarity_percent"),
                         "already_indexed": p["already_indexed"],
+                        "num_chunks": p.get("num_chunks"),
+                        "sample_chunks": p.get("sample_chunks", []),
                     }
                     for p in paper_contents
                 ],
