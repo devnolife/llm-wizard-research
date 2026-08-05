@@ -88,11 +88,15 @@ const ProcessTrace = ({ data, tail = [] }) => {
   const nCandidates = indicators.length
   const rule = data.rule_engine_report || {}
   const trace = data.reasoning_trace || []
+  const sampleFacts = data.sample_facts || []
+  const llmModel = data.llm_info?.model || ''
   const phaseTime = {}
   for (const step of trace) if (step.phase && step.timestamp) phaseTime[step.phase] = fmtTime(step.timestamp)
   const critiqueAction = trace.filter(s => s.phase === 'evaluate').flatMap(s => s.actions || [])
     .find(a => /score/i.test(a)) || null
   const critiqueScore = critiqueAction ? (critiqueAction.match(/([0-9.]+)/) || [])[1] : null
+  const evaluateActions = trace.filter(s => s.phase === 'evaluate')
+    .flatMap(s => s.actions || []).filter(a => typeof a === 'string').slice(0, 5)
 
   // Contoh nyata: gap NLI dengan kutipan Paper A vs Paper B (bila ada)
   const nliGap = indicators.find(ind =>
@@ -122,8 +126,8 @@ const ProcessTrace = ({ data, tail = [] }) => {
                   <p className="font-medium leading-snug text-foreground/90">{p.title || p.source}</p>
                   <p className="mt-0.5 text-muted-foreground">
                     {[p.source, p.year && `tahun ${p.year}`,
-                      Number.isFinite(Number(p.num_chunks)) && `dipotong menjadi ${p.num_chunks} bagian`,
-                      Number.isFinite(Number(p.similarity_percent)) && `kemiripan dengan jurnal lain: ${p.similarity_percent}%`]
+                    Number.isFinite(Number(p.num_chunks)) && `dipotong menjadi ${p.num_chunks} bagian`,
+                    Number.isFinite(Number(p.similarity_percent)) && `kemiripan dengan jurnal lain: ${p.similarity_percent}%`]
                       .filter(Boolean).join(' · ')}
                   </p>
                 </div>
@@ -177,26 +181,58 @@ const ProcessTrace = ({ data, tail = [] }) => {
       time: phaseTime.observe,
       title: `Mencatat ${nFacts} fakta penting dari isi jurnal`,
       visual: { kind: 'facts', nFacts },
-      what: `Dari potongan-potongan tadi, AI membaca kalimat demi kalimat dan mencatat klaim penting sebagai "fakta" 3 bagian: Subjek → Hubungan → Objek. Sistem mengenali ${nEntities} hal (${entityBreakdown}) lalu menghubungkannya.`,
-      example: topPredicate && (
+      what: `Potongan-potongan tadi dikirim ke AI (model ${llmModel || 'bahasa lokal'}) dengan perintah: "baca teks ini, keluarkan klaim penting sebagai fakta 3 bagian Subjek → Hubungan → Objek". AI menjawab dalam format terstruktur, lalu sistem memeriksa & menyimpannya ke tabel fakta. Total ${nEntities} hal dikenali (${entityBreakdown}).`,
+      example: (
         <div className="space-y-2 text-xs">
-          <p className="text-muted-foreground">Bentuk fakta yang dicatat dari jurnal Anda, misalnya:</p>
-          <div className="flex flex-wrap items-center gap-1.5 rounded-md border bg-card p-2.5 font-medium">
-            <span className="rounded bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400">metode (mis. CRNN)</span>
-            <CornerDownRight className="h-3 w-3 text-muted-foreground" />
-            <span className="rounded bg-secondary px-2 py-1">"{PREDICATE_LABELS[topPredicate[0]] || topPredicate[0]}"</span>
-            <CornerDownRight className="h-3 w-3 text-muted-foreground" />
-            <span className="rounded bg-purple-500/10 px-2 py-1 text-purple-600 dark:text-purple-400">domain (mis. pengenalan struk)</span>
-          </div>
-          <p className="mb-1 mt-2 font-semibold text-foreground/80">Semua jenis hubungan yang tercatat:</p>
-          <ul className="space-y-1">
-            {predicateRows.map(([pred, count]) => (
-              <li key={pred} className="flex items-center justify-between rounded-md border bg-card px-2.5 py-1.5">
-                <span className="text-foreground/85">"{PREDICATE_LABELS[pred] || pred.toLowerCase().replace(/_/g, ' ')}"</span>
-                <span className="font-semibold text-primary">{count} fakta</span>
-              </li>
-            ))}
-          </ul>
+          {sampleFacts.length > 0 ? (
+            <>
+              <p className="text-muted-foreground">
+                Fakta ASLI yang dicatat AI dari jurnal Anda (bukan contoh karangan):
+              </p>
+              <ul className="space-y-1.5">
+                {sampleFacts.map((f, i) => (
+                  <li key={i} className="rounded-md border bg-card p-2">
+                    <div className="flex flex-wrap items-center gap-1.5 font-medium">
+                      <span className="rounded bg-blue-500/10 px-2 py-0.5 text-blue-600 dark:text-blue-400" title={ENTITY_LABELS[f.subject_type] || f.subject_type}>{f.subject}</span>
+                      <CornerDownRight className="h-3 w-3 text-muted-foreground" />
+                      <span className="rounded bg-secondary px-2 py-0.5">"{PREDICATE_LABELS[f.predicate] || f.predicate}"</span>
+                      <CornerDownRight className="h-3 w-3 text-muted-foreground" />
+                      <span className="rounded bg-purple-500/10 px-2 py-0.5 text-purple-600 dark:text-purple-400" title={ENTITY_LABELS[f.object_type] || f.object_type}>{f.object}</span>
+                    </div>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      {[f.source_paper && `dari: ${f.source_paper}`,
+                        Number.isFinite(Number(f.confidence)) && `keyakinan ${(f.confidence * 100).toFixed(0)}%`]
+                        .filter(Boolean).join(' · ')}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : topPredicate && (
+            <>
+              <p className="text-muted-foreground">Bentuk fakta yang dicatat dari jurnal Anda, misalnya:</p>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border bg-card p-2.5 font-medium">
+                <span className="rounded bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400">metode (mis. CRNN)</span>
+                <CornerDownRight className="h-3 w-3 text-muted-foreground" />
+                <span className="rounded bg-secondary px-2 py-1">"{PREDICATE_LABELS[topPredicate[0]] || topPredicate[0]}"</span>
+                <CornerDownRight className="h-3 w-3 text-muted-foreground" />
+                <span className="rounded bg-purple-500/10 px-2 py-1 text-purple-600 dark:text-purple-400">domain (mis. pengenalan struk)</span>
+              </div>
+            </>
+          )}
+          {predicateRows.length > 0 && (
+            <>
+              <p className="mb-1 mt-2 font-semibold text-foreground/80">Rekap semua jenis hubungan yang tercatat:</p>
+              <ul className="space-y-1">
+                {predicateRows.map(([pred, count]) => (
+                  <li key={pred} className="flex items-center justify-between rounded-md border bg-card px-2.5 py-1.5">
+                    <span className="text-foreground/85">"{PREDICATE_LABELS[pred] || pred.toLowerCase().replace(/_/g, ' ')}"</span>
+                    <span className="font-semibold text-primary">{count} fakta</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       ),
       result: `${nFacts} fakta + ${nEntities} konsep tersimpan dalam tabel fakta.`,
@@ -240,6 +276,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
             <ul className="space-y-1.5 text-xs">
               {indicators.map((ind, i) => {
                 const t = gapTypeOf(ind)
+                const evidence = (ind.evidence || []).filter(e => typeof e === 'string')
                 return (
                   <li key={i} className="rounded-md border bg-card p-2.5">
                     <p className="font-semibold text-foreground/90">
@@ -250,6 +287,20 @@ const ProcessTrace = ({ data, tail = [] }) => {
                     </p>
                     <p className="mt-0.5 text-muted-foreground">({GAP_EXPLAIN[t] || ''})</p>
                     <p className="mt-1 leading-snug text-foreground/80">{String(ind.description || '').slice(0, 200)}</p>
+                    {evidence.length > 0 && (
+                      <details className="mt-1.5">
+                        <summary className="cursor-pointer text-[11px] font-medium text-primary hover:underline">
+                          Bukti yang dipakai sistem ({evidence.length})
+                        </summary>
+                        <ul className="mt-1 space-y-1">
+                          {evidence.map((e, ei) => (
+                            <li key={ei} className="rounded bg-secondary/50 px-2 py-1 text-[11px] leading-snug text-muted-foreground">
+                              {String(e).slice(0, 260)}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </li>
                 )
               })}
@@ -268,7 +319,26 @@ const ProcessTrace = ({ data, tail = [] }) => {
       visual: { kind: 'rules', passed: rule.passed ?? 0, flagged: rule.flagged ?? 0, rejected: rule.rejected ?? 0 },
       what: `Setiap calon gap diperiksa Rule Engine — pemeriksa yang bekerja TANPA AI, murni logika. 9 aturannya: ${RULE_LIST}. Gap yang melanggar aturan keras DITOLAK; yang kurang bukti DITANDAI "perlu tinjauan" dan keyakinannya dipotong.`,
       example: (
-        <ul className="space-y-1.5 text-xs">
+        <div className="space-y-2.5">
+          <div className="text-[11px]">
+            <p className="mb-1 font-semibold text-foreground/80">9 aturan yang dipakai (tanpa AI, murni logika):</p>
+            <div className="flex flex-wrap gap-1">
+              {[
+                ['F1 Sumber daya', 'blue'], ['F2 Ketersediaan data', 'blue'], ['F3 Skala riset', 'blue'],
+                ['C1 Bukti minimal', 'amber'], ['C2 Arah sebab-akibat', 'amber'], ['C3 Faktor perancu', 'amber'],
+                ['K1 Non-kontradiksi', 'purple'], ['K2 Kecocokan fakta', 'purple'], ['K3 Transitivitas', 'purple'],
+              ].map(([label, c]) => (
+                <span key={label} className={`rounded-full border px-2 py-0.5 font-medium ${
+                  c === 'blue' ? 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                  : c === 'amber' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                  : 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400'}`}>
+                  {label}
+                </span>
+              ))}
+            </div>
+            <p className="mt-1 text-muted-foreground">Biru = kelayakan · Kuning = sebab-akibat · Ungu = konsistensi</p>
+          </div>
+          <ul className="space-y-1.5 text-xs">
           {indicators.map((ind, i) => {
             const v = verdictOf(ind)
             const meta = v ? VERDICT_META[v] : null
@@ -290,7 +360,8 @@ const ProcessTrace = ({ data, tail = [] }) => {
               </li>
             )
           })}
-        </ul>
+          </ul>
+        </div>
       ),
       result: `${rule.passed ?? 0} lolos penuh · ${rule.flagged ?? 0} ditandai "perlu tinjauan" · ${rule.rejected ?? 0} dibuang.`,
       why: 'Inilah pembeda sistem ini dari sekadar bertanya ke ChatGPT: ada penyaring logika independen yang menghukum klaim tanpa bukti, sehingga gap yang sampai ke Anda sudah teruji dua kali (AI + logika).',
@@ -303,9 +374,27 @@ const ProcessTrace = ({ data, tail = [] }) => {
       visual: { kind: 'score', score: critiqueScore },
       what: 'Sebelum menampilkan apa pun, sistem mengevaluasi hasilnya sendiri: apakah bukti cukup? apakah gap konsisten dengan fakta yang dicatat? apakah rekomendasi menjawab gap? Skor di bawah ambang akan memicu analisis ulang otomatis.',
       example: (
-        <div className="rounded-md border bg-card p-2.5 text-xs">
-          <p className="font-medium text-foreground/90">Skor kritik-diri: <strong>{critiqueScore}</strong> dari 1.00 → di atas ambang, tidak perlu revisi.</p>
-          <p className="mt-1 text-muted-foreground">Dinilai dari: kelengkapan hasil, dukungan bukti, konsistensi antar bagian, dan kepatuhan aturan.</p>
+        <div className="space-y-2 text-xs">
+          <div className="rounded-md border bg-card p-2.5">
+            <p className="font-medium text-foreground/90">Skor kritik-diri: <strong>{critiqueScore}</strong> dari 1.00 → di atas ambang, tidak perlu revisi.</p>
+            <p className="mt-1 text-muted-foreground">Dinilai dari: kelengkapan hasil, dukungan bukti, konsistensi antar bagian, dan kepatuhan aturan.</p>
+          </div>
+          {evaluateActions.length > 0 && (
+            <div className="rounded-md border bg-card p-2.5">
+              <p className="mb-1 font-semibold text-foreground/80">Catatan asli dari sistem (tahap evaluasi):</p>
+              <ul className="space-y-1">
+                {evaluateActions.map((a, i) => (
+                  <li key={i} className="rounded bg-secondary/50 px-2 py-1 font-mono text-[11px] text-muted-foreground">{a}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="rounded-md border bg-card p-2.5 text-[11px] text-muted-foreground">
+            <p className="mb-1 font-semibold text-foreground/80">Siklus kerja agen (OTAE) yang baru saja selesai:</p>
+            <p className="font-medium">
+              👁 Amati (baca PDF & catat fakta) → 🧠 Pikir (bandingkan antar jurnal) → ⚙️ Aksi (uji aturan & susun hasil) → ✅ Evaluasi (nilai diri sendiri) — kalau skor rendah, siklus diulang.
+            </p>
+          </div>
         </div>
       ),
       result: 'Hasil dinyatakan layak tampil — dengan catatan tetap perlu validasi manusia.',

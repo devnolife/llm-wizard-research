@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Loader, CheckCircle2, Circle } from 'lucide-react'
 
 // Log proses bergaya notebook Jupyter: setiap aktivitas = satu "cell"
-// dengan prompt In [n]:, status running/done, dan timestamp.
+// dengan status running/done dan timestamp.
 // Memperlihatkan seluruh langkah pipeline secara eksplisit.
 const NotebookProcessLog = ({ activities = [], running = true }) => {
   const bottomRef = useRef(null)
@@ -27,7 +27,7 @@ const NotebookProcessLog = ({ activities = [], running = true }) => {
           )}
         </span>
       </div>
-      <div className="max-h-72 overflow-y-auto p-3 font-mono text-[13px] leading-relaxed">
+      <div className="max-h-72 overflow-y-auto p-3 text-[13px] leading-relaxed">
         {activities.map((activity, index) => {
           const isLast = index === activities.length - 1
           const isRunning = isLast && running
@@ -41,12 +41,14 @@ const NotebookProcessLog = ({ activities = [], running = true }) => {
                   : 'border-l-transparent hover:bg-secondary/40'
                 }`}
             >
-              {/* Prompt gaya Jupyter: In [n]: — In [*] untuk sel yang sedang jalan */}
-              <span className={`select-none shrink-0 px-2.5 py-1.5 text-[11px] font-semibold ${isRunning ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary/80'}`}>
-                {isRunning ? 'In [*]:' : `In [${index + 1}]:`}
+              {/* Nomor langkah */}
+              <span className={`select-none shrink-0 grid h-6 w-6 mt-1 ml-1.5 place-items-center rounded-full text-[11px] font-bold ${isRunning
+                ? 'bg-emerald-500 text-white'
+                : 'bg-primary/10 text-primary'}`}>
+                {index + 1}
               </span>
-              <div className="flex min-w-0 flex-1 items-start justify-between gap-2 py-1.5 pr-2.5">
-                <span className={`min-w-0 break-words ${isRunning ? 'text-foreground' : 'text-foreground/85'}`}>
+              <div className="flex min-w-0 flex-1 items-start justify-between gap-2 py-1.5 pl-2.5 pr-2.5">
+                <span className={`min-w-0 break-words ${isRunning ? 'text-foreground font-medium' : 'text-foreground/85'}`}>
                   {activity.text}
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5 pt-0.5 text-[10px] text-muted-foreground">

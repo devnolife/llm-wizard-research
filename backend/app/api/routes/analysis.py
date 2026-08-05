@@ -877,6 +877,7 @@ Topik:"""
         gap_indicators = []
         rule_engine_report = {}
         fact_table_stats = {}
+        sample_facts = []
 
         try:
             coordinator = analysis_context.coordinator
@@ -896,6 +897,25 @@ Topik:"""
             gap_indicators = coordinator_result.get("gap_indicators", [])
             rule_engine_report = coordinator_result.get("rule_engine_report", {})
             fact_table_stats = coordinator_result.get("fact_table_stats", {})
+
+            # Sampel fakta NYATA (SPO) utk UI "perlihatkan proses LLM":
+            # nama entitas di-resolve agar terbaca manusia.
+            try:
+                ft = analysis_context.fact_table
+                for fact in list(ft.query())[:8]:
+                    subj = ft.get_entity(fact.subject_id)
+                    obj = ft.get_entity(fact.object_id)
+                    sample_facts.append({
+                        "subject": subj.name if subj else fact.subject_id,
+                        "subject_type": subj.entity_type.value if subj else "?",
+                        "predicate": fact.predicate.value if hasattr(fact.predicate, "value") else str(fact.predicate),
+                        "object": obj.name if obj else fact.object_id,
+                        "object_type": obj.entity_type.value if obj else "?",
+                        "confidence": float(fact.confidence),
+                        "source_paper": fact.source_paper or "",
+                    })
+            except Exception as fact_err:
+                logger.debug(f"Could not sample facts for UI: {fact_err}")
 
             _set_analysis_job(
                 job_id,
@@ -1240,6 +1260,8 @@ JSON:"""
                 "gap_indicators": gap_indicators,
                 "rule_engine_report": rule_engine_report,
                 "fact_table_stats": fact_table_stats,
+                "sample_facts": sample_facts,
+                "llm_info": {"model": getattr(getattr(glm, "config", None), "model_name", "") or ""},
                 "reasoning_trace": reasoning_trace,
                 "eval_metrics": eval_metrics,
             },
