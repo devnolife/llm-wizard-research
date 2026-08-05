@@ -39,7 +39,7 @@ const verdictOf = (ind) => {
   return null
 }
 
-const ProcessTrace = ({ data }) => {
+const ProcessTrace = ({ data, tail = [] }) => {
   const [openStep, setOpenStep] = useState(null)
   if (!data) return null
 
@@ -182,33 +182,23 @@ const ProcessTrace = ({ data }) => {
       title: primaryRec
         ? 'Gap terkuat dipilih, lalu disusun usulan penelitian'
         : 'Gap terkuat dipilih untuk ditampilkan',
-      desc: 'Itulah yang Anda lihat di bawah. Semua berlabel "perlu validasi manusia" — keputusan tetap di tangan Anda dan pembimbing.',
+      desc: 'Hasilnya menyambung tepat di bawah — tetap berlabel "perlu validasi manusia"; keputusan di tangan Anda dan pembimbing.',
       how: 'Gap diurutkan berdasarkan keyakinan setelah penyesuaian aturan. Usulan disusun menjawab gap tersebut, lengkap dengan alasan dan cara memulai.',
-      detail: primaryRec && (
-        <div className="rounded-lg border bg-card p-2.5 text-xs">
-          <p className="font-medium text-foreground/90 leading-snug">{primaryRec.title}</p>
-          {primaryRec.gap_type && (
-            <p className="mt-1 text-muted-foreground">
-              Menjawab gap: <strong>{GAP_LABELS[String(primaryRec.gap_type).toUpperCase()] || primaryRec.gap_type}</strong>
-              {primaryRec.priority && <> · prioritas <strong>{primaryRec.priority === 'high' ? 'tinggi' : primaryRec.priority === 'medium' ? 'sedang' : 'rendah'}</strong></>}
-            </p>
-          )}
-        </div>
-      ),
+      detail: null,
     },
   ].filter(Boolean)
 
   return (
     <section className="rounded-2xl border bg-card/85 p-5">
-      <h2 className="text-sm font-semibold mb-1">Apa yang terjadi pada jurnal Anda?</h2>
+      <h2 className="text-sm font-semibold mb-1">Perjalanan jurnal Anda — dari input sampai gap ditemukan</h2>
       <p className="text-xs text-muted-foreground mb-5">
-        Urutan prosesnya dari awal sampai hasil — klik <em>"Lihat detail"</em> pada tiap langkah untuk bukti lengkapnya.
+        Ikuti urutannya dari atas ke bawah — klik <em>"Lihat detail"</em> pada langkah proses untuk bukti lengkapnya.
       </p>
 
       <ol className="relative">
         {steps.map((step, index) => {
           const Icon = step.icon
-          const isLast = index === steps.length - 1
+          const isLast = tail.length === 0 && index === steps.length - 1
           const isOpen = openStep === index
           return (
             <li key={index} className="relative flex gap-3.5 pb-5 last:pb-0">
@@ -243,6 +233,30 @@ const ProcessTrace = ({ data }) => {
                     {step.detail}
                   </div>
                 )}
+              </div>
+            </li>
+          )
+        })}
+
+        {/* HASIL — menyambung di timeline yang sama, jelas lahir dari proses di atas */}
+        {tail.map((item, index) => {
+          const Icon = item.icon
+          const isLast = index === tail.length - 1
+          return (
+            <li key={`tail-${index}`} className="relative flex gap-3.5 pb-5 last:pb-0">
+              {!isLast && (
+                <span className="absolute left-[17px] top-9 bottom-0 w-px bg-border" aria-hidden="true" />
+              )}
+              <span className={`relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 ${item.highlight
+                ? 'border-amber-500 bg-amber-500 text-white'
+                : 'border-primary bg-primary text-primary-foreground'}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <p className={`text-[11px] font-bold uppercase tracking-[0.14em] mb-1.5 ${item.highlight ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
+                  {item.label}
+                </p>
+                {item.content}
               </div>
             </li>
           )

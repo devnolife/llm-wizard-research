@@ -1,29 +1,96 @@
 import {
-  ArrowRight, BookOpen, Calendar, CheckCircle, FileText, Lightbulb, Search, Shield, Sparkles,
+  ArrowRight, BookOpen, CheckCircle, Lightbulb, Search, Shield,
 } from 'lucide-react'
 import Markdown from '../../common/Markdown'
 import ProcessTrace from '../../common/ProcessTrace'
 import { GAP_COLORS } from './constants'
 
-// Default result view: one clear research path, not every available metric.
+// Tampilan hasil default: SATU alur bersambung dari input jurnal → proses →
+// gap ditemukan → arah solusi → langkah berikutnya. Semua menempel di
+// timeline yang sama sehingga jelas hasil lahir dari proses di atasnya.
 const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) => {
-  const papers = sd?.papersInfo || []
   const primaryGap = sd?.primaryGap
   const primaryRec = sd?.primaryRec
   const gapType = primaryGap?.type || primaryGap?.gap_type
   const gapMeta = GAP_COLORS[gapType]
   const suggestedQuery = primaryRec?.title || primaryGap?.title || data?.topics?.[0] || ''
-  const orderedPapers = [...papers].sort((first, second) => {
-    const yearDiff = (Number(second.year) || 0) - (Number(first.year) || 0)
-    return yearDiff || String(first.title || '').localeCompare(String(second.title || ''))
-  })
 
-  const steps = [
-    { number: '01', label: 'Jurnal Anda', icon: FileText, complete: papers.length > 0 },
-    { number: '02', label: 'Gap utama', icon: Search, complete: Boolean(primaryGap) },
-    { number: '03', label: 'Arah solusi', icon: Lightbulb, complete: Boolean(primaryRec) },
-    { number: '04', label: 'Jurnal pendukung', icon: BookOpen, complete: false },
-  ]
+  // Kartu HASIL yang menyambung di ujung timeline proses
+  const tail = [
+    {
+      icon: Search,
+      label: 'Hasil — gap ditemukan',
+      highlight: true,
+      content: primaryGap ? (
+        <div className={`rounded-xl border bg-card p-4 border-l-4 ${gapMeta?.border || 'border-l-amber-500'}`}>
+          <h2 className="font-semibold leading-snug">{primaryGap.title || 'Celah penelitian utama'}</h2>
+          <Markdown
+            content={primaryGap.description || 'Sistem menemukan area yang masih perlu disatukan, diuji kembali, atau dilengkapi.'}
+            className="mt-2 text-sm text-muted-foreground"
+          />
+          {gapMeta && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Jenis gap: <strong className={gapMeta.text}>{gapMeta.label}</strong> — {gapMeta.desc}.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border bg-card p-4">
+          <p className="text-sm text-muted-foreground">
+            Gap utama belum cukup kuat untuk ditampilkan. Buka detail analisis untuk melihat semua indikator.
+          </p>
+        </div>
+      ),
+    },
+    primaryRec && {
+      icon: Lightbulb,
+      label: 'Arah solusi yang disarankan',
+      content: (
+        <div className="rounded-xl border border-primary/30 bg-primary/[0.045] p-4">
+          <h2 className="font-semibold leading-snug">{primaryRec.title || 'Usulan penelitian'}</h2>
+          <Markdown content={primaryRec.description || ''} className="mt-2 text-sm text-muted-foreground" />
+          {(primaryRec.why || primaryRec.how) && (
+            <details className="mt-3 group">
+              <summary className="cursor-pointer text-sm font-medium text-primary hover:underline">Mengapa dan bagaimana memulainya</summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {primaryRec.why && <div className="rounded-lg border bg-card p-3 text-xs text-muted-foreground"><strong className="text-foreground">Mengapa:</strong> {primaryRec.why}</div>}
+                {primaryRec.how && <div className="rounded-lg border bg-card p-3 text-xs text-muted-foreground"><strong className="text-foreground">Bagaimana:</strong> {primaryRec.how}</div>}
+              </div>
+            </details>
+          )}
+          <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-700/90 dark:text-amber-300/90">
+            <Shield className="w-3.5 h-3.5 shrink-0 mt-px" />
+            Ini adalah arah awal; tetap validasi dengan literatur dan pembimbing.
+          </p>
+        </div>
+      ),
+    },
+    {
+      icon: BookOpen,
+      label: 'Langkah Anda berikutnya',
+      content: (
+        <div className="rounded-xl border bg-card p-4">
+          <h2 className="font-semibold leading-snug">Perkuat solusi dengan jurnal pendukung</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Kami akan membuka pencarian dengan kata kunci yang disarankan, lalu Anda dapat menandai jurnal yang paling relevan.
+          </p>
+          <button
+            type="button"
+            onClick={onFindSources}
+            disabled={!suggestedQuery}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <BookOpen className="w-4 h-4" /> Cari Jurnal Pendukung <ArrowRight className="w-4 h-4" />
+          </button>
+          {suggestedQuery && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Kata kunci awal: <span className="font-medium text-foreground">{suggestedQuery}</span>
+            </p>
+          )}
+        </div>
+      ),
+    },
+  ].filter(Boolean)
 
   return (
     <div className="w-full px-6 lg:px-10 py-8 max-w-3xl mx-auto">
@@ -32,126 +99,14 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
           <CheckCircle className="w-5 h-5" />
           <span className="text-sm font-semibold">Analisis selesai</span>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">Ikuti hasilnya, satu langkah demi satu.</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Dari jurnal Anda sampai gap ditemukan.</h1>
         <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-          Mulai dari jurnal Anda, pahami gap utamanya, pilih arah solusi, lalu cari jurnal yang dapat memperkuat solusi tersebut.
+          Satu alur lengkap: jurnal dibaca, faktanya dibandingkan, diuji aturan logika, sampai gap dan arah solusi muncul di ujungnya.
         </p>
       </header>
 
-      <ol className="flex items-center gap-1.5 mb-8 overflow-x-auto pb-1" aria-label="Kemajuan alur penelitian">
-        {steps.map((step, index) => {
-          const StepIcon = step.icon
-          return (
-            <li key={step.number} className="flex items-center gap-1.5 shrink-0">
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium ${step.complete ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border bg-card text-muted-foreground'}`}>
-                <StepIcon className="w-3.5 h-3.5" /> {step.number} · {step.label}
-              </span>
-              {index < steps.length - 1 && <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/60" aria-hidden="true" />}
-            </li>
-          )
-        })}
-      </ol>
-
-      <div className="space-y-4">
-        {/* Cerita proses: jurnal Anda diapakan, urut sampai jadi hasil */}
-        <ProcessTrace data={data} />
-
-        <section className="rounded-2xl border bg-card/85 p-5">
-          <div className="flex items-start gap-3">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary/10 text-primary text-sm font-bold shrink-0">1</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Jurnal yang dibaca</p>
-              <h2 className="font-semibold mt-1">{papers.length || data?.files_processed || 0} jurnal menjadi dasar analisis</h2>
-              <p className="text-sm text-muted-foreground mt-1">Sistem hanya memakai jurnal pada analisis ini. Daftar diurutkan dari tahun terbaru.</p>
-              {papers.length > 0 && (
-                <details className="mt-3 group">
-                  <summary className="cursor-pointer text-sm font-medium text-primary hover:underline">Lihat daftar jurnal</summary>
-                  <ol className="mt-3 space-y-2.5 border-l border-border pl-3">
-                    {orderedPapers.map((paper, index) => (
-                      <li key={`${paper.title}-${index}`} className="text-sm leading-snug">
-                        <p className="text-foreground/90">{paper.title}</p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />{paper.year || 'Tahun tidak terdeteksi'}</span>
-                          {Number.isFinite(Number(paper.similarity_percent)) && paper.similarity_percent !== null && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
-                              <Sparkles className="w-3 h-3" /> Mirip {paper.similarity_percent}%
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </details>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className={`rounded-2xl border bg-card/85 p-5 border-l-4 ${gapMeta?.border || 'border-l-amber-500'}`}>
-          <div className="flex items-start gap-3">
-            <span className={`grid h-8 w-8 place-items-center rounded-xl text-sm font-bold shrink-0 ${gapMeta?.bg || 'bg-amber-500/10'} ${gapMeta?.text || 'text-amber-600 dark:text-amber-400'}`}>2</span>
-            <div className="min-w-0 flex-1">
-              <p className={`text-xs font-semibold uppercase tracking-[0.14em] ${gapMeta?.text || 'text-amber-600 dark:text-amber-400'}`}>Gap yang perlu dijawab</p>
-              {primaryGap ? (
-                <>
-                  <h2 className="font-semibold mt-1">{primaryGap.title || 'Celah penelitian utama'}</h2>
-                  <Markdown content={primaryGap.description || 'Sistem menemukan area yang masih perlu disatukan, diuji kembali, atau dilengkapi.'} className="mt-2 text-sm text-muted-foreground" />
-                  {gapMeta && <p className="mt-3 text-xs text-muted-foreground">Jenis gap: <strong className={gapMeta.text}>{gapMeta.label}</strong> — {gapMeta.desc}.</p>}
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">Gap utama belum cukup kuat untuk ditampilkan. Buka detail untuk melihat semua indikator.</p>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-primary/30 bg-primary/[0.045] p-5">
-          <div className="flex items-start gap-3">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-primary-foreground text-sm font-bold shrink-0">3</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Arah solusi yang disarankan</p>
-              {primaryRec ? (
-                <>
-                  <h2 className="font-semibold mt-1">{primaryRec.title || 'Usulan penelitian'}</h2>
-                  <Markdown content={primaryRec.description || ''} className="mt-2 text-sm text-muted-foreground" />
-                  {(primaryRec.why || primaryRec.how) && (
-                    <details className="mt-3 group">
-                      <summary className="cursor-pointer text-sm font-medium text-primary hover:underline">Mengapa dan bagaimana memulainya</summary>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        {primaryRec.why && <div className="rounded-lg border bg-card p-3 text-xs text-muted-foreground"><strong className="text-foreground">Mengapa:</strong> {primaryRec.why}</div>}
-                        {primaryRec.how && <div className="rounded-lg border bg-card p-3 text-xs text-muted-foreground"><strong className="text-foreground">Bagaimana:</strong> {primaryRec.how}</div>}
-                      </div>
-                    </details>
-                  )}
-                  <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-700/90 dark:text-amber-300/90"><Shield className="w-3.5 h-3.5 shrink-0 mt-px" />Ini adalah arah awal; tetap validasi dengan literatur dan pembimbing.</p>
-                </>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">Belum ada arah solusi yang dapat disarankan dari hasil ini.</p>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border bg-card/85 p-5">
-          <div className="flex items-start gap-3">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-secondary text-foreground text-sm font-bold shrink-0">4</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Perkuat solusi dengan jurnal lain</p>
-              <h2 className="font-semibold mt-1">Cari jurnal pendukung untuk solusi ini</h2>
-              <p className="text-sm text-muted-foreground mt-1">Kami akan membuka pencarian dengan kata kunci yang disarankan, lalu Anda dapat menandai jurnal yang paling relevan.</p>
-              <button
-                type="button"
-                onClick={onFindSources}
-                disabled={!suggestedQuery}
-                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <BookOpen className="w-4 h-4" /> Cari Jurnal Pendukung <ArrowRight className="w-4 h-4" />
-              </button>
-              {suggestedQuery && <p className="mt-2 text-xs text-muted-foreground">Kata kunci awal: <span className="font-medium text-foreground">{suggestedQuery}</span></p>}
-            </div>
-          </div>
-        </section>
-      </div>
+      {/* Satu timeline bersambung: proses + hasil */}
+      <ProcessTrace data={data} tail={tail} />
 
       <div className="mt-7 text-center">
         <button onClick={onShowFull} className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
