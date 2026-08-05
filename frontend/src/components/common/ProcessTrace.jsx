@@ -3,6 +3,7 @@ import {
   BookOpen, ListChecks, GitCompareArrows, ShieldCheck, Sparkles,
   FileText, Quote, Eye, EyeOff, HelpCircle, FlaskConical, BarChart3, CornerDownRight,
 } from 'lucide-react'
+import StepVisual from './StepVisual'
 
 // ═══════════════════════════════════════════════════════════════════
 // LAPORAN PROSES LENGKAP — semua langkah TERBUKA PENUH secara default.
@@ -109,6 +110,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
       icon: BookOpen,
       time: phaseTime.observe,
       title: `Menerima & membaca ${nPapers} jurnal PDF`,
+      visual: { kind: 'ingest', nPapers, nChunks: totalChunks },
       what: `Setiap PDF dibuka, teksnya diambil halaman demi halaman, lalu dipotong menjadi ${totalChunks || 'ratusan'} bagian kecil (±500 kata per bagian, disebut "potongan"). Setiap potongan diubah menjadi deretan angka (embedding) supaya komputer bisa MENGUKUR kemiripan makna antar potongan — bukan cuma mencocokkan kata.`,
       example: (
         <ul className="space-y-2">
@@ -119,7 +121,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
                 <p className="font-medium leading-snug text-foreground/90">{p.title || p.source}</p>
                 <p className="mt-0.5 text-muted-foreground">
                   {[p.source, p.year && `tahun ${p.year}`,
-                    Number.isFinite(Number(p.similarity_percent)) && `kemiripan dengan jurnal lain: ${p.similarity_percent}%`]
+                  Number.isFinite(Number(p.similarity_percent)) && `kemiripan dengan jurnal lain: ${p.similarity_percent}%`]
                     .filter(Boolean).join(' · ')}
                 </p>
               </div>
@@ -135,6 +137,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
       icon: ListChecks,
       time: phaseTime.observe,
       title: `Mencatat ${nFacts} fakta penting dari isi jurnal`,
+      visual: { kind: 'facts', nFacts },
       what: `Dari potongan-potongan tadi, AI membaca kalimat demi kalimat dan mencatat klaim penting sebagai "fakta" 3 bagian: Subjek → Hubungan → Objek. Sistem mengenali ${nEntities} hal (${entityBreakdown}) lalu menghubungkannya.`,
       example: topPredicate && (
         <div className="space-y-2 text-xs">
@@ -167,6 +170,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
       title: nCandidates > 0
         ? `Membandingkan fakta antar jurnal → ${nCandidates} calon gap ditemukan`
         : 'Membandingkan fakta antar jurnal',
+      visual: { kind: 'compare', nGaps: nCandidates },
       what: 'Tiga pemeriksaan dijalankan sekaligus: (1) FRAGMENTASI — adakah jurnal yang membahas hal sama tapi tidak saling menyebut? (2) KONTRADIKSI — adakah dua temuan yang bertabrakan? Setiap pasangan klaim diuji model AI khusus bernama NLI yang tugasnya HANYA menilai "dua kalimat ini sejalan, netral, atau bertentangan?" (3) KETIDAKLENGKAPAN — aspek apa yang seharusnya dibahas tetapi kosong di SEMUA jurnal?',
       example: (
         <div className="space-y-2.5">
@@ -222,6 +226,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
       icon: ShieldCheck,
       time: phaseTime.act,
       title: `Menguji ${rule.total} calon gap dengan 9 aturan logika`,
+      visual: { kind: 'rules', passed: rule.passed ?? 0, flagged: rule.flagged ?? 0, rejected: rule.rejected ?? 0 },
       what: `Setiap calon gap diperiksa Rule Engine — pemeriksa yang bekerja TANPA AI, murni logika. 9 aturannya: ${RULE_LIST}. Gap yang melanggar aturan keras DITOLAK; yang kurang bukti DITANDAI "perlu tinjauan" dan keyakinannya dipotong.`,
       example: (
         <ul className="space-y-1.5 text-xs">
@@ -256,6 +261,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
       icon: Sparkles,
       time: phaseTime.evaluate,
       title: `Sistem menilai pekerjaannya sendiri: skor ${critiqueScore}`,
+      visual: { kind: 'score', score: critiqueScore },
       what: 'Sebelum menampilkan apa pun, sistem mengevaluasi hasilnya sendiri: apakah bukti cukup? apakah gap konsisten dengan fakta yang dicatat? apakah rekomendasi menjawab gap? Skor di bawah ambang akan memicu analisis ulang otomatis.',
       example: (
         <div className="rounded-md border bg-card p-2.5 text-xs">
@@ -304,6 +310,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
                 <p className="mt-0.5 text-sm font-semibold leading-snug">{step.title}</p>
 
                 <div className="mt-2.5 space-y-2.5">
+                  {step.visual && <StepVisual {...step.visual} />}
                   {showExplain && step.what && (
                     <Blk icon={HelpCircle} label="Apa yang dilakukan">
                       <p className="text-xs leading-relaxed text-foreground/85">{step.what}</p>
