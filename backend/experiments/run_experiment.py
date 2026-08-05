@@ -670,6 +670,7 @@ def phase3_gap_detection(components, topics):
                     "requires_human_validation": bool(getattr(ind, 'requires_human_validation', True)),
                     "evidence_count": len(getattr(ind, 'evidence', [])),
                     "supporting_quotes": list(getattr(ind, 'supporting_quotes', []))[:5],
+                    "evidence_subgraph": list(getattr(ind, 'evidence_subgraph', []))[:10],
                     "suggested_directions": [str(d) for d in getattr(ind, 'suggested_directions', [])],
                 })
 
@@ -1330,6 +1331,14 @@ def main():
     if args.mode == "linear-baseline":
         phase3_results = phase3_linear_baseline(components, topics)
     else:
+        # Populate the knowledge graph from the fact table BEFORE gap
+        # detection — isolation scoring and evidence-subgraph extraction
+        # both traverse this graph (it was silently empty before).
+        try:
+            kg_stats = components["kg_builder"].build_from_fact_table(components["fact_table"])
+            logger.info(f"KG built from fact table: {kg_stats}")
+        except Exception as e:
+            logger.warning(f"Could not build KG from fact table: {e}")
         phase3_results = phase3_gap_detection(components, topics)
 
     # --- Phase 4: rule engine aggregation (full agentic pipeline modes) ---

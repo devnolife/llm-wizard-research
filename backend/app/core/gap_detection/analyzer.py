@@ -63,6 +63,9 @@ class GapIndicator:
     # Verbatim quotes from source chunks grounding this indicator
     # (ala paper-qa): [{"quote", "source_paper", "match_score"}]
     supporting_quotes: List[Dict] = field(default_factory=list)
+    # KG evidence subgraph (ala SciAgentsDiscovery): edge dicts
+    # [{"from","from_name","to","to_name","predicate","source_paper"}]
+    evidence_subgraph: List[Dict] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -72,6 +75,7 @@ class GapIndicator:
             "related_papers": self.related_papers,
             "evidence": self.evidence[:5],
             "supporting_quotes": self.supporting_quotes[:5],
+            "evidence_subgraph": self.evidence_subgraph[:10],
             "suggested_directions": self.suggested_directions,
             "requires_human_validation": self.requires_human_validation,
             "rule_engine_verdict": self.rule_engine_verdict.value if self.rule_engine_verdict else None,
@@ -90,6 +94,7 @@ class GapIndicator:
             requires_human_validation=self.requires_human_validation,
             evidence=self.evidence[:5],
             supporting_quotes=self.supporting_quotes[:5],
+            evidence_subgraph=self.evidence_subgraph[:10],
             supporting_papers=self.related_papers,
             suggested_directions=self.suggested_directions,
         )
@@ -332,6 +337,9 @@ class GapAnalyzer:
                         terms=[subject_name, object_name],
                         papers=papers,
                     ),
+                    evidence_subgraph=self._extract_evidence_subgraph(
+                        contradiction.subject_id, contradiction.object_id,
+                    ),
                     suggested_directions=[
                         f"Investigate conditions under which each finding holds",
                         f"Design a study that reconciles these contradictory findings",
@@ -566,6 +574,63 @@ class GapAnalyzer:
     # -------------------------------------------------------------------
     # Helper methods
     # -------------------------------------------------------------------
+
+    def _extract_evidence_subgraph(
+        self,
+        entity_a_id: str,
+        entity_b_id: str,
+        max_edges: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """
+        Ekstrak subgraph KG kecil yang MENGHUBUNGKAN dua entitas dari paper
+        berbeda (ala SciAgentsDiscovery) — bukti struktural bahwa gap yang
+        diklaim benar-benar berakar pada relasi antar-jurnal di basis fakta.
+
+        Returns list edge dict: {from, from_name, to, to_name, predicate,
+        source_paper, confidence}. Kosong bila KG tak tersedia / tak terhubung.
+        """
+        kg = self.knowledge_graph
+        if kg is None or not hasattr(kg, "find_paths_between_entities"):
+            return []
+        edges: List[Dict[str, Any]] = []
+        seen = set()
+
+        def _node_name(node_id: str) -> str:
+            try:
+                return kg.graph.nodes[node_id].get("name", node_id)
+            except Exception:
+                return node_id
+
+        def _add_path(paths):
+            for path in paths:
+                for e in path:
+                    key = (e.get("from"), e.get("to"), e.get("predicate"))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    edge_data = {}
+                    try:
+                        edge_data = kg.graph.get_edge_data(e["from"], e["to"]) or {}
+                    except Exception:
+                        pass
+                    edges.append({
+                        "from": e.get("from"),
+                        "from_name": _node_name(e.get("from")),
+                        "to": e.get("to"),
+                        "to_name": _node_name(e.get("to")),
+                        "predicate": e.get("predicate", "UNKNOWN"),
+                        "source_paper": edge_data.get("source_paper", ""),
+                        "confidence": edge_data.get("confidence"),
+                    })
+
+        try:
+            _add_path(kg.find_paths_between_entities(entity_a_id, entity_b_id, max_paths=3))
+            # Graf berarah: cek arah sebaliknya juga.
+            if not edges:
+                _add_path(kg.find_paths_between_entities(entity_b_id, entity_a_id, max_paths=3))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"Evidence subgraph extraction failed: {exc}")
+        return edges[:max_edges]
 
     def _link_kg_entities(self, indicator: "GapIndicator") -> Dict[str, Any]:
         """

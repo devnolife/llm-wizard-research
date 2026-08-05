@@ -96,6 +96,11 @@ class GapIndicatorModel(BaseModel):
         description="Verbatim quotes from source chunks grounding this indicator: "
                     "[{quote, source_paper, match_score}]",
     )
+    evidence_subgraph: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="KG edges evidencing the inter-paper relation: "
+                    "[{from, from_name, to, to_name, predicate, source_paper}]",
+    )
     supporting_papers: List[str] = Field(default_factory=list)
     suggested_directions: List[str] = Field(default_factory=list)
 
