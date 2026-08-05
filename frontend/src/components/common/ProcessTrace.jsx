@@ -1,158 +1,145 @@
 import { useState } from 'react'
 import {
-  Activity, BookOpen, Search, ShieldCheck, Sparkles, ChevronDown, Clock,
+  BookOpen, ListChecks, GitCompareArrows, ShieldCheck, Flag, ChevronDown,
 } from 'lucide-react'
 
-// "Bagaimana hasil ini diproses?" — 4 kartu fase pipeline yang bisa diklik.
-// Tiap kartu menjelaskan CARA KERJA fase tsb (bahasa awam) dan menampilkan
-// apa yang BENAR-BENAR terjadi pada analisis ini (dari reasoning_trace backend).
-const PHASES = {
-  observe: {
-    icon: BookOpen,
-    title: 'Membaca Jurnal',
-    color: 'blue',
-    explain:
-      'Sistem membaca isi setiap PDF, memecahnya menjadi potongan teks, lalu '
-      + 'mengekstrak fakta terstruktur (Subjek–Predikat–Objek) seperti '
-      + '"Metode X → digunakan-pada → Domain Y". Fakta inilah dasar semua '
-      + 'analisis berikutnya — bukan sekadar kesan umum dari teks.',
-  },
-  think: {
-    icon: Search,
-    title: 'Mencari Gap',
-    color: 'purple',
-    explain:
-      'Fakta antar-jurnal dibandingkan untuk menemukan 3 jenis gap: fragmentasi '
-      + '(jurnal membahas hal sama tapi tidak saling terhubung), inkonsistensi '
-      + '(temuan saling bertentangan — diperiksa model NLI khusus), dan '
-      + 'ketidaklengkapan (aspek penting yang tidak dibahas jurnal mana pun).',
-  },
-  act: {
-    icon: ShieldCheck,
-    title: 'Memvalidasi',
-    color: 'amber',
-    explain:
-      'Setiap kandidat gap diperiksa Rule Engine — 9 aturan logika (kelayakan, '
-      + 'kausalitas, konsistensi) yang bekerja tanpa AI. Gap yang tidak masuk '
-      + 'akal ditolak; yang meragukan ditandai "perlu tinjauan". Dari gap yang '
-      + 'lolos, sistem menyusun rekomendasi arah penelitian.',
-  },
-  evaluate: {
-    icon: Sparkles,
-    title: 'Mengevaluasi Diri',
-    color: 'emerald',
-    explain:
-      'Sebelum hasil ditampilkan, sistem menilai pekerjaannya sendiri: apakah '
-      + 'bukti cukup? apakah gap konsisten dengan fakta? Jika skornya rendah, '
-      + 'analisis diulang. Karena itu setiap hasil selalu berlabel "perlu '
-      + 'validasi manusia" — sistem ini alat bantu, bukan pengganti Anda.',
-  },
+// "Perjalanan jurnal Anda" — cerita berurutan: jurnal diapakan dulu,
+// lalu apa, sampai jadi hasil di bawah. Semua angka diambil dari
+// analisis NYATA pengguna (bukan teks statis).
+const ENTITY_LABELS = {
+  METHOD: 'metode', DOMAIN: 'domain', CONCEPT: 'konsep',
+  FINDING: 'temuan', DATASET: 'dataset', METRIC: 'metrik',
+  PAPER: 'paper', CONSTRAINT: 'batasan',
 }
 
-const COLOR = {
-  blue: { text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/10', ring: 'ring-blue-500/30' },
-  purple: { text: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-500/10', ring: 'ring-purple-500/30' },
-  amber: { text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-500/10', ring: 'ring-amber-500/30' },
-  emerald: { text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/10', ring: 'ring-emerald-500/30' },
+const GAP_LABELS = {
+  FRAGMENTATION: 'fragmentasi',
+  INCONSISTENCY: 'kontradiksi',
+  INCOMPLETENESS: 'ketidaklengkapan',
 }
 
-const formatTime = (timestamp) => {
-  if (!timestamp) return ''
-  try {
-    return new Date(timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  } catch {
-    return ''
+const ProcessTrace = ({ data }) => {
+  const [openStep, setOpenStep] = useState(null)
+  if (!data) return null
+
+  const papers = data.papers_info || (data.papers || []).map(t => ({ title: t }))
+  const nPapers = papers.length || data.files_processed || 0
+  const stats = data.fact_table_stats || {}
+  const nFacts = stats.total_facts || 0
+  const nEntities = stats.total_entities || 0
+  const entityBreakdown = Object.entries(stats.entities_by_type || {})
+    .map(([type, count]) => `${count} ${ENTITY_LABELS[type] || type.toLowerCase()}`)
+    .join(', ')
+  const indicators = data.gap_indicators || data.gaps || []
+  const nCandidates = indicators.length
+  const gapTypeCounts = {}
+  for (const ind of indicators) {
+    const t = String(ind.indicator_type || ind.type || ind.gap_type || '').toUpperCase()
+    if (GAP_LABELS[t]) gapTypeCounts[t] = (gapTypeCounts[t] || 0) + 1
   }
-}
+  const gapSummary = Object.entries(gapTypeCounts)
+    .map(([t, n]) => `${n} ${GAP_LABELS[t]}`)
+    .join(', ')
+  const rule = data.rule_engine_report || {}
+  const nRecs = (data.recommendations || []).length
 
-const ProcessTrace = ({ trace = [], stats = null }) => {
-  const [openPhase, setOpenPhase] = useState(null)
-  if (!trace.length) return null
+  if (!nPapers) return null
 
-  // Gabungkan aksi per fase (fase bisa muncul >1x saat ada iterasi ulang)
-  const byPhase = {}
-  for (const step of trace) {
-    if (!byPhase[step.phase]) byPhase[step.phase] = { actions: [], time: formatTime(step.timestamp) }
-    byPhase[step.phase].actions.push(...(step.actions || []))
-  }
-  const phaseKeys = Object.keys(PHASES).filter(k => byPhase[k])
+  const steps = [
+    {
+      icon: BookOpen,
+      title: `${nPapers} jurnal Anda dibaca satu per satu`,
+      desc: 'Setiap PDF dipecah menjadi potongan teks kecil supaya isinya bisa dianalisis menyeluruh — bukan hanya abstrak.',
+      how: 'Teks diambil per halaman, dipotong menjadi bagian ±500 kata, lalu tiap potongan diubah menjadi angka (embedding) agar komputer bisa membandingkan maknanya.',
+      detail: papers.map(p => p.title).filter(Boolean),
+    },
+    nFacts > 0 && {
+      icon: ListChecks,
+      title: `Dari isinya, sistem mencatat ${nFacts} fakta penting`,
+      desc: `Sistem mengenali ${nEntities} hal (${entityBreakdown}) dan mencatat hubungannya sebagai fakta, contohnya: "metode A dipakai pada masalah B".`,
+      how: 'Setiap kalimat penting diubah menjadi fakta 3 bagian: Subjek → Hubungan → Objek. Fakta yang tercatat inilah yang dibandingkan — jadi kesimpulan bisa dilacak balik ke jurnal, bukan karangan AI.',
+    },
+    {
+      icon: GitCompareArrows,
+      title: nCandidates > 0
+        ? `Fakta antar-jurnal dibandingkan → ketemu ${nCandidates} calon gap`
+        : 'Fakta antar-jurnal dibandingkan',
+      desc: gapSummary
+        ? `Jenisnya: ${gapSummary}. Ini baru CALON gap — belum tentu semuanya benar.`
+        : 'Sistem mencari topik yang terpecah, temuan yang bertentangan, dan aspek yang belum dibahas siapa pun.',
+      how: 'Tiga pemeriksaan berjalan: (1) apakah jurnal membahas hal sama tapi tidak saling menyebut? (2) apakah ada dua temuan yang bertabrakan? — dicek model AI khusus kontradiksi (NLI), (3) adakah aspek penting yang kosong di semua jurnal?',
+    },
+    (rule.total || 0) > 0 && {
+      icon: ShieldCheck,
+      title: `Setiap calon gap diuji 9 aturan logika`,
+      desc: `Hasilnya: ${rule.passed ?? 0} lolos penuh, ${rule.flagged ?? 0} ditandai "perlu tinjauan", ${rule.rejected ?? 0} dibuang.`,
+      how: 'Aturan ini bekerja TANPA AI — murni logika (kelayakan, sebab-akibat, konsistensi). Gap yang tidak masuk akal otomatis gugur di sini, jadi yang sampai ke Anda sudah tersaring.',
+    },
+    {
+      icon: Flag,
+      title: nRecs > 0
+        ? 'Gap terkuat dipilih, lalu disusun usulan penelitian'
+        : 'Gap terkuat dipilih untuk ditampilkan',
+      desc: 'Itulah yang Anda lihat di bawah ini. Semua tetap berlabel "perlu validasi manusia" — sistem ini alat bantu, keputusan tetap di tangan Anda dan pembimbing.',
+      how: 'Gap diurutkan berdasarkan tingkat keyakinan (confidence) setelah penyesuaian aturan. Usulan dibuat menjawab gap tersebut, lengkap dengan alasan dan cara memulai.',
+    },
+  ].filter(Boolean)
 
   return (
     <section className="rounded-2xl border bg-card/85 p-5">
-      <div className="flex items-center gap-2.5 mb-1">
-        <Activity className="w-4 h-4 text-primary" />
-        <h2 className="text-sm font-semibold">Bagaimana hasil ini diproses?</h2>
-      </div>
-      <p className="text-xs text-muted-foreground mb-4">
-        Hasil di bawah tidak muncul begitu saja — sistem melewati {phaseKeys.length} tahap.
-        Klik tahap mana pun untuk melihat cara kerjanya.
+      <h2 className="text-sm font-semibold mb-1">Apa yang terjadi pada jurnal Anda?</h2>
+      <p className="text-xs text-muted-foreground mb-5">
+        Urutan prosesnya dari awal sampai hasil — klik <em>"Bagaimana caranya?"</em> bila ingin tahu lebih dalam.
       </p>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        {phaseKeys.map((key, index) => {
-          const meta = PHASES[key]
-          const color = COLOR[meta.color]
-          const Icon = meta.icon
-          const isOpen = openPhase === key
+      <ol className="relative">
+        {steps.map((step, index) => {
+          const Icon = step.icon
+          const isLast = index === steps.length - 1
+          const isOpen = openStep === index
           return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setOpenPhase(isOpen ? null : key)}
-              aria-expanded={isOpen}
-              className={`text-left rounded-xl border p-3.5 transition-all ${isOpen
-                ? `ring-2 ${color.ring} ${color.bg}`
-                : 'hover:border-primary/40 hover:bg-secondary/40'
-                }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className={`grid h-8 w-8 place-items-center rounded-lg ${color.bg}`}>
-                  <Icon className={`w-4 h-4 ${color.text}`} />
-                </span>
-                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            <li key={index} className="relative flex gap-3.5 pb-5 last:pb-0">
+              {/* Garis penghubung vertikal */}
+              {!isLast && (
+                <span className="absolute left-[17px] top-9 bottom-0 w-px bg-border" aria-hidden="true" />
+              )}
+              <span className={`relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 ${isLast ? 'border-primary bg-primary text-primary-foreground' : 'border-primary/30 bg-primary/10 text-primary'}`}>
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1 pt-1">
+                <p className="text-sm font-semibold leading-snug">{step.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{step.desc}</p>
+
+                {step.detail?.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {step.detail.map((item, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-foreground/80">
+                        <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-primary/60" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setOpenStep(isOpen ? null : index)}
+                  aria-expanded={isOpen}
+                  className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  Bagaimana caranya?
+                  <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {isOpen && (
+                  <p className="mt-2 rounded-lg border bg-secondary/40 p-3 text-xs leading-relaxed text-foreground/85">
+                    {step.how}
+                  </p>
+                )}
               </div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tahap {index + 1}</p>
-              <p className="text-sm font-semibold leading-tight">{meta.title}</p>
-            </button>
+            </li>
           )
         })}
-      </div>
-
-      {openPhase && (
-        <div className="mt-3 rounded-xl border bg-secondary/30 p-4">
-          <p className="text-sm leading-relaxed text-foreground/90 mb-3">{PHASES[openPhase].explain}</p>
-          <div className="rounded-lg border bg-card p-3">
-            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-              <Clock className="w-3 h-3" /> Yang terjadi pada analisis Anda
-              {byPhase[openPhase].time && <span className="ml-auto font-normal normal-case">{byPhase[openPhase].time}</span>}
-            </p>
-            <ul className="space-y-1.5">
-              {byPhase[openPhase].actions.map((action, idx) => (
-                <li key={idx} className="flex items-start gap-2 text-sm text-foreground/85">
-                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${COLOR[PHASES[openPhase].color].bg} ring-1 ${COLOR[PHASES[openPhase].color].ring}`} />
-                  {action}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {stats && (
-        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-          {Number.isFinite(stats.total_facts) && (
-            <span className="rounded-full bg-secondary px-2.5 py-1">Fakta terekstrak: <strong className="text-foreground">{stats.total_facts}</strong></span>
-          )}
-          {Number.isFinite(stats.total_entities) && (
-            <span className="rounded-full bg-secondary px-2.5 py-1">Konsep dikenali: <strong className="text-foreground">{stats.total_entities}</strong></span>
-          )}
-          {stats.rule_engine && (
-            <span className="rounded-full bg-secondary px-2.5 py-1">
-              Validasi aturan: <strong className="text-foreground">{stats.rule_engine.passed ?? 0} lolos · {stats.rule_engine.flagged ?? 0} ditandai · {stats.rule_engine.rejected ?? 0} ditolak</strong>
-            </span>
-          )}
-        </div>
-      )}
+      </ol>
     </section>
   )
 }

@@ -17,13 +17,6 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
     const yearDiff = (Number(second.year) || 0) - (Number(first.year) || 0)
     return yearDiff || String(first.title || '').localeCompare(String(second.title || ''))
   })
-  // Jejak proses dari backend (persisten, tetap ada setelah reload)
-  const trace = data?.reasoning_trace || []
-  const traceStats = {
-    total_facts: data?.fact_table_stats?.total_facts,
-    total_entities: data?.fact_table_stats?.total_entities,
-    rule_engine: data?.rule_engine_report || null,
-  }
 
   const steps = [
     { number: '01', label: 'Jurnal Anda', icon: FileText, complete: papers.length > 0 },
@@ -60,8 +53,8 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
       </ol>
 
       <div className="space-y-4">
-        {/* Jejak proses: bagaimana sistem sampai pada hasil ini (gaya notebook) */}
-        <ProcessTrace trace={trace} stats={traceStats} defaultOpen />
+        {/* Cerita proses: jurnal Anda diapakan, urut sampai jadi hasil */}
+        <ProcessTrace data={data} />
 
         <section className="rounded-2xl border bg-card/85 p-5">
           <div className="flex items-start gap-3">
