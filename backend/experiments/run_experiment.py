@@ -669,6 +669,7 @@ def phase3_gap_detection(components, topics):
                     "verdict": verdict,
                     "requires_human_validation": bool(getattr(ind, 'requires_human_validation', True)),
                     "evidence_count": len(getattr(ind, 'evidence', [])),
+                    "supporting_quotes": list(getattr(ind, 'supporting_quotes', []))[:5],
                     "suggested_directions": [str(d) for d in getattr(ind, 'suggested_directions', [])],
                 })
 

@@ -138,34 +138,18 @@ def _parse_weaknesses_json(raw: str) -> dict:
 
 def _normalize_text(s: str) -> str:
     """Lowercase + collapse whitespace for robust substring matching."""
-    import re as _re
-    return _re.sub(r"\s+", " ", (s or "").lower()).strip()
+    from ...core.gap_detection.quote_grounding import normalize_text
+    return normalize_text(s)
 
 
 def _fuzzy_contains(needle: str, haystack: str, threshold: float = 0.82) -> float:
     """
     Return best similarity (0-1) of `needle` against any same-length window of
-    `haystack`. Cheap anti-hallucination check for verbatim-ish quotes.
+    `haystack`. Delegates to the shared quote-grounding util (single algorithm
+    for both weakness verification and gap-indicator quote grounding).
     """
-    from difflib import SequenceMatcher
-    needle = _normalize_text(needle)
-    haystack = _normalize_text(haystack)
-    if not needle or not haystack:
-        return 0.0
-    if needle in haystack:
-        return 1.0
-    # Slide a window the size of the needle across the haystack (word-stepped).
-    nlen = len(needle)
-    best = 0.0
-    step = max(1, nlen // 2)
-    for start in range(0, max(1, len(haystack) - nlen + 1), step):
-        window = haystack[start:start + nlen]
-        ratio = SequenceMatcher(None, needle, window).ratio()
-        if ratio > best:
-            best = ratio
-            if best >= 0.97:
-                break
-    return best
+    from ...core.gap_detection.quote_grounding import fuzzy_contains
+    return fuzzy_contains(needle, haystack)
 
 
 def _content_word_overlap(claim: str, full_norm: str) -> float:

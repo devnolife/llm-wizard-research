@@ -64,8 +64,9 @@ backend/experiments/results/backup_pre_k3/
 chroma_db/
 *.chroma
 
-# Models & Cache
+# Models & Cache (ML weights — NOT backend/app/models which is Pydantic code)
 models/
+!backend/app/models/
 .cache/
 *.pt
 *.pth

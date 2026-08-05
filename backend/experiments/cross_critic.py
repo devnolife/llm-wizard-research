@@ -151,6 +151,11 @@ class CrossCritic:
         payload = []
         for i, ind in enumerate(indicators):
             related = sorted({str(p) for p in getattr(ind, "related_papers", []) if str(p)})
+            quotes = [
+                {"quote": q.get("quote", "")[:200], "source_paper": q.get("source_paper", "")}
+                for q in list(getattr(ind, "supporting_quotes", []))[:3]
+                if isinstance(q, dict)
+            ]
             payload.append({
                 "index": i,
                 "type": str(getattr(ind, "indicator_type", getattr(ind, "gap_type", "?"))),
@@ -158,6 +163,7 @@ class CrossCritic:
                 "confidence": float(getattr(ind, "confidence", 0.0)),
                 "evidence": [str(e)[:150] for e in list(getattr(ind, "evidence", []))[:4]],
                 "evidence_count": len(getattr(ind, "evidence", [])),
+                "verbatim_quotes": quotes,
                 "related_papers_count": len(related),
                 "related_papers": related[:8],
                 "detection_method": str(getattr(ind, "detection_method", "") or ""),

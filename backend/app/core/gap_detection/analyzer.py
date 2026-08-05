@@ -33,6 +33,7 @@ from ...models.responses import (
     GapIndicatorModel,
 )
 from ..knowledge.fact_table import EntityType
+from .quote_grounding import extract_supporting_quotes, verify_quote_against_papers
 
 # Re-export for backward compatibility
 GapIndicatorType = IndicatorType
@@ -59,6 +60,9 @@ class GapIndicator:
     # Metadata for traceability
     detection_method: str = ""           # e.g., "topic_clustering", "nli_check"
     sub_indicators: List[Dict] = field(default_factory=list)
+    # Verbatim quotes from source chunks grounding this indicator
+    # (ala paper-qa): [{"quote", "source_paper", "match_score"}]
+    supporting_quotes: List[Dict] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -67,6 +71,7 @@ class GapIndicator:
             "confidence": self.confidence,
             "related_papers": self.related_papers,
             "evidence": self.evidence[:5],
+            "supporting_quotes": self.supporting_quotes[:5],
             "suggested_directions": self.suggested_directions,
             "requires_human_validation": self.requires_human_validation,
             "rule_engine_verdict": self.rule_engine_verdict.value if self.rule_engine_verdict else None,
@@ -84,6 +89,7 @@ class GapIndicator:
             rule_engine_verdict=self.rule_engine_verdict,
             requires_human_validation=self.requires_human_validation,
             evidence=self.evidence[:5],
+            supporting_quotes=self.supporting_quotes[:5],
             supporting_papers=self.related_papers,
             suggested_directions=self.suggested_directions,
         )
@@ -227,6 +233,11 @@ class GapAnalyzer:
                 ),
                 related_papers=[pid for pids in clusters.values() for pid in pids],
                 evidence=cluster_descriptions,
+                supporting_quotes=extract_supporting_quotes(
+                    terms=[a for pids in clusters.values() for pid in pids
+                           for a in paper_approaches.get(pid, [])][:8],
+                    papers=papers,
+                ),
                 suggested_directions=[
                     f"Develop an integrative framework that unifies the {len(clusters)} approaches",
                     "Conduct a systematic review comparing methodological paradigms",
@@ -317,6 +328,10 @@ class GapAnalyzer:
                     confidence=adjusted_conf,
                     related_papers=[contradiction.source_paper],
                     evidence=[contradiction.source] + ([reason] if reason else []),
+                    supporting_quotes=extract_supporting_quotes(
+                        terms=[subject_name, object_name],
+                        papers=papers,
+                    ),
                     suggested_directions=[
                         f"Investigate conditions under which each finding holds",
                         f"Design a study that reconciles these contradictory findings",
@@ -466,6 +481,11 @@ class GapAnalyzer:
                         + (f"; ungrounded (parametric): {', '.join(ungrounded[:3])}"
                            if ungrounded else "") + ".",
                     ],
+                    # Kutipan utk aspek grounded: terminologinya ADA di korpus
+                    # tapi tidak dibahas sistematis — tunjukkan kalimatnya.
+                    supporting_quotes=extract_supporting_quotes(
+                        terms=grounded[:5], papers=papers,
+                    ),
                     suggested_directions=[
                         f"Investigate: {aspect}" for aspect in (grounded + ungrounded)[:3]
                     ],
@@ -690,6 +710,11 @@ class GapAnalyzer:
                             f"NLI contradiction probability: {score:.2f} "
                             f"(decoupled from the generative LLM).",
                         ],
+                        # Snippet NLI diambil langsung dari chunk → verbatim.
+                        supporting_quotes=[
+                            {"quote": snip_a[:300], "source_paper": pid_a, "match_score": 1.0},
+                            {"quote": snip_b[:300], "source_paper": pid_b, "match_score": 1.0},
+                        ],
                         suggested_directions=[
                             "Verify whether these findings genuinely conflict",
                             "Design a study that reconciles the contradiction",
@@ -833,6 +858,19 @@ List contradictions (if none found, say "No contradictions detected"):"""
             response = self.llm.generate(prompt, temperature=0.2, max_tokens=1000)
             
             if "no contradiction" not in response.lower():
+                # Anti-halusinasi: klaim LLM diverifikasi fuzzy terhadap chunk
+                # korpus; hanya kalimat yang benar-benar ada di paper yang
+                # disimpan sebagai kutipan pendukung.
+                verified_quotes = []
+                from .quote_grounding import split_sentences
+                for candidate in split_sentences(response)[:6]:
+                    check = verify_quote_against_papers(candidate, papers)
+                    if check["verified"]:
+                        verified_quotes.append({
+                            "quote": candidate[:300],
+                            "source_paper": check["source_paper"],
+                            "match_score": check["match_score"],
+                        })
                 indicators.append(GapIndicator(
                     indicator_type=GapIndicatorType.INCONSISTENCY,
                     description=(
@@ -844,6 +882,7 @@ List contradictions (if none found, say "No contradictions detected"):"""
                     # is unavailable or finds nothing).
                     related_papers=[p.get("doc_id", "") for p in papers[:5]],
                     evidence=[response[:500]],
+                    supporting_quotes=verified_quotes[:3],
                     suggested_directions=[
                         "Verify these contradictions manually",
                         "Design study to reconcile contradictory findings",
