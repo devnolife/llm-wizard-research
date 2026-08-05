@@ -42,7 +42,8 @@ def run_name(mode: str, model: str, run_idx: int) -> str:
     return f"experiment_{mode}_{slug}.run{run_idx}.json"
 
 
-def execute_runs(model: str, runs: int, modes: list, base_seed: int):
+def execute_runs(model: str, runs: int, modes: list, base_seed: int,
+                 negative_control: bool = False):
     """Execute run_experiment.py for each mode × run index."""
     for mode in modes:
         for i in range(1, runs + 1):
@@ -58,6 +59,8 @@ def execute_runs(model: str, runs: int, modes: list, base_seed: int):
                 "--skip-ingest", "--output", out,
                 "--seed", str(seed),
             ]
+            if negative_control:
+                cmd.append("--negative-control")
             result = subprocess.run(cmd, cwd=BACKEND_DIR)
             if result.returncode != 0:
                 print(f"[FAIL] mode={mode} run={i} exited {result.returncode}")
@@ -79,7 +82,8 @@ def collect_metrics(model: str, runs: int, modes: list) -> dict:
             topics = report.get("phase3_gap_detection", {}).get("topics", [])
             confidences = []
             for t in topics:
-                confidences.extend(t.get("confidence_scores", []))
+                if not str(t.get("topic_key", "")).upper().startswith("TC"):
+                    confidences.extend(t.get("confidence_scores", []))
             per_run.append({
                 "run_index": i,
                 "seed": info.get("seed"),
@@ -88,6 +92,8 @@ def collect_metrics(model: str, runs: int, modes: list) -> dict:
                 "facts": m.get("total_facts_extracted", 0),
                 "rerr": m.get("rule_engine_rejection_rate_RERR"),
                 "confidences": confidences,
+                # Negative-control (None when the run had no TC topic)
+                "false_gaps": m.get("negative_control_false_gaps"),
             })
         data[mode] = per_run
     return data
@@ -202,6 +208,31 @@ def aggregate(model: str, data: dict) -> str:
     primary_rows = _comparison_rows(data, exploratory=False)
     exploratory_rows = _comparison_rows(data, exploratory=True)
 
+    # Negative-control table — only when at least one run carried a TC topic.
+    control_runs_exist = any(
+        r.get("false_gaps") is not None for runs in data.values() for r in runs
+    )
+    if control_runs_exist:
+        lines += [
+            "", "### Kontrol Negatif — false-gap rate",
+            "",
+            "_Topik kontrol (TC) sengaja tidak ada di korpus; sistem terkalibrasi "
+            "seharusnya menemukan ≈0 indikator (false gaps) di sana._",
+            "",
+            "| Mode | n run dgn kontrol | False gaps/run (mean±std) | Run bebas false-gap |",
+            "|---|---|---|---|",
+        ]
+        for mode, runs in data.items():
+            control = [r["false_gaps"] for r in runs if r.get("false_gaps") is not None]
+            if not control:
+                lines.append(f"| {mode} | 0 | — | — |")
+                continue
+            clean = sum(1 for v in control if v == 0)
+            lines.append(
+                f"| {mode} | {len(control)} | {mean_std(control)} "
+                f"| {clean}/{len(control)} |"
+            )
+
     lines += ["", "### Uji Signifikansi Primer — per-run summaries", ""]
     lines += _format_test_rows(primary_rows) if primary_rows else ["_Tidak ada perbandingan dengan data lengkap._"]
 
@@ -230,6 +261,9 @@ def main():
                         help="Base seed; per-run seed = base seed + run index")
     parser.add_argument("--modes", default=",".join(MODES),
                         help=f"Comma-separated modes (default: {','.join(MODES)})")
+    parser.add_argument("--negative-control", action="store_true",
+                        help="Sertakan topik kontrol negatif (TC) di setiap run "
+                             "baru; false-gap rate dilaporkan per mode")
     parser.add_argument("--skip-runs", action="store_true",
                         help="Skip execution; aggregate existing run files only")
     args = parser.parse_args()
@@ -237,7 +271,8 @@ def main():
     modes = [m.strip() for m in args.modes.split(",") if m.strip()]
 
     if not args.skip_runs:
-        execute_runs(args.model, args.runs, modes, args.seed)
+        execute_runs(args.model, args.runs, modes, args.seed,
+                     negative_control=args.negative_control)
 
     data = collect_metrics(args.model, args.runs, modes)
     report_md = aggregate(args.model, data)

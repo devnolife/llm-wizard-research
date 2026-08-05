@@ -1101,28 +1101,32 @@ def compile_results(
         "overall_metrics": {},
     }
 
-    # Compute overall metrics
+    # Compute overall metrics.
+    # Negative-control topics (key starts with "TC") are deliberately absent
+    # from the corpus — indicators found there are FALSE gaps. They are
+    # excluded from the main metrics and reported separately.
+    def _is_control(t):
+        return str(t.get("topic_key", "")).upper().startswith("TC")
+
+    main_topics = [t for t in phase3.get("topics", []) if "error" not in t and not _is_control(t)]
+    control_topics = [t for t in phase3.get("topics", []) if "error" not in t and _is_control(t)]
+
     total_time = sum(
         p.get("total_time", 0)
         for p in (phase1, phase2, phase3, phase4, phase5)
         if p
     )
 
-    total_indicators = sum(
-        t.get("total_indicators", 0)
-        for t in phase3.get("topics", [])
-        if "error" not in t
-    )
+    total_indicators = sum(t.get("total_indicators", 0) for t in main_topics)
 
     all_confidences = []
     all_adjusted = []
-    for t in phase3.get("topics", []):
-        if "error" not in t:
-            all_confidences.extend(t.get("confidence_scores", []))
-            all_adjusted.extend(
-                i.get("adjusted_confidence", i.get("confidence", 0))
-                for i in t.get("indicators", [])
-            )
+    for t in main_topics:
+        all_confidences.extend(t.get("confidence_scores", []))
+        all_adjusted.extend(
+            i.get("adjusted_confidence", i.get("confidence", 0))
+            for i in t.get("indicators", [])
+        )
 
     summary4 = (phase4 or {}).get("summary", {})
     flag_rate = summary4.get("flag_rate", 0)
@@ -1134,7 +1138,7 @@ def compile_results(
         "total_chunks_ingested": phase1.get("total_chunks", 0),
         "total_facts_extracted": phase2.get("total_facts", 0),
         "total_gap_indicators": total_indicators,
-        "topics_analyzed": len([t for t in phase3.get("topics", []) if "error" not in t]),
+        "topics_analyzed": len(main_topics),
         "avg_confidence": round(sum(all_confidences) / len(all_confidences), 3) if all_confidences else 0,
         "avg_adjusted_confidence": round(sum(all_adjusted) / len(all_adjusted), 3) if all_adjusted else 0,
         "rule_engine_pass_rate": summary4.get("pass_rate", 0),
@@ -1144,6 +1148,19 @@ def compile_results(
         "rule_engine_rejection_rate_RERR": round(flag_rate + reject_rate, 1),
         "adversarial_accuracy": (phase5 or {}).get("summary", {}).get("accuracy"),
     }
+
+    # Negative-control metrics: a well-calibrated system should find ~0
+    # indicators on topics absent from the corpus (false-gap rate).
+    if control_topics:
+        false_gaps = sum(t.get("total_indicators", 0) for t in control_topics)
+        control_confs = []
+        for t in control_topics:
+            control_confs.extend(t.get("confidence_scores", []))
+        report["overall_metrics"]["negative_control_topics"] = len(control_topics)
+        report["overall_metrics"]["negative_control_false_gaps"] = false_gaps
+        report["overall_metrics"]["negative_control_avg_confidence"] = (
+            round(sum(control_confs) / len(control_confs), 3) if control_confs else 0
+        )
 
     # Debate aggregate (cross-critic mode): berapa indikator kandidat yang
     # ditolak critic, dan berapa yang selamat lewat pembelaan.
@@ -1209,6 +1226,12 @@ def main():
              '--custom-topic "TC:quantum biology in marine ecosystems"',
     )
     parser.add_argument(
+        "--negative-control", action="store_true",
+        help="Include the standard negative-control topic (TC: quantum biology "
+             "in marine ecosystems — absent from the corpus). Indicators found "
+             "there are counted as false gaps and reported separately.",
+    )
+    parser.add_argument(
         "--output", default=None,
         help="Output JSON filename (default: experiment_<mode>_<model>.json)",
     )
@@ -1229,7 +1252,10 @@ def main():
     seed_python_rngs(args.seed)
 
     model_name = args.model or os.environ.get("OLLAMA_MODEL", "llama3.2:latest")
-    topics = load_topics(args.topics, custom_topics=args.custom_topic)
+    custom_topics = list(args.custom_topic or [])
+    if args.negative_control:
+        custom_topics.append("TC:quantum biology in marine ecosystems")
+    topics = load_topics(args.topics, custom_topics=custom_topics)
 
     logger.info("🧙 Wizard Research — Experiment Runner")
     logger.info(f"Model : {model_name}")
