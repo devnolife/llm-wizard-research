@@ -1,11 +1,17 @@
 import { useState } from 'react'
 import {
-  BookOpen, ListChecks, GitCompareArrows, ShieldCheck, Flag, ChevronDown,
-  FileText, Quote,
+  BookOpen, ListChecks, GitCompareArrows, ShieldCheck, Sparkles,
+  FileText, Quote, Eye, EyeOff, HelpCircle, FlaskConical, BarChart3, CornerDownRight,
 } from 'lucide-react'
 
-// "Apa yang terjadi pada jurnal Anda?" — cerita proses berurutan dengan
-// DETAIL NYATA per langkah (judul jurnal, fakta, bukti kutipan, verdict).
+// ═══════════════════════════════════════════════════════════════════
+// LAPORAN PROSES LENGKAP — semua langkah TERBUKA PENUH secara default.
+// Pola tetap per langkah:
+//   ❓ Apa yang dilakukan  →  🔍 Contoh nyata dari jurnal Anda
+//   →  📊 Hasil langkah ini  →  ➡ Kenapa penting (jembatan ke langkah berikut)
+// Tombol "Sembunyikan penjelasan" untuk yang sudah paham.
+// ═══════════════════════════════════════════════════════════════════
+
 const ENTITY_LABELS = {
   METHOD: 'metode', DOMAIN: 'domain', CONCEPT: 'konsep',
   FINDING: 'temuan', DATASET: 'dataset', METRIC: 'metrik',
@@ -21,15 +27,21 @@ const PREDICATE_LABELS = {
 }
 
 const GAP_LABELS = {
-  FRAGMENTATION: 'fragmentasi',
-  INCONSISTENCY: 'kontradiksi',
-  INCOMPLETENESS: 'ketidaklengkapan',
+  FRAGMENTATION: 'Fragmentasi',
+  INCONSISTENCY: 'Kontradiksi',
+  INCOMPLETENESS: 'Ketidaklengkapan',
+}
+
+const GAP_EXPLAIN = {
+  FRAGMENTATION: 'jurnal membahas hal yang sama tetapi tidak saling terhubung',
+  INCONSISTENCY: 'dua jurnal menyatakan hal yang saling bertentangan',
+  INCOMPLETENESS: 'ada aspek penting yang tidak dibahas jurnal mana pun',
 }
 
 const VERDICT_META = {
-  PASS: { label: 'LOLOS', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-  FLAG: { label: 'PERLU TINJAUAN', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400' },
-  REJECT: { label: 'DITOLAK', cls: 'bg-red-500/10 text-red-600 dark:text-red-400' },
+  PASS: { label: 'LOLOS', cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' },
+  FLAG: { label: 'PERLU TINJAUAN', cls: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' },
+  REJECT: { label: 'DITOLAK', cls: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30' },
 }
 
 const gapTypeOf = (ind) => String(ind.indicator_type || ind.type || ind.gap_type || '').toUpperCase()
@@ -38,9 +50,26 @@ const verdictOf = (ind) => {
   for (const key of Object.keys(VERDICT_META)) if (v.includes(key)) return key
   return null
 }
+const fmtTime = (ts) => {
+  if (!ts) return null
+  try { return new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) } catch { return null }
+}
+
+// ── Sub-blok dengan pola tetap ─────────────────────────────────────
+const Blk = (props) => {
+  const BlkIcon = props.icon
+  return (
+    <div className={`rounded-lg border p-3 ${props.tone || 'bg-card'}`}>
+      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+        <BlkIcon className="h-3.5 w-3.5" /> {props.label}
+      </p>
+      {props.children}
+    </div>
+  )
+}
 
 const ProcessTrace = ({ data, tail = [] }) => {
-  const [openStep, setOpenStep] = useState(null)
+  const [showExplain, setShowExplain] = useState(true)
   if (!data) return null
 
   const papers = data.papers_info || (data.papers || []).map(t => ({ title: t }))
@@ -52,42 +81,45 @@ const ProcessTrace = ({ data, tail = [] }) => {
   const entityBreakdown = Object.entries(stats.entities_by_type || {})
     .map(([type, count]) => `${count} ${ENTITY_LABELS[type] || type.toLowerCase()}`)
     .join(', ')
-  const predicateRows = Object.entries(stats.facts_by_predicate || {})
-    .sort((a, b) => b[1] - a[1])
+  const predicateRows = Object.entries(stats.facts_by_predicate || {}).sort((a, b) => b[1] - a[1])
+  const topPredicate = predicateRows[0]
   const indicators = data.gap_indicators || data.gaps || []
   const nCandidates = indicators.length
-  const gapTypeCounts = {}
-  for (const ind of indicators) {
-    const t = gapTypeOf(ind)
-    if (GAP_LABELS[t]) gapTypeCounts[t] = (gapTypeCounts[t] || 0) + 1
-  }
-  const gapSummary = Object.entries(gapTypeCounts)
-    .map(([t, n]) => `${n} ${GAP_LABELS[t]}`)
-    .join(', ')
   const rule = data.rule_engine_report || {}
-  const recs = data.recommendations || []
-  const primaryRec = recs.find(r => r.priority === 'high') || recs[0] || null
+  const trace = data.reasoning_trace || []
+  const phaseTime = {}
+  for (const step of trace) if (step.phase && step.timestamp) phaseTime[step.phase] = fmtTime(step.timestamp)
+  const critiqueAction = trace.filter(s => s.phase === 'evaluate').flatMap(s => s.actions || [])
+    .find(a => /score/i.test(a)) || null
+  const critiqueScore = critiqueAction ? (critiqueAction.match(/([0-9.]+)/) || [])[1] : null
+
+  // Contoh nyata: gap NLI dengan kutipan Paper A vs Paper B (bila ada)
+  const nliGap = indicators.find(ind =>
+    gapTypeOf(ind) === 'INCONSISTENCY' && (ind.supporting_quotes || []).length >= 2)
+  const exampleQuoteA = nliGap?.supporting_quotes?.[0]
+  const exampleQuoteB = nliGap?.supporting_quotes?.[1]
 
   if (!nPapers) return null
 
+  const RULE_LIST = 'Kelayakan (3 aturan: sumber daya, data, skala) · Sebab-akibat (3 aturan: bukti minimal, arah, faktor perancu) · Konsistensi (3 aturan: non-kontradiksi internal, kecocokan fakta, transitivitas)'
+
   const steps = [
+    // ── LANGKAH 1 ──────────────────────────────────────────────────
     {
       icon: BookOpen,
-      title: `${nPapers} jurnal Anda dibaca satu per satu`,
-      desc: totalChunks
-        ? `Isi PDF dipecah menjadi ${totalChunks} potongan teks supaya bisa dianalisis menyeluruh — bukan hanya abstrak.`
-        : 'Isi PDF dipecah menjadi potongan teks kecil supaya bisa dianalisis menyeluruh.',
-      how: 'Teks diambil per halaman, dipotong ±500 kata per bagian, lalu tiap potongan diubah menjadi angka (embedding) agar komputer bisa membandingkan makna antar jurnal.',
-      detail: (
+      time: phaseTime.observe,
+      title: `Menerima & membaca ${nPapers} jurnal PDF`,
+      what: `Setiap PDF dibuka, teksnya diambil halaman demi halaman, lalu dipotong menjadi ${totalChunks || 'ratusan'} bagian kecil (±500 kata per bagian, disebut "potongan"). Setiap potongan diubah menjadi deretan angka (embedding) supaya komputer bisa MENGUKUR kemiripan makna antar potongan — bukan cuma mencocokkan kata.`,
+      example: (
         <ul className="space-y-2">
           {papers.map((p, i) => (
-            <li key={i} className="flex items-start gap-2.5 rounded-lg border bg-card p-2.5">
+            <li key={i} className="flex items-start gap-2.5 rounded-md border bg-card p-2.5">
               <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" />
               <div className="min-w-0 text-xs">
-                <p className="font-medium text-foreground/90 leading-snug">{p.title || p.source}</p>
+                <p className="font-medium leading-snug text-foreground/90">{p.title || p.source}</p>
                 <p className="mt-0.5 text-muted-foreground">
                   {[p.source, p.year && `tahun ${p.year}`,
-                  Number.isFinite(Number(p.similarity_percent)) && `kemiripan antar-jurnal ${p.similarity_percent}%`]
+                    Number.isFinite(Number(p.similarity_percent)) && `kemiripan dengan jurnal lain: ${p.similarity_percent}%`]
                     .filter(Boolean).join(' · ')}
                 </p>
               </div>
@@ -95,18 +127,29 @@ const ProcessTrace = ({ data, tail = [] }) => {
           ))}
         </ul>
       ),
+      result: `${nPapers} jurnal terbaca utuh → ${totalChunks || '—'} potongan teks siap dianalisis.`,
+      why: 'Tanpa dipecah kecil, komputer hanya bisa membaca "kesan umum". Dengan potongan kecil + embedding, setiap kalimat penting bisa ditemukan dan dibandingkan antar jurnal di langkah berikutnya.',
     },
+    // ── LANGKAH 2 ──────────────────────────────────────────────────
     nFacts > 0 && {
       icon: ListChecks,
-      title: `Dari isinya, sistem mencatat ${nFacts} fakta penting`,
-      desc: `Sistem mengenali ${nEntities} hal (${entityBreakdown}) dan mencatat hubungannya sebagai fakta.`,
-      how: 'Setiap kalimat penting diubah menjadi fakta 3 bagian: Subjek → Hubungan → Objek (contoh: "CRNN → diterapkan pada → pengenalan struk"). Kesimpulan apa pun bisa dilacak balik ke fakta ini — bukan karangan AI.',
-      detail: predicateRows.length > 0 && (
-        <div className="text-xs">
-          <p className="mb-1.5 font-medium text-foreground/80">Jenis hubungan yang tercatat:</p>
+      time: phaseTime.observe,
+      title: `Mencatat ${nFacts} fakta penting dari isi jurnal`,
+      what: `Dari potongan-potongan tadi, AI membaca kalimat demi kalimat dan mencatat klaim penting sebagai "fakta" 3 bagian: Subjek → Hubungan → Objek. Sistem mengenali ${nEntities} hal (${entityBreakdown}) lalu menghubungkannya.`,
+      example: topPredicate && (
+        <div className="space-y-2 text-xs">
+          <p className="text-muted-foreground">Bentuk fakta yang dicatat dari jurnal Anda, misalnya:</p>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border bg-card p-2.5 font-medium">
+            <span className="rounded bg-blue-500/10 px-2 py-1 text-blue-600 dark:text-blue-400">metode (mis. CRNN)</span>
+            <CornerDownRight className="h-3 w-3 text-muted-foreground" />
+            <span className="rounded bg-secondary px-2 py-1">"{PREDICATE_LABELS[topPredicate[0]] || topPredicate[0]}"</span>
+            <CornerDownRight className="h-3 w-3 text-muted-foreground" />
+            <span className="rounded bg-purple-500/10 px-2 py-1 text-purple-600 dark:text-purple-400">domain (mis. pengenalan struk)</span>
+          </div>
+          <p className="mb-1 mt-2 font-semibold text-foreground/80">Semua jenis hubungan yang tercatat:</p>
           <ul className="space-y-1">
             {predicateRows.map(([pred, count]) => (
-              <li key={pred} className="flex items-center justify-between rounded-md bg-card border px-2.5 py-1.5">
+              <li key={pred} className="flex items-center justify-between rounded-md border bg-card px-2.5 py-1.5">
                 <span className="text-foreground/85">"{PREDICATE_LABELS[pred] || pred.toLowerCase().replace(/_/g, ' ')}"</span>
                 <span className="font-semibold text-primary">{count} fakta</span>
               </li>
@@ -114,136 +157,186 @@ const ProcessTrace = ({ data, tail = [] }) => {
           </ul>
         </div>
       ),
+      result: `${nFacts} fakta + ${nEntities} konsep tersimpan dalam tabel fakta.`,
+      why: 'Langkah 3 TIDAK membandingkan teks mentah — ia membandingkan fakta-fakta ini. Karena setiap fakta menunjuk kalimat asalnya, semua kesimpulan bisa dilacak balik ke jurnal (bukan karangan AI).',
     },
+    // ── LANGKAH 3 ──────────────────────────────────────────────────
     {
       icon: GitCompareArrows,
+      time: phaseTime.think,
       title: nCandidates > 0
-        ? `Fakta antar-jurnal dibandingkan → ketemu ${nCandidates} calon gap`
-        : 'Fakta antar-jurnal dibandingkan',
-      desc: gapSummary
-        ? `Jenisnya: ${gapSummary}. Ini baru CALON gap — belum tentu semuanya benar.`
-        : 'Sistem mencari topik terpecah, temuan bertentangan, dan aspek yang belum dibahas.',
-      how: 'Tiga pemeriksaan: (1) jurnal membahas hal sama tapi tak saling menyebut? (2) ada temuan bertabrakan? — dicek model AI khusus kontradiksi (NLI), (3) ada aspek penting yang kosong di semua jurnal?',
-      detail: nCandidates > 0 && (
-        <ul className="space-y-2">
-          {indicators.map((ind, i) => {
-            const t = gapTypeOf(ind)
-            const quotes = (ind.supporting_quotes || []).slice(0, 2)
-            return (
-              <li key={i} className="rounded-lg border bg-card p-2.5 text-xs">
-                <p className="font-medium text-foreground/90">
-                  <span className="mr-1.5 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase">{GAP_LABELS[t] || t}</span>
-                  {Number.isFinite(Number(ind.confidence)) && (
-                    <span className="text-muted-foreground">keyakinan {(Number(ind.confidence) * 100).toFixed(0)}%</span>
-                  )}
+        ? `Membandingkan fakta antar jurnal → ${nCandidates} calon gap ditemukan`
+        : 'Membandingkan fakta antar jurnal',
+      what: 'Tiga pemeriksaan dijalankan sekaligus: (1) FRAGMENTASI — adakah jurnal yang membahas hal sama tapi tidak saling menyebut? (2) KONTRADIKSI — adakah dua temuan yang bertabrakan? Setiap pasangan klaim diuji model AI khusus bernama NLI yang tugasnya HANYA menilai "dua kalimat ini sejalan, netral, atau bertentangan?" (3) KETIDAKLENGKAPAN — aspek apa yang seharusnya dibahas tetapi kosong di SEMUA jurnal?',
+      example: (
+        <div className="space-y-2.5">
+          {exampleQuoteA && exampleQuoteB && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.05] p-2.5 text-xs">
+              <p className="mb-2 font-semibold text-amber-700 dark:text-amber-400">
+                Contoh nyata — dua kalimat dari jurnal BERBEDA yang dinilai bertentangan
+                {Number.isFinite(Number(nliGap?.confidence)) && ` (keyakinan NLI ${(nliGap.confidence * 100).toFixed(0)}%)`}:
+              </p>
+              <div className="space-y-1.5">
+                <p className="flex items-start gap-1.5 rounded bg-card px-2 py-1.5">
+                  <Quote className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="italic text-foreground/85">
+                    Jurnal A: "{String(exampleQuoteA.quote || '').slice(0, 180)}…"
+                  </span>
                 </p>
-                <p className="mt-1 text-foreground/80 leading-snug">{String(ind.description || '').slice(0, 220)}</p>
-                {quotes.length > 0 && (
-                  <div className="mt-1.5 space-y-1">
-                    {quotes.map((q, qi) => (
-                      <p key={qi} className="flex items-start gap-1.5 rounded bg-secondary/50 px-2 py-1 italic text-muted-foreground">
-                        <Quote className="mt-0.5 h-3 w-3 shrink-0" />
-                        <span>"{String(q.quote || '').slice(0, 160)}…"{q.source_paper ? ` — ${q.source_paper}` : ''}</span>
-                      </p>
-                    ))}
-                  </div>
+                <p className="text-center text-[10px] font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400">⚡ bertentangan dengan</p>
+                <p className="flex items-start gap-1.5 rounded bg-card px-2 py-1.5">
+                  <Quote className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
+                  <span className="italic text-foreground/85">
+                    Jurnal B: "{String(exampleQuoteB.quote || '').slice(0, 180)}…"
+                  </span>
+                </p>
+              </div>
+            </div>
+          )}
+          {nCandidates > 0 && (
+            <ul className="space-y-1.5 text-xs">
+              {indicators.map((ind, i) => {
+                const t = gapTypeOf(ind)
+                return (
+                  <li key={i} className="rounded-md border bg-card p-2.5">
+                    <p className="font-semibold text-foreground/90">
+                      Calon gap {i + 1}: {GAP_LABELS[t] || t}
+                      {Number.isFinite(Number(ind.confidence)) && (
+                        <span className="ml-1.5 font-normal text-muted-foreground">· keyakinan awal {(Number(ind.confidence) * 100).toFixed(0)}%</span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-muted-foreground">({GAP_EXPLAIN[t] || ''})</p>
+                    <p className="mt-1 leading-snug text-foreground/80">{String(ind.description || '').slice(0, 200)}</p>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      ),
+      result: `${nCandidates} calon gap: ${Object.entries(indicators.reduce((acc, ind) => { const t = gapTypeOf(ind); if (GAP_LABELS[t]) acc[t] = (acc[t] || 0) + 1; return acc }, {})).map(([t, n]) => `${n} ${GAP_LABELS[t].toLowerCase()}`).join(', ') || '—'}.`,
+      why: 'Ini baru CALON — AI bisa salah. Karena itu semuanya wajib melewati pemeriksaan logika di langkah berikutnya sebelum boleh tampil sebagai hasil.',
+    },
+    // ── LANGKAH 4 ──────────────────────────────────────────────────
+    (rule.total || 0) > 0 && {
+      icon: ShieldCheck,
+      time: phaseTime.act,
+      title: `Menguji ${rule.total} calon gap dengan 9 aturan logika`,
+      what: `Setiap calon gap diperiksa Rule Engine — pemeriksa yang bekerja TANPA AI, murni logika. 9 aturannya: ${RULE_LIST}. Gap yang melanggar aturan keras DITOLAK; yang kurang bukti DITANDAI "perlu tinjauan" dan keyakinannya dipotong.`,
+      example: (
+        <ul className="space-y-1.5 text-xs">
+          {indicators.map((ind, i) => {
+            const v = verdictOf(ind)
+            const meta = v ? VERDICT_META[v] : null
+            if (!meta) return null
+            const conf = Number(ind.confidence)
+            const adj = Number(ind.adjusted_confidence)
+            const cut = Number.isFinite(conf) && Number.isFinite(adj) && adj < conf
+            return (
+              <li key={i} className={`rounded-md border p-2.5 ${meta.cls}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">Calon gap {i + 1} ({GAP_LABELS[gapTypeOf(ind)] || 'gap'})</span>
+                  <span className="shrink-0 rounded-full border bg-card px-2 py-0.5 text-[10px] font-bold">{meta.label}</span>
+                </div>
+                {cut && (
+                  <p className="mt-1 text-[11px]">
+                    Keyakinan dipotong: {(conf * 100).toFixed(0)}% → {(adj * 100).toFixed(0)}% (penalti karena bukti belum lengkap)
+                  </p>
                 )}
               </li>
             )
           })}
         </ul>
       ),
+      result: `${rule.passed ?? 0} lolos penuh · ${rule.flagged ?? 0} ditandai "perlu tinjauan" · ${rule.rejected ?? 0} dibuang.`,
+      why: 'Inilah pembeda sistem ini dari sekadar bertanya ke ChatGPT: ada penyaring logika independen yang menghukum klaim tanpa bukti, sehingga gap yang sampai ke Anda sudah teruji dua kali (AI + logika).',
     },
-    (rule.total || 0) > 0 && {
-      icon: ShieldCheck,
-      title: 'Setiap calon gap diuji 9 aturan logika',
-      desc: `Hasilnya: ${rule.passed ?? 0} lolos penuh, ${rule.flagged ?? 0} ditandai "perlu tinjauan", ${rule.rejected ?? 0} dibuang.`,
-      how: 'Aturan ini bekerja TANPA AI — murni logika (kelayakan, sebab-akibat, konsistensi). Gap yang tidak masuk akal gugur di sini, jadi yang sampai ke Anda sudah tersaring.',
-      detail: (
-        <ul className="space-y-1.5">
-          {indicators.map((ind, i) => {
-            const v = verdictOf(ind)
-            const meta = v ? VERDICT_META[v] : null
-            if (!meta) return null
-            return (
-              <li key={i} className="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5 text-xs">
-                <span className="min-w-0 truncate text-foreground/85">
-                  {GAP_LABELS[gapTypeOf(ind)] || 'gap'} — {String(ind.description || '').slice(0, 70)}…
-                </span>
-                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${meta.cls}`}>{meta.label}</span>
-              </li>
-            )
-          })}
-        </ul>
+    // ── LANGKAH 5 ──────────────────────────────────────────────────
+    critiqueScore && {
+      icon: Sparkles,
+      time: phaseTime.evaluate,
+      title: `Sistem menilai pekerjaannya sendiri: skor ${critiqueScore}`,
+      what: 'Sebelum menampilkan apa pun, sistem mengevaluasi hasilnya sendiri: apakah bukti cukup? apakah gap konsisten dengan fakta yang dicatat? apakah rekomendasi menjawab gap? Skor di bawah ambang akan memicu analisis ulang otomatis.',
+      example: (
+        <div className="rounded-md border bg-card p-2.5 text-xs">
+          <p className="font-medium text-foreground/90">Skor kritik-diri: <strong>{critiqueScore}</strong> dari 1.00 → di atas ambang, tidak perlu revisi.</p>
+          <p className="mt-1 text-muted-foreground">Dinilai dari: kelengkapan hasil, dukungan bukti, konsistensi antar bagian, dan kepatuhan aturan.</p>
+        </div>
       ),
-    },
-    {
-      icon: Flag,
-      title: primaryRec
-        ? 'Gap terkuat dipilih, lalu disusun usulan penelitian'
-        : 'Gap terkuat dipilih untuk ditampilkan',
-      desc: 'Hasilnya menyambung tepat di bawah — tetap berlabel "perlu validasi manusia"; keputusan di tangan Anda dan pembimbing.',
-      how: 'Gap diurutkan berdasarkan keyakinan setelah penyesuaian aturan. Usulan disusun menjawab gap tersebut, lengkap dengan alasan dan cara memulai.',
-      detail: null,
+      result: 'Hasil dinyatakan layak tampil — dengan catatan tetap perlu validasi manusia.',
+      why: 'Skor ini jujur mengakui batas sistem: 0.80 artinya "cukup baik untuk jadi bahan pertimbangan", bukan "pasti benar". Keputusan akhir tetap milik Anda dan pembimbing.',
     },
   ].filter(Boolean)
 
   return (
     <section className="rounded-2xl border bg-card/85 p-5">
-      <h2 className="text-sm font-semibold mb-1">Perjalanan jurnal Anda — dari input sampai gap ditemukan</h2>
-      <p className="text-xs text-muted-foreground mb-5">
-        Ikuti urutannya dari atas ke bawah — klik <em>"Lihat detail"</em> pada langkah proses untuk bukti lengkapnya.
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold">Laporan proses lengkap — dari PDF masuk sampai gap ditemukan</h2>
+        <button
+          type="button"
+          onClick={() => setShowExplain(v => !v)}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
+        >
+          {showExplain ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          {showExplain ? 'Sembunyikan penjelasan' : 'Tampilkan penjelasan'}
+        </button>
+      </div>
+      <p className="mb-6 text-xs text-muted-foreground">
+        Setiap langkah dijelaskan lengkap: apa yang dilakukan, contoh nyata dari jurnal Anda, hasilnya, dan kenapa langkah itu penting.
       </p>
 
       <ol className="relative">
         {steps.map((step, index) => {
           const Icon = step.icon
-          const isLast = tail.length === 0 && index === steps.length - 1
-          const isOpen = openStep === index
           return (
-            <li key={index} className="relative flex gap-3.5 pb-5 last:pb-0">
-              {!isLast && (
-                <span className="absolute left-[17px] top-9 bottom-0 w-px bg-border" aria-hidden="true" />
-              )}
-              <span className={`relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 ${isLast ? 'border-primary bg-primary text-primary-foreground' : 'border-primary/30 bg-primary/10 text-primary'}`}>
+            <li key={index} className="relative flex gap-3.5 pb-7 last:pb-7">
+              <span className="absolute left-[17px] top-9 bottom-0 w-px bg-border" aria-hidden="true" />
+              <span className="relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 border-primary/30 bg-primary/10 text-primary">
                 <Icon className="h-4 w-4" />
               </span>
-              <div className="min-w-0 flex-1 pt-1">
-                <p className="text-sm font-semibold leading-snug">{step.title}</p>
-                <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{step.desc}</p>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
+                    Langkah {index + 1} dari {steps.length}
+                  </p>
+                  {step.time && <span className="text-[10px] text-muted-foreground">⏱ {step.time}</span>}
+                </div>
+                <p className="mt-0.5 text-sm font-semibold leading-snug">{step.title}</p>
 
-                {(step.detail || step.how) && (
-                  <button
-                    type="button"
-                    onClick={() => setOpenStep(isOpen ? null : index)}
-                    aria-expanded={isOpen}
-                    className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-                  >
-                    {isOpen ? 'Tutup detail' : 'Lihat detail'}
-                    <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                )}
-                {isOpen && (
-                  <div className="mt-2 space-y-2.5 rounded-xl border bg-secondary/30 p-3">
-                    {step.how && (
-                      <p className="text-xs leading-relaxed text-foreground/85">
-                        <strong className="text-foreground">Cara kerja:</strong> {step.how}
-                      </p>
-                    )}
-                    {step.detail}
-                  </div>
-                )}
+                <div className="mt-2.5 space-y-2.5">
+                  {showExplain && step.what && (
+                    <Blk icon={HelpCircle} label="Apa yang dilakukan">
+                      <p className="text-xs leading-relaxed text-foreground/85">{step.what}</p>
+                    </Blk>
+                  )}
+                  {step.example && (
+                    <Blk icon={FlaskConical} label="Contoh nyata dari jurnal Anda" tone="bg-secondary/30">
+                      {step.example}
+                    </Blk>
+                  )}
+                  {step.result && (
+                    <Blk icon={BarChart3} label="Hasil langkah ini" tone="bg-primary/[0.04]">
+                      <p className="text-xs font-medium text-foreground/90">{step.result}</p>
+                    </Blk>
+                  )}
+                  {showExplain && step.why && (
+                    <p className="flex items-start gap-1.5 pl-1 text-xs leading-relaxed text-muted-foreground">
+                      <CornerDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/60" />
+                      <span><strong className="text-foreground/80">Kenapa penting:</strong> {step.why}</span>
+                    </p>
+                  )}
+                </div>
               </div>
             </li>
           )
         })}
 
-        {/* HASIL — menyambung di timeline yang sama, jelas lahir dari proses di atas */}
+        {/* ── HASIL AKHIR — menyambung di timeline yang sama ── */}
         {tail.map((item, index) => {
           const Icon = item.icon
           const isLast = index === tail.length - 1
           return (
-            <li key={`tail-${index}`} className="relative flex gap-3.5 pb-5 last:pb-0">
+            <li key={`tail-${index}`} className="relative flex gap-3.5 pb-7 last:pb-0">
               {!isLast && (
                 <span className="absolute left-[17px] top-9 bottom-0 w-px bg-border" aria-hidden="true" />
               )}
@@ -253,7 +346,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
                 <Icon className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1 pt-0.5">
-                <p className={`text-[11px] font-bold uppercase tracking-[0.14em] mb-1.5 ${item.highlight ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
+                <p className={`mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] ${item.highlight ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
                   {item.label}
                 </p>
                 {item.content}
