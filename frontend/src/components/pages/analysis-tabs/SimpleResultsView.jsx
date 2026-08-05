@@ -2,6 +2,7 @@ import {
   ArrowRight, BookOpen, Calendar, CheckCircle, FileText, Lightbulb, Search, Shield, Sparkles,
 } from 'lucide-react'
 import Markdown from '../../common/Markdown'
+import ProcessTrace from '../../common/ProcessTrace'
 import { GAP_COLORS } from './constants'
 
 // Default result view: one clear research path, not every available metric.
@@ -16,6 +17,13 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
     const yearDiff = (Number(second.year) || 0) - (Number(first.year) || 0)
     return yearDiff || String(first.title || '').localeCompare(String(second.title || ''))
   })
+  // Jejak proses dari backend (persisten, tetap ada setelah reload)
+  const trace = data?.reasoning_trace || []
+  const traceStats = {
+    total_facts: data?.fact_table_stats?.total_facts,
+    total_entities: data?.fact_table_stats?.total_entities,
+    rule_engine: data?.rule_engine_report || null,
+  }
 
   const steps = [
     { number: '01', label: 'Jurnal Anda', icon: FileText, complete: papers.length > 0 },
@@ -52,6 +60,9 @@ const SimpleResultsView = ({ simpleData: sd, data, onShowFull, onFindSources }) 
       </ol>
 
       <div className="space-y-4">
+        {/* Jejak proses: bagaimana sistem sampai pada hasil ini (gaya notebook) */}
+        <ProcessTrace trace={trace} stats={traceStats} defaultOpen />
+
         <section className="rounded-2xl border bg-card/85 p-5">
           <div className="flex items-start gap-3">
             <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary/10 text-primary text-sm font-bold shrink-0">1</span>
