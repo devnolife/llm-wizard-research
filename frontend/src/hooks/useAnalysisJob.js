@@ -7,10 +7,23 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(0)
   const [progressMsg, setProgressMsg] = useState('')
+  const [activities, setActivities] = useState([])
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [status, setStatus] = useState('queued')
   const [refreshToken, setRefreshToken] = useState(0)
+
+  // Log proses lengkap: setiap pesan/tahap baru dicatat dengan jam, agar
+  // pengguna melihat SEMUA langkah (ekstraksi tiap PDF, topik, analisis
+  // neuro-symbolic, dst) — bukan hanya pesan terakhir.
+  const appendActivity = useCallback((text, kind = 'info') => {
+    if (!text) return
+    setActivities(prev => {
+      if (prev.length && prev[prev.length - 1].text === text) return prev
+      const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      return [...prev.slice(-60), { text, kind, time }]
+    })
+  }, [])
 
   const cancel = useCallback(async () => {
     const response = await analysisService.cancelAnalysis(jobId)
@@ -23,6 +36,7 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
     const response = await analysisService.retryAnalysis(jobId)
     setError(null)
     setData(null)
+    setActivities([])
     setStatus(response.status)
     setProgress(response.progress || 0)
     setProgressMsg(response.message || 'Menjadwalkan ulang analisis...')
@@ -50,7 +64,9 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
             onComplete?.()
           } else if (['queued', 'processing', 'running'].includes(response.status)) {
             setProgress(response.progress || 0)
-            setProgressMsg(response.message || (response.status === 'queued' ? 'Menunggu worker...' : 'Memproses...'))
+            const msg = response.message || (response.status === 'queued' ? 'Menunggu worker...' : 'Memproses...')
+            setProgressMsg(msg)
+            appendActivity(msg)
             timerId = setTimeout(fetchResults, 2000)
           } else if (['failed', 'interrupted', 'cancelled'].includes(response.status)) {
             setError(response.error || response.message || 'Analisis gagal')
@@ -86,11 +102,20 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
             es.close()
           } else if (payload.type === 'phase') {
             const phase = payload.phase || payload.data?.phase
-            if (phase) setProgressMsg(`Tahap: ${phase}`)
+            const eventType = payload.event_type || ''
+            if (phase) {
+              setProgressMsg(`Tahap: ${phase}`)
+              appendActivity(
+                eventType.includes('completed') ? `Tahap selesai: ${phase}` : `Tahap dimulai: ${phase}`,
+                'phase',
+              )
+            }
           } else {
             setStatus(payload.status || 'running')
             setProgress(payload.progress || 0)
-            setProgressMsg(payload.message || 'Memproses...')
+            const msg = payload.message || 'Memproses...'
+            setProgressMsg(msg)
+            appendActivity(msg)
           }
         } catch { /* ignore parse errors */ }
       }
@@ -110,7 +135,7 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId, language, refreshToken])
 
-  return { loading, progress, progressMsg, data, error, status, cancel, retry }
+  return { loading, progress, progressMsg, activities, data, error, status, cancel, retry }
 }
 
 export default useAnalysisJob

@@ -7,6 +7,7 @@ import {
 import useToast from '../../hooks/useToast'
 import { analysisService } from '../../services/analysisService'
 import Term from '../common/Term'
+import NotebookProcessLog from '../common/NotebookProcessLog'
 import useAnalysisJob from '../../hooks/useAnalysisJob'
 import { parseRecommendations, parseGaps, parseRoadmapData } from '../../utils/analysisParser'
 import { downloadResultsJson, exportElementToPdf } from '../../utils/exportResults'
@@ -33,7 +34,7 @@ const AnalysisResults = () => {
   const [advancedMode, setAdvancedMode] = useState(false)
   const [showFullAnalysis, setShowFullAnalysis] = useState(false)
 
-  const { loading, progress, progressMsg, data, error, status, cancel, retry } = useAnalysisJob(jobId, language, {
+  const { loading, progress, progressMsg, activities, data, error, status, cancel, retry } = useAnalysisJob(jobId, language, {
     onComplete: () => toast.success('Analisis selesai!'),
   })
 
@@ -180,8 +181,8 @@ const AnalysisResults = () => {
   // ── Loading State ──────────────────────────────────────
   if (loading) {
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center px-6">
-        <div className="w-full max-w-lg">
+      <div className="min-h-[70vh] flex flex-col items-center justify-center px-6 py-10">
+        <div className="w-full max-w-2xl">
           <div className="text-center mb-8">
             <Loader className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
             <h2 className="text-2xl font-bold mb-1">Menganalisis Penelitian Anda</h2>
@@ -205,6 +206,10 @@ const AnalysisResults = () => {
               )
             })}
           </div>
+
+          {/* Log proses gaya Jupyter: semua langkah nyata dengan timestamp */}
+          <NotebookProcessLog activities={activities} running={loading} />
+
           {['queued', 'running', 'processing'].includes(status) && (
             <button
               onClick={cancelAnalysis}
