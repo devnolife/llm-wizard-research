@@ -67,14 +67,15 @@ const AnalysisResults = () => {
       { label: 'Topik Ditemukan', value: data.topics?.length || 0, icon: Tag, color: 'text-purple-500' },
       { label: 'Gap Terdeteksi', value: data.gaps?.length || 0, icon: AlertTriangle, color: 'text-amber-500' },
     ]
-    if (data.fact_table_stats?.total_entities) {
+    // Statistik teknis (KG/SPO) hanya untuk mode Lanjutan agar tampilan default sederhana
+    if (advancedMode && data.fact_table_stats?.total_entities) {
       base.push({ label: <>Entitas <Term k="KG">KG</Term></>, value: data.fact_table_stats.total_entities, icon: Database, color: 'text-cyan-500' })
     }
-    if (data.fact_table_stats?.total_facts) {
+    if (advancedMode && data.fact_table_stats?.total_facts) {
       base.push({ label: <>Fakta <Term k="SPO">SPO</Term></>, value: data.fact_table_stats.total_facts, icon: Shield, color: 'text-indigo-500' })
     }
     return base
-  }, [data])
+  }, [data, advancedMode])
 
   // Sintesis "Usulan Penelitian Baru": gabungkan jurnal → gap utama → usulan utama → alur
   const proposal = useMemo(() => {
@@ -131,10 +132,10 @@ const AnalysisResults = () => {
     }
   }, [data, parsedGaps, parsedRecommendations])
 
-  // Jika pindah ke mode Sederhana saat berada di tab khusus-Lanjutan, kembali ke Ringkasan
+  // Jika pindah ke mode Sederhana saat berada di tab khusus-Lanjutan, kembali ke Usulan
   useEffect(() => {
     if (!advancedMode && TABS.find(t => t.id === activeTab)?.advanced) {
-      setActiveTab('overview')
+      setActiveTab('proposal')
     }
   }, [advancedMode, activeTab])
 

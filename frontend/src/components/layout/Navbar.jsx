@@ -1,20 +1,42 @@
-import { NavLink, useNavigate } from 'react-router-dom'
-import { Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Share2, Sparkles } from 'lucide-react'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { useState, useRef, useEffect } from 'react'
+import {
+  Moon, Sun, Upload, Search, MessageSquare, Database, FileText, Share2,
+  Sparkles, MoreHorizontal, ChevronDown,
+} from 'lucide-react'
 import useDarkMode from '../../hooks/useDarkMode'
 import ModelSelector from '../common/ModelSelector'
 
-const NAV_LINKS = [
+// Alur utama: unggah jurnal → lihat gap → cari jurnal pendukung.
+// Menu lain tetap ada, tetapi disembunyikan di "Lainnya" agar tidak membingungkan.
+const PRIMARY_LINKS = [
   { to: '/', label: 'Unggah', icon: Upload, desc: 'Unggah paper PDF untuk dianalisis otomatis (topik, gap, rekomendasi)' },
-  { to: '/search', label: 'Cari', icon: Search, desc: 'Cari paper di database berdasarkan kata kunci' },
+  { to: '/search', label: 'Cari Jurnal', icon: Search, desc: 'Cari paper pendukung berdasarkan kata kunci' },
+]
+
+const MORE_LINKS = [
   { to: '/chat', label: 'Chat', icon: MessageSquare, desc: 'Tanya jawab dengan AI tentang paper yang sudah diunggah' },
   { to: '/documents', label: 'Dokumen', icon: Database, desc: 'Daftar semua paper yang tersimpan di database' },
-  { to: '/graph', label: 'Graf', icon: Share2, desc: 'Peta visual hubungan antar konsep dari semua paper (gaya VOSviewer)' },
+  { to: '/graph', label: 'Graf', icon: Share2, desc: 'Peta visual hubungan antar konsep dari semua paper' },
   { to: '/revisi', label: 'Revisi', icon: FileText, desc: 'Catatan revisi proposal tesis' },
 ]
 
 const Navbar = () => {
   const { darkMode, toggleDarkMode } = useDarkMode()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef(null)
+
+  const moreActive = MORE_LINKS.some((item) => location.pathname.startsWith(item.to))
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (moreRef.current && !moreRef.current.contains(e.target)) setMoreOpen(false)
+    }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
 
   return (
     <nav className="sticky top-0 z-50 border-b border-border/60 glass">
@@ -37,9 +59,9 @@ const Navbar = () => {
           </span>
         </button>
 
-        {/* Nav Links */}
+        {/* Nav utama */}
         <div className="flex items-center gap-0.5 flex-1">
-          {NAV_LINKS.map((item) => {
+          {PRIMARY_LINKS.map((item) => {
             const Icon = item.icon
             return (
               <NavLink
@@ -59,6 +81,52 @@ const Navbar = () => {
               </NavLink>
             )
           })}
+
+          {/* Dropdown "Lainnya" — fitur pendukung, tersembunyi dari alur utama */}
+          <div className="relative" ref={moreRef}>
+            <button
+              onClick={() => setMoreOpen((open) => !open)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              title="Menu tambahan (chat, dokumen, graf, revisi)"
+              className={`group relative flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 ${moreActive
+                ? 'text-primary bg-primary/10 ring-1 ring-inset ring-primary/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                }`}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="hidden md:inline">Lainnya</span>
+              <ChevronDown className={`h-3 w-3 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {moreOpen && (
+              <div
+                role="menu"
+                className="absolute left-0 top-full mt-1.5 w-56 rounded-xl border border-border/70 bg-card p-1.5 shadow-lg"
+              >
+                {MORE_LINKS.map((item) => {
+                  const Icon = item.icon
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      role="menuitem"
+                      title={item.desc}
+                      onClick={() => setMoreOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${isActive
+                          ? 'text-primary bg-primary/10'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                        }`
+                      }
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Model Selector */}

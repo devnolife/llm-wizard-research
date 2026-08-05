@@ -1,13 +1,15 @@
 import { Target, BarChart3, Tag, Search, Lightbulb, Map, Share2, Zap } from 'lucide-react'
 
+// Tab default = 3 inti alur (Usulan, Gap, Rekomendasi).
+// Tab bertanda `advanced` hanya tampil pada mode "Lanjutan".
 export const TABS = [
   { id: 'proposal', label: 'Usulan', icon: Target, desc: 'Indikator usulan penelitian hasil sintesis jurnal Anda, berbasis indikator synthesis gap (Cooper, 1998): gap yang terdeteksi, arah penelitian yang diusulkan, dan alurnya. Bersifat alat bantu keputusan — perlu divalidasi peneliti.' },
-  { id: 'overview', label: 'Ringkasan', icon: BarChart3, desc: 'Gambaran umum hasil analisis: jumlah topik, gap, dan rekomendasi yang ditemukan dari paper Anda. Mulai dari sini.' },
-  { id: 'topics', label: 'Topik & Analisis', icon: Tag, desc: 'Topik-topik utama yang dibahas dalam paper Anda, hasil ekstraksi otomatis oleh AI dari isi dokumen.' },
   { id: 'gaps', label: 'Gap Penelitian', icon: Search, desc: 'Indikator synthesis gap (Cooper/Booth): fragmentasi (topik terpecah tak terintegrasi), inkonsistensi (temuan bertentangan), atau ketidaklengkapan kolektif. Indikatif — perlu ditinjau peneliti.' },
   { id: 'recommendations', label: 'Rekomendasi', icon: Lightbulb, desc: 'Saran arah penelitian yang bisa Anda ambil berdasarkan gap yang ditemukan, lengkap dengan alasan (WHY) dan cara memulainya (HOW).' },
-  { id: 'roadmap', label: 'Peta Jalan', icon: Map, desc: 'Rencana penelitian bertahap: apa yang bisa dikerjakan dalam jangka pendek, menengah, dan panjang.' },
-  { id: 'knowledge-graph', label: 'Graf Pengetahuan', icon: Share2, desc: 'Peta visual hubungan antar konsep (metode, domain, temuan) yang diekstrak dari paper. Titik = konsep, garis = hubungan antar konsep.' },
+  { id: 'overview', label: 'Ringkasan', icon: BarChart3, advanced: true, desc: 'Gambaran umum hasil analisis: jumlah topik, gap, dan rekomendasi yang ditemukan dari paper Anda.' },
+  { id: 'topics', label: 'Topik & Analisis', icon: Tag, advanced: true, desc: 'Topik-topik utama yang dibahas dalam paper Anda, hasil ekstraksi otomatis oleh AI dari isi dokumen.' },
+  { id: 'roadmap', label: 'Peta Jalan', icon: Map, advanced: true, desc: 'Rencana penelitian bertahap: apa yang bisa dikerjakan dalam jangka pendek, menengah, dan panjang.' },
+  { id: 'knowledge-graph', label: 'Graf Pengetahuan', icon: Share2, advanced: true, desc: 'Peta visual hubungan antar konsep (metode, domain, temuan) yang diekstrak dari paper. Titik = konsep, garis = hubungan antar konsep.' },
   { id: 'pipeline', label: 'Pipeline', icon: Zap, advanced: true, desc: 'Detail teknis proses analisis di belakang layar: berapa fakta yang diekstrak, hasil validasi aturan, dan skor kepercayaan. Untuk verifikasi kualitas hasil.' },
 ]
 
