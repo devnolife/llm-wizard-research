@@ -30,7 +30,7 @@ from scipy.stats import mannwhitneyu
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 RESULTS_DIR = BACKEND_DIR / "experiments" / "results"
-MODES = ["full", "no-rule-engine", "linear-baseline", "nli", "no-nli"]
+MODES = ["full", "no-rule-engine", "linear-baseline", "nli", "no-nli", "cross-critic"]
 
 # Effect-size + CI helpers (complement the Mann-Whitney p-values).
 sys.path.insert(0, str(BACKEND_DIR / "experiments"))
@@ -117,6 +117,7 @@ def _comparison_rows(data: dict, exploratory: bool = False) -> list:
         ("full", "no-rule-engine", "H7"),
         ("full", "linear-baseline", "H6"),
         ("nli", "no-nli", "H9"),
+        ("cross-critic", "nli", "H10"),
     ]
     for mode_a, mode_b, hyp in comparisons:
         runs_a, runs_b = data.get(mode_a, []), data.get(mode_b, [])

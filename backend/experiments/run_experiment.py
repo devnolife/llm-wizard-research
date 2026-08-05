@@ -12,6 +12,10 @@ Modes:
     linear-baseline  Plain RAG+LLM single-prompt gap detection — no agentic
                      loop, no fact extraction, no rule engine (H6: does the
                      agentic/neuro-symbolic system outperform a linear pipeline?)
+    cross-critic     Seperti `nli`, plus debat lintas-model: LLM critic kedua
+                     (--critic-model, default gpt-oss) mengkritik tiap indikator
+                     gap, LLM utama membela yang di-REJECT (H10: apakah kritik
+                     lintas-model meningkatkan presisi/kalibrasi indikator?)
 
 Usage:
     cd backend
@@ -198,14 +202,17 @@ def load_topics(topic_filter=None, custom_topics=None):
     return topics
 
 
-def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False):
+def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False,
+                    critic_model=None, critic_facts=False):
     """Initialize pipeline components according to the experiment mode."""
     config = get_config()
     model_name = model_name or os.environ.get("OLLAMA_MODEL", config.llm.model_name)
 
     # Mode-driven NLI toggle for the H9 ablation (dedicated cross-encoder NLI
     # vs LLM-only contradiction detection). Other modes honour the --nli flag.
-    if mode == "nli":
+    # cross-critic (H10) builds on top of the nli configuration so the debate
+    # signal is isolated against the strongest single-model baseline.
+    if mode in ("nli", "cross-critic"):
         use_nli = True
     elif mode == "no-nli":
         use_nli = False
@@ -280,6 +287,28 @@ def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False)
         rule_engine=analyzer_rule_engine,
     )
 
+    # Cross-model critic (H10): second LLM that audits the main LLM's output.
+    cross_critic = None
+    critic_model_name = None
+    if mode == "cross-critic":
+        from cross_critic import CrossCritic
+        critic_model_name = critic_model or "gpt-oss:latest"
+        critic_cfg = ModelConfig(
+            model_name=critic_model_name,
+            base_url=config.llm.base_url,
+            temperature=0.2,
+            top_p=config.llm.top_p,
+            max_tokens=config.llm.max_tokens,
+            timeout=config.llm.timeout,
+            num_ctx=config.llm.context_window,
+            keep_alive=config.llm.keep_alive,
+            max_parallel=config.llm.num_parallel,
+        )
+        critic_llm = GLMInterface(critic_cfg)
+        cross_critic = CrossCritic(critic_llm=critic_llm, defender_llm=llm)
+        logger.info(f"Cross-critic enabled: critic={critic_model_name}, "
+                    f"defender={model_name}, critic_facts={critic_facts}")
+
     return {
         "vector_store": vector_store,
         "llm": llm,
@@ -292,6 +321,9 @@ def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False)
         "gap_analyzer": gap_analyzer,
         "mode": mode,
         "model_name": model_name,
+        "cross_critic": cross_critic,
+        "critic_model_name": critic_model_name,
+        "critic_facts": critic_facts,
     }
 
 
@@ -434,6 +466,55 @@ def phase2_fact_extraction(components, papers_data):
 
     results["total_time"] = round(time.time() - start, 2)
 
+    # Optional cross-model fact audit (--critic-facts): one batched critic
+    # call per paper flags extraction noise; flagged facts are removed from
+    # the fact table BEFORE gap detection.
+    cross_critic = components.get("cross_critic")
+    if cross_critic is not None and components.get("critic_facts"):
+        audit_start = time.time()
+        removed_total = 0
+        audit_log = []
+        for paper in papers_data:
+            if "error" in paper:
+                continue
+            paper_id = paper["filename"]
+            paper_facts = fact_table.get_facts_for_paper(paper_id)
+            if not paper_facts:
+                continue
+            fact_dicts = []
+            for fact in paper_facts:
+                subj = fact_table.get_entity(fact.subject_id)
+                obj = fact_table.get_entity(fact.object_id)
+                fact_dicts.append({
+                    "subject": subj.name if subj else fact.subject_id,
+                    "subject_type": subj.entity_type.value if subj else "?",
+                    "predicate": fact.predicate.value,
+                    "object": obj.name if obj else fact.object_id,
+                    "object_type": obj.entity_type.value if obj else "?",
+                })
+            bad = cross_critic.critique_facts(paper.get("title", paper_id), fact_dicts)
+            for b in bad:
+                fact = paper_facts[b["index"]]
+                if fact_table.remove_fact(fact.fact_id):
+                    removed_total += 1
+                    audit_log.append({
+                        "paper": paper_id,
+                        "fact": f"({fact_dicts[b['index']]['subject']}, "
+                                f"{fact_dicts[b['index']]['predicate']}, "
+                                f"{fact_dicts[b['index']]['object']})",
+                        "reason": b["reason"],
+                    })
+        results["fact_audit"] = {
+            "removed": removed_total,
+            "time": round(time.time() - audit_start, 2),
+            "removals": audit_log,
+        }
+        results["total_facts"] -= removed_total
+        logger.info(
+            f"Cross-critic fact audit: {removed_total} noisy facts removed "
+            f"in {results['fact_audit']['time']}s"
+        )
+
     # Fact table stats
     try:
         results["fact_table_stats"] = components["fact_table"].get_statistics()
@@ -502,6 +583,40 @@ def phase3_gap_detection(components, topics):
                 depth="standard",
             )
 
+            # Cross-model debate (mode cross-critic, H10): critic LLM menilai
+            # tiap indikator, LLM utama membela yang di-REJECT. Indikator yang
+            # kalah debat dibuang SEBELUM agregasi metrik.
+            debate_record = None
+            cross_critic = components.get("cross_critic")
+            if cross_critic is not None and indicators:
+                fact_table = components.get("fact_table")
+                facts_summary = ""
+                if fact_table is not None:
+                    lines = []
+                    for fact in list(fact_table.query())[:40]:
+                        subj = fact_table.get_entity(fact.subject_id)
+                        obj = fact_table.get_entity(fact.object_id)
+                        lines.append(
+                            f"({subj.name if subj else fact.subject_id}, "
+                            f"{fact.predicate.value}, "
+                            f"{obj.name if obj else fact.object_id})"
+                        )
+                    facts_summary = "\n".join(lines)
+                # Daftar jurnal yang dianalisis untuk topik ini — konteks bagi
+                # critic untuk memverifikasi klaim ANTAR-paper (bukan single-paper).
+                seen_titles = []
+                for p in papers_for_analysis:
+                    meta = p.get("metadata", {}) or {}
+                    label = meta.get("title") or meta.get("source") or ""
+                    if label and label not in seen_titles:
+                        seen_titles.append(label)
+                debate_record = cross_critic.debate_indicators(
+                    topic=topic, indicators=indicators, facts_summary=facts_summary,
+                    paper_titles=seen_titles,
+                )
+                kept_indices = {d["index"] for d in debate_record["decisions"] if d["keep"]}
+                indicators = [ind for i, ind in enumerate(indicators) if i in kept_indices]
+
             topic_result = {
                 "topic": topic,
                 "topic_key": topic_key,
@@ -558,6 +673,15 @@ def phase3_gap_detection(components, topics):
                 })
 
             topic_result["analysis_time"] = round(time.time() - topic_start, 2)
+
+            if debate_record is not None:
+                topic_result["debate"] = {
+                    "critic_model": components.get("critic_model_name"),
+                    "kept": debate_record["kept"],
+                    "rejected": debate_record["rejected"],
+                    "defended": debate_record["defended"],
+                    "decisions": debate_record["decisions"],
+                }
 
             if topic_result["confidence_scores"]:
                 scores = topic_result["confidence_scores"]
@@ -952,6 +1076,7 @@ def compile_results(
     topics,
     seed,
     provenance=None,
+    critic_model=None,
 ):
     """Compile all results into a single JSON report."""
     report = {
@@ -959,6 +1084,7 @@ def compile_results(
             "timestamp": datetime.now().isoformat(),
             "model": model_name,
             "mode": mode,
+            "critic_model": critic_model,
             "seed": seed,
             "papers_dir": str(PAPERS_DIR),
             "topics": topics,
@@ -1017,6 +1143,28 @@ def compile_results(
         "adversarial_accuracy": (phase5 or {}).get("summary", {}).get("accuracy"),
     }
 
+    # Debate aggregate (cross-critic mode): berapa indikator kandidat yang
+    # ditolak critic, dan berapa yang selamat lewat pembelaan.
+    debate_kept = debate_rejected = debate_defended = 0
+    has_debate = False
+    for t in phase3.get("topics", []):
+        d = t.get("debate")
+        if d:
+            has_debate = True
+            debate_kept += d.get("kept", 0)
+            debate_rejected += d.get("rejected", 0)
+            debate_defended += d.get("defended", 0)
+    if has_debate:
+        candidates = debate_kept + debate_rejected
+        report["overall_metrics"]["debate_candidates"] = candidates
+        report["overall_metrics"]["debate_rejected"] = debate_rejected
+        report["overall_metrics"]["debate_defended"] = debate_defended
+        report["overall_metrics"]["debate_rejection_rate"] = (
+            round(100.0 * debate_rejected / candidates, 1) if candidates else 0.0
+        )
+        if phase2.get("fact_audit"):
+            report["overall_metrics"]["fact_audit_removed"] = phase2["fact_audit"]["removed"]
+
     return report
 
 
@@ -1034,10 +1182,20 @@ def main():
     )
     parser.add_argument(
         "--mode", default="full",
-        choices=["full", "no-rule-engine", "linear-baseline", "nli", "no-nli"],
+        choices=["full", "no-rule-engine", "linear-baseline", "nli", "no-nli", "cross-critic"],
         help="Experiment mode: full pipeline; no-rule-engine ablation (H7); "
              "linear RAG+LLM baseline (H6); nli / no-nli ablation for the "
-             "dedicated cross-encoder NLI signal (H9)",
+             "dedicated cross-encoder NLI signal (H9); cross-critic = nli + "
+             "cross-model debate on gap indicators (H10)",
+    )
+    parser.add_argument(
+        "--critic-model", default="gpt-oss:latest",
+        help="Ollama model for the critic LLM in cross-critic mode (default: gpt-oss:latest)",
+    )
+    parser.add_argument(
+        "--critic-facts", action="store_true",
+        help="cross-critic mode: also audit extracted SPO facts per paper "
+             "(one batched critic call per paper; removes extraction noise)",
     )
     parser.add_argument(
         "--topics", default=None,
@@ -1086,6 +1244,10 @@ def main():
         models = [m["name"] for m in resp.json().get("models", [])]
         if model_name not in models:
             logger.warning(f"Model '{model_name}' not in available models: {models}")
+        if args.mode == "cross-critic" and args.critic_model not in models:
+            logger.error(f"Critic model '{args.critic_model}' not available in Ollama. "
+                         f"Pull it first: ollama pull {args.critic_model}")
+            sys.exit(1)
         logger.info(f"Ollama OK — {len(models)} models available")
     except Exception as e:
         logger.error(f"Ollama not reachable: {e}")
@@ -1096,7 +1258,8 @@ def main():
     logger.info("Initializing pipeline components...")
     components = init_components(
         model_name=model_name, mode=args.mode, fresh_db=args.fresh_db,
-        use_nli=args.nli,
+        use_nli=args.nli, critic_model=args.critic_model,
+        critic_facts=args.critic_facts,
     )
     logger.info("Components ready.\n")
 
@@ -1142,7 +1305,7 @@ def main():
         phase3_results = phase3_gap_detection(components, topics)
 
     # --- Phase 4: rule engine aggregation (full agentic pipeline modes) ---
-    FULL_PIPELINE_MODES = ("full", "nli", "no-nli")
+    FULL_PIPELINE_MODES = ("full", "nli", "no-nli", "cross-critic")
     if args.mode in FULL_PIPELINE_MODES:
         phase4_results = phase4_rule_engine_analysis(components, phase3_results)
     else:
@@ -1162,6 +1325,7 @@ def main():
         phase4_results, phase5_results,
         mode=args.mode, model_name=model_name, topics=topics, seed=args.seed,
         provenance=provenance,
+        critic_model=components.get("critic_model_name"),
     )
 
     model_slug = model_name.replace(":", "_").replace("/", "_")
