@@ -20,6 +20,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# AI Research Skills (sync via: npx @orchestra-research/ai-research-skills update --local)
+.claude/skills/
+.agents/skills/
+
 # Virtual Environment
 venv/
 env/
@@ -53,6 +57,7 @@ data/processed/*
 !backend/experiments/results/experiment_*.json
 !backend/experiments/results/multirun_stats_*.md
 !research_papers/papers_manifest.json
+!.orchestra-skills.json
 backend/experiments/results/backup_pre_k3/
 
 # ChromaDB
