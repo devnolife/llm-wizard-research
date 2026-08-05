@@ -677,6 +677,7 @@ def phase3_gap_detection(components, topics):
             if debate_record is not None:
                 topic_result["debate"] = {
                     "critic_model": components.get("critic_model_name"),
+                    "critic_parse_ok": debate_record.get("critic_parse_ok", True),
                     "kept": debate_record["kept"],
                     "rejected": debate_record["rejected"],
                     "defended": debate_record["defended"],

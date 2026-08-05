@@ -114,7 +114,22 @@ class TestDebateIndicators:
     def test_empty_indicators(self):
         cc = CrossCritic(critic_llm=FakeLLM([]), defender_llm=FakeLLM([]))
         res = cc.debate_indicators("topic", [])
-        assert res == {"decisions": [], "kept": 0, "rejected": 0, "defended": 0}
+        assert res["decisions"] == [] and res["kept"] == 0
+        assert res["critic_parse_ok"] is True
+
+    def test_unparseable_critique_flagged(self):
+        """Respons tak terparse (mis. terpotong max_tokens) → fail-open TERLIHAT."""
+        critic = FakeLLM(["...truncated reasoning without any JSON"])
+        cc = CrossCritic(critic_llm=critic, defender_llm=FakeLLM([]))
+        res = cc.debate_indicators("topic", [make_indicator()])
+        assert res["kept"] == 1  # fail-open
+        assert res["critic_parse_ok"] is False
+
+    def test_parse_ok_flag_set(self):
+        critic = FakeLLM([json.dumps([{"index": 0, "verdict": "KEEP", "reason": "ok"}])])
+        cc = CrossCritic(critic_llm=critic, defender_llm=FakeLLM([]))
+        res = cc.debate_indicators("topic", [make_indicator()])
+        assert res["critic_parse_ok"] is True
 
     def test_payload_includes_inter_paper_context(self):
         """Critic prompt harus memuat daftar jurnal + related_papers per indikator."""

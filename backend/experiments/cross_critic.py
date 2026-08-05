@@ -116,7 +116,11 @@ JSON:"""
 class CrossCritic:
     """Debate 1-ronde antara LLM critic dan LLM utama (defender)."""
 
-    def __init__(self, critic_llm, defender_llm, max_tokens: int = 1200):
+    # Catatan budget token: gpt-oss adalah reasoning model yang memakai token
+    # untuk chain-of-thought SEBELUM JSON akhir. Budget 1200 terbukti terpotong
+    # (respons berhenti tepat di max_tokens → JSON tak selesai → fail-open
+    # membuat semua KEEP dengan reason kosong). 3500 memberi ruang aman.
+    def __init__(self, critic_llm, defender_llm, max_tokens: int = 3500):
         self.critic = critic_llm
         self.defender = defender_llm
         self.max_tokens = max_tokens
@@ -164,8 +168,10 @@ class CrossCritic:
              "critic_reason": "", "defense": None, "confidence_delta": 0.0}
             for i in range(len(indicators))
         ]
-        result = {"decisions": decisions, "kept": len(indicators), "rejected": 0, "defended": 0}
+        result = {"decisions": decisions, "kept": len(indicators), "rejected": 0,
+                  "defended": 0, "critic_parse_ok": False}
         if not indicators:
+            result["critic_parse_ok"] = True
             return result
 
         # Ronde 1 — critic menilai
@@ -184,6 +190,18 @@ class CrossCritic:
         except Exception as e:
             logger.warning(f"CrossCritic: critique round failed ({e}); keeping all indicators")
             return result
+
+        if not critiques:
+            # Fail-open TERLIHAT: respons ada tapi tidak bisa diparse (mis.
+            # terpotong max_tokens). Jangan diam — catat agar tidak menyaru
+            # sebagai "semua indikator valid".
+            logger.warning(
+                f"CrossCritic: critique response unparseable — keeping all "
+                f"{len(indicators)} indicators. raw_len={len(raw or '')}, "
+                f"tail={repr((raw or '')[-120:])}"
+            )
+            return result
+        result["critic_parse_ok"] = True
 
         by_index = {}
         for c in critiques:
