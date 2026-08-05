@@ -60,14 +60,23 @@ const fmtTime = (ts) => {
 const Blk = (props) => {
   const BlkIcon = props.icon
   return (
-    <div className={`rounded-lg border p-3 ${props.tone || 'bg-card'}`}>
-      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+    <div className={`rounded-xl border border-border/60 p-3.5 shadow-sm transition-shadow hover:shadow-md ${props.tone || 'bg-card/80 backdrop-blur-sm'}`}>
+      <p className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
         <BlkIcon className="h-3.5 w-3.5" /> {props.label}
       </p>
       {props.children}
     </div>
   )
 }
+
+// Aksen warna per langkah agar tiap fase mudah dikenali
+const STEP_ACCENTS = [
+  { ring: 'ring-sky-500/25', bg: 'bg-sky-500/10', text: 'text-sky-600 dark:text-sky-400', dot: 'bg-sky-500' },
+  { ring: 'ring-violet-500/25', bg: 'bg-violet-500/10', text: 'text-violet-600 dark:text-violet-400', dot: 'bg-violet-500' },
+  { ring: 'ring-amber-500/25', bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500' },
+  { ring: 'ring-emerald-500/25', bg: 'bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400', dot: 'bg-emerald-500' },
+  { ring: 'ring-fuchsia-500/25', bg: 'bg-fuchsia-500/10', text: 'text-fuchsia-600 dark:text-fuchsia-400', dot: 'bg-fuchsia-500' },
+]
 
 const ProcessTrace = ({ data, tail = [] }) => {
   const [showExplain, setShowExplain] = useState(true)
@@ -201,7 +210,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
                     </div>
                     <p className="mt-1 text-[10px] text-muted-foreground">
                       {[f.source_paper && `dari: ${f.source_paper}`,
-                        Number.isFinite(Number(f.confidence)) && `keyakinan ${(f.confidence * 100).toFixed(0)}%`]
+                      Number.isFinite(Number(f.confidence)) && `keyakinan ${(f.confidence * 100).toFixed(0)}%`]
                         .filter(Boolean).join(' · ')}
                     </p>
                   </li>
@@ -328,10 +337,9 @@ const ProcessTrace = ({ data, tail = [] }) => {
                 ['C1 Bukti minimal', 'amber'], ['C2 Arah sebab-akibat', 'amber'], ['C3 Faktor perancu', 'amber'],
                 ['K1 Non-kontradiksi', 'purple'], ['K2 Kecocokan fakta', 'purple'], ['K3 Transitivitas', 'purple'],
               ].map(([label, c]) => (
-                <span key={label} className={`rounded-full border px-2 py-0.5 font-medium ${
-                  c === 'blue' ? 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                  : c === 'amber' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
-                  : 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400'}`}>
+                <span key={label} className={`rounded-full border px-2 py-0.5 font-medium ${c === 'blue' ? 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                    : c === 'amber' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                      : 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400'}`}>
                   {label}
                 </span>
               ))}
@@ -339,27 +347,27 @@ const ProcessTrace = ({ data, tail = [] }) => {
             <p className="mt-1 text-muted-foreground">Biru = kelayakan · Kuning = sebab-akibat · Ungu = konsistensi</p>
           </div>
           <ul className="space-y-1.5 text-xs">
-          {indicators.map((ind, i) => {
-            const v = verdictOf(ind)
-            const meta = v ? VERDICT_META[v] : null
-            if (!meta) return null
-            const conf = Number(ind.confidence)
-            const adj = Number(ind.adjusted_confidence)
-            const cut = Number.isFinite(conf) && Number.isFinite(adj) && adj < conf
-            return (
-              <li key={i} className={`rounded-md border p-2.5 ${meta.cls}`}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold">Calon gap {i + 1} ({GAP_LABELS[gapTypeOf(ind)] || 'gap'})</span>
-                  <span className="shrink-0 rounded-full border bg-card px-2 py-0.5 text-[10px] font-bold">{meta.label}</span>
-                </div>
-                {cut && (
-                  <p className="mt-1 text-[11px]">
-                    Keyakinan dipotong: {(conf * 100).toFixed(0)}% → {(adj * 100).toFixed(0)}% (penalti karena bukti belum lengkap)
-                  </p>
-                )}
-              </li>
-            )
-          })}
+            {indicators.map((ind, i) => {
+              const v = verdictOf(ind)
+              const meta = v ? VERDICT_META[v] : null
+              if (!meta) return null
+              const conf = Number(ind.confidence)
+              const adj = Number(ind.adjusted_confidence)
+              const cut = Number.isFinite(conf) && Number.isFinite(adj) && adj < conf
+              return (
+                <li key={i} className={`rounded-md border p-2.5 ${meta.cls}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold">Calon gap {i + 1} ({GAP_LABELS[gapTypeOf(ind)] || 'gap'})</span>
+                    <span className="shrink-0 rounded-full border bg-card px-2 py-0.5 text-[10px] font-bold">{meta.label}</span>
+                  </div>
+                  {cut && (
+                    <p className="mt-1 text-[11px]">
+                      Keyakinan dipotong: {(conf * 100).toFixed(0)}% → {(adj * 100).toFixed(0)}% (penalti karena bukti belum lengkap)
+                    </p>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </div>
       ),
@@ -403,41 +411,60 @@ const ProcessTrace = ({ data, tail = [] }) => {
   ].filter(Boolean)
 
   return (
-    <section className="rounded-2xl border bg-card/85 p-5">
-      <div className="mb-1 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">Laporan proses lengkap — dari PDF masuk sampai gap ditemukan</h2>
-        <button
-          type="button"
-          onClick={() => setShowExplain(v => !v)}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:bg-secondary"
-        >
-          {showExplain ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          {showExplain ? 'Sembunyikan penjelasan' : 'Tampilkan penjelasan'}
-        </button>
+    <section className="overflow-hidden rounded-2xl border bg-gradient-to-b from-card to-card/60 shadow-sm">
+      {/* ── Header modern ── */}
+      <div className="border-b bg-gradient-to-r from-primary/[0.07] via-transparent to-violet-500/[0.06] px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold tracking-tight">Laporan proses lengkap</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Dari PDF masuk sampai gap ditemukan — setiap langkah transparan & bisa dilacak.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowExplain(v => !v)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-all hover:text-foreground hover:shadow"
+          >
+            {showExplain ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {showExplain ? 'Sembunyikan penjelasan' : 'Tampilkan penjelasan'}
+          </button>
+        </div>
+        {/* Ringkasan langkah sebagai pill navigasi visual */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {steps.map((s, i) => {
+            const a = STEP_ACCENTS[i % STEP_ACCENTS.length]
+            return (
+              <span key={i} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${a.bg} ${a.text}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${a.dot}`} />
+                {i + 1}. {String(s.title).split('—')[0].split(':')[0].slice(0, 34)}
+              </span>
+            )
+          })}
+        </div>
       </div>
-      <p className="mb-6 text-xs text-muted-foreground">
-        Setiap langkah dijelaskan lengkap: apa yang dilakukan, contoh nyata dari jurnal Anda, hasilnya, dan kenapa langkah itu penting.
-      </p>
 
+      <div className="p-5">
       <ol className="relative">
         {steps.map((step, index) => {
           const Icon = step.icon
+          const a = STEP_ACCENTS[index % STEP_ACCENTS.length]
           return (
-            <li key={index} className="relative flex gap-3.5 pb-7 last:pb-7">
-              <span className="absolute left-[17px] top-9 bottom-0 w-px bg-border" aria-hidden="true" />
-              <span className="relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 border-primary/30 bg-primary/10 text-primary">
-                <Icon className="h-4 w-4" />
+            <li key={index} className="relative flex gap-4 pb-8 last:pb-8">
+              <span className="absolute left-[19px] top-10 bottom-0 w-px bg-gradient-to-b from-border via-border to-transparent" aria-hidden="true" />
+              <span className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-2xl ring-4 ${a.ring} ${a.bg} ${a.text} shadow-sm`}>
+                <Icon className="h-[18px] w-[18px]" />
               </span>
               <div className="min-w-0 flex-1 pt-0.5">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
+                  <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${a.text}`}>
                     Langkah {index + 1} dari {steps.length}
                   </p>
-                  {step.time && <span className="text-[10px] text-muted-foreground">⏱ {step.time}</span>}
+                  {step.time && (
+                    <span className="rounded-full bg-secondary/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">⏱ {step.time}</span>
+                  )}
                 </div>
-                <p className="mt-0.5 text-sm font-semibold leading-snug">{step.title}</p>
+                <p className="mt-1 text-[15px] font-semibold leading-snug tracking-tight">{step.title}</p>
 
-                <div className="mt-2.5 space-y-2.5">
+                <div className="mt-3 space-y-2.5">
                   {step.visual && <StepVisual {...step.visual} />}
                   {showExplain && step.what && (
                     <Blk icon={HelpCircle} label="Apa yang dilakukan">
@@ -471,14 +498,14 @@ const ProcessTrace = ({ data, tail = [] }) => {
           const Icon = item.icon
           const isLast = index === tail.length - 1
           return (
-            <li key={`tail-${index}`} className="relative flex gap-3.5 pb-7 last:pb-0">
+            <li key={`tail-${index}`} className="relative flex gap-4 pb-8 last:pb-0">
               {!isLast && (
-                <span className="absolute left-[17px] top-9 bottom-0 w-px bg-border" aria-hidden="true" />
+                <span className="absolute left-[19px] top-10 bottom-0 w-px bg-gradient-to-b from-border to-transparent" aria-hidden="true" />
               )}
-              <span className={`relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full border-2 ${item.highlight
-                ? 'border-amber-500 bg-amber-500 text-white'
-                : 'border-primary bg-primary text-primary-foreground'}`}>
-                <Icon className="h-4 w-4" />
+              <span className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-2xl shadow-md ${item.highlight
+                ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white ring-4 ring-amber-500/25'
+                : 'bg-gradient-to-br from-primary to-primary/70 text-primary-foreground ring-4 ring-primary/20'}`}>
+                <Icon className="h-[18px] w-[18px]" />
               </span>
               <div className="min-w-0 flex-1 pt-0.5">
                 <p className={`mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] ${item.highlight ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
@@ -490,6 +517,7 @@ const ProcessTrace = ({ data, tail = [] }) => {
           )
         })}
       </ol>
+      </div>
     </section>
   )
 }
