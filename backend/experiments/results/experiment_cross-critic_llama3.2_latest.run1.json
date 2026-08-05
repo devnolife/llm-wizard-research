@@ -1,0 +1,3399 @@
+{
+  "experiment_info": {
+    "timestamp": "2026-08-05T18:39:57.209523",
+    "model": "llama3.2:latest",
+    "mode": "cross-critic",
+    "critic_model": "gpt-oss:latest",
+    "seed": 43,
+    "papers_dir": "/home/devnolife/wizard-research/research_papers",
+    "topics": {
+      "T1": "deep learning architectures and optimization techniques",
+      "T2": "computer vision object detection and image recognition",
+      "T3": "natural language processing and attention mechanisms",
+      "T4": "efficient deep learning deployment on resource-constrained edge devices",
+      "TC": "quantum biology in marine ecosystems"
+    },
+    "system": "Wizard Research — Neuro-Symbolic Agentic Gap Detection",
+    "schema_version": "2.0",
+    "git_commit": "c75c43ef31d786f5c008272451d5e07236119707",
+    "git_dirty": false,
+    "config_sha256": "e5671b9a0e8d7a87e810670a51b702318323e8f9e41eb9105a25b85a02bb8d88",
+    "requirements_sha256": "4fdbe55e66beffc6c29acd7aebd03610b6eb9138331c4725e71cb24a20d077ef",
+    "requirements_lock_sha256": "2fb8c48842335f551f568af9aca189eb0d3df6f9497198cd3042f836982399f0",
+    "manifest_sha256": "6015b942baee8fe374a030f4ed8b855d41f793ad8097ef67f0f2513e68dcdc3d",
+    "papers": [
+      {
+        "file": "adam_paper.pdf",
+        "size_bytes": 584641,
+        "sha256": "eab9c73ae2ceda884b94830bda99312254bac4806f6c9f045cbab90721ecda31"
+      },
+      {
+        "file": "attention_is_all_you_need.pdf",
+        "size_bytes": 2215244,
+        "sha256": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697"
+      },
+      {
+        "file": "batchnorm_paper.pdf",
+        "size_bytes": 173548,
+        "sha256": "bdc69e0b568f41d8d3181cc9077a461f58fcdd1c70c9f49efe60a05ee6109655"
+      },
+      {
+        "file": "bert_paper.pdf",
+        "size_bytes": 775166,
+        "sha256": "5692a5514787a8c6727b4ff3b726a3385798bc68e12138d1d4af83947e2acf6e"
+      },
+      {
+        "file": "densenet_paper.pdf",
+        "size_bytes": 1142400,
+        "sha256": "b55aa1adbdf07f731daa84b94d23103d1eb22d1821a556b80212debee69b096d"
+      },
+      {
+        "file": "distilbert_paper.pdf",
+        "size_bytes": 436085,
+        "sha256": "a70c78e2b4db85bfee7696e19829571a3b05f69c616db5c039f6f4eb33b1a0b6"
+      },
+      {
+        "file": "distillation_paper.pdf",
+        "size_bytes": 106630,
+        "sha256": "74e6689115c539db499f9d6153edecb364059926fd45402454f8210442444c5a"
+      },
+      {
+        "file": "efficientnet_paper.pdf",
+        "size_bytes": 933600,
+        "sha256": "af6b1bd620f81bfaea81edf8227484588e1fcc2427d6b5020fa17454d7566c70"
+      },
+      {
+        "file": "electra_paper.pdf",
+        "size_bytes": 497999,
+        "sha256": "6219a802dca3be0027fc88bb2ecd56806e6610ebfe4d083a4c18dd896f45b9ae"
+      },
+      {
+        "file": "faster_rcnn_paper.pdf",
+        "size_bytes": 6913803,
+        "sha256": "f2630182ccfabd6fc89ac20270b4daf15a0ca849298a7db1e5d124ca443051f1"
+      },
+      {
+        "file": "gan_paper.pdf",
+        "size_bytes": 530482,
+        "sha256": "ff5819e3a7b713c3bd3107b7de3d51fe0a347aa5d8444f0efdcf2345ef0a8b63"
+      },
+      {
+        "file": "gpt3_paper.pdf",
+        "size_bytes": 6768044,
+        "sha256": "97fd272f1fdfc18677462d0292f5fbf26ca86b4d1b485c2dba03269b643a0e83"
+      },
+      {
+        "file": "layernorm_paper.pdf",
+        "size_bytes": 612446,
+        "sha256": "c464f839fb8d59f7fde92f9b4caa67c2d1f2f196b88f93fb60502249df0aaef7"
+      },
+      {
+        "file": "mask_rcnn_paper.pdf",
+        "size_bytes": 7723886,
+        "sha256": "b595a882b763d55d933543131f32a2c4b6f41d0818d418ef46a2b66f946b67a8"
+      },
+      {
+        "file": "mobilenet_paper.pdf",
+        "size_bytes": 941241,
+        "sha256": "9fd87b02ecc96c1ecf2b8c2166faf969a2acb187ab3e1e9333b26d226387ff55"
+      },
+      {
+        "file": "mobilenetv2_paper.pdf",
+        "size_bytes": 1539146,
+        "sha256": "1f4c30fa6b938c0b7a4d82bc274077dbece70e7cd553a69f591eba7482b51736"
+      },
+      {
+        "file": "resnet_paper.pdf",
+        "size_bytes": 819383,
+        "sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a"
+      },
+      {
+        "file": "roberta_paper.pdf",
+        "size_bytes": 209675,
+        "sha256": "76a3872d244793563a5b000b818cbaf0ca8972ab1145d32be474c05b2a8f3070"
+      },
+      {
+        "file": "squeezenet_paper.pdf",
+        "size_bytes": 924939,
+        "sha256": "cbca3e2a3e93317534336896b2678f0ba75b898b272fdd864312311a7e23291e"
+      },
+      {
+        "file": "ssd_paper.pdf",
+        "size_bytes": 2494225,
+        "sha256": "e4b11c92a23d099d8380fc92fbd894c65151fec43293291477b7a619a4c35e92"
+      },
+      {
+        "file": "t5_paper.pdf",
+        "size_bytes": 1190021,
+        "sha256": "ad07e47cedf437a4156419ce5d3076e08a3e59bbfd6dac7cc53df1009cdcbe7f"
+      },
+      {
+        "file": "vit_paper.pdf",
+        "size_bytes": 3743814,
+        "sha256": "8ce7b83971a14508ca711a27c875c9b6914c4f6767cf3150fb1ca6c07aa056d6"
+      },
+      {
+        "file": "yolo_paper.pdf",
+        "size_bytes": 5296750,
+        "sha256": "54bcd2dd05dc618849e8a94d8b88fe3eeb37f80e96e200600d38f1f733931678"
+      }
+    ],
+    "python": "3.10.12",
+    "platform": "Linux-5.15.0-181-generic-x86_64-with-glibc2.35",
+    "dependencies": {
+      "aiohttp": "3.13.2",
+      "black": "25.11.0",
+      "chromadb": "1.3.4",
+      "fastapi": "0.104.1",
+      "flake8": "7.3.0",
+      "httpx": "0.27.0",
+      "isort": "7.0.0",
+      "langchain": "1.0.7",
+      "langchain-community": "0.4.1",
+      "langchain-core": "1.0.5",
+      "langgraph": "1.0.3",
+      "loguru": "0.7.3",
+      "mypy": "1.18.2",
+      "neo4j": "6.0.3",
+      "networkx": "3.4.2",
+      "numpy": "2.2.6",
+      "ollama": "0.3.0",
+      "openpyxl": "3.1.5",
+      "pandas": "2.3.3",
+      "pillow": "12.2.0",
+      "pydantic": "2.5.0",
+      "pydantic-settings": "2.1.0",
+      "pymupdf": "1.27.2.3",
+      "pypdf": "6.2.0",
+      "pytest": "9.0.1",
+      "pytest-asyncio": "1.3.0",
+      "pytest-cov": "7.0.0",
+      "python-docx": "1.1.2",
+      "python-dotenv": "1.2.1",
+      "python-magic": "0.4.27",
+      "python-multipart": "0.0.32",
+      "pyyaml": "6.0.3",
+      "requests": "2.34.2",
+      "scikit-learn": "1.5.2",
+      "scipy": "1.15.3",
+      "sentence-transformers": "5.1.2",
+      "torch": "2.4.1+cu124",
+      "tqdm": "4.67.3",
+      "transformers": "5.7.0",
+      "uvicorn": "0.24.0"
+    },
+    "model_identifier": "llama3.2:latest",
+    "model_digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72"
+  },
+  "phase1_ingestion": {
+    "papers": [
+      {
+        "filename": "resnet_paper.pdf",
+        "title": "Deep Residual Learning for Image Recognition"
+      },
+      {
+        "filename": "densenet_paper.pdf",
+        "title": "Densely Connected Convolutional Networks"
+      },
+      {
+        "filename": "adam_paper.pdf",
+        "title": "Adam: A Method for Stochastic Optimization"
+      },
+      {
+        "filename": "batchnorm_paper.pdf",
+        "title": "Batch Normalization: Accelerating Deep Network Training"
+      },
+      {
+        "filename": "layernorm_paper.pdf",
+        "title": "Layer Normalization"
+      },
+      {
+        "filename": "gan_paper.pdf",
+        "title": "Generative Adversarial Nets"
+      },
+      {
+        "filename": "yolo_paper.pdf",
+        "title": "You Only Look Once: Unified, Real-Time Object Detection"
+      },
+      {
+        "filename": "faster_rcnn_paper.pdf",
+        "title": "Faster R-CNN: Towards Real-Time Object Detection"
+      },
+      {
+        "filename": "ssd_paper.pdf",
+        "title": "SSD: Single Shot MultiBox Detector"
+      },
+      {
+        "filename": "mask_rcnn_paper.pdf",
+        "title": "Mask R-CNN"
+      },
+      {
+        "filename": "efficientnet_paper.pdf",
+        "title": "EfficientNet: Rethinking Model Scaling for CNNs"
+      },
+      {
+        "filename": "vit_paper.pdf",
+        "title": "An Image is Worth 16x16 Words: Transformers for Image Recognition"
+      },
+      {
+        "filename": "attention_is_all_you_need.pdf",
+        "title": "Attention Is All You Need"
+      },
+      {
+        "filename": "bert_paper.pdf",
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers"
+      },
+      {
+        "filename": "gpt3_paper.pdf",
+        "title": "Language Models are Few-Shot Learners (GPT-3)"
+      },
+      {
+        "filename": "t5_paper.pdf",
+        "title": "Exploring the Limits of Transfer Learning with T5"
+      },
+      {
+        "filename": "roberta_paper.pdf",
+        "title": "RoBERTa: A Robustly Optimized BERT Pretraining Approach"
+      },
+      {
+        "filename": "electra_paper.pdf",
+        "title": "ELECTRA: Pre-training Text Encoders as Discriminators"
+      },
+      {
+        "filename": "mobilenet_paper.pdf",
+        "title": "MobileNets: Efficient CNNs for Mobile Vision Applications"
+      },
+      {
+        "filename": "mobilenetv2_paper.pdf",
+        "title": "MobileNetV2: Inverted Residuals and Linear Bottlenecks"
+      },
+      {
+        "filename": "distilbert_paper.pdf",
+        "title": "DistilBERT, a distilled version of BERT"
+      },
+      {
+        "filename": "distillation_paper.pdf",
+        "title": "Distilling the Knowledge in a Neural Network"
+      },
+      {
+        "filename": "squeezenet_paper.pdf",
+        "title": "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters"
+      }
+    ],
+    "total_chunks": 0,
+    "total_chars": 0,
+    "total_time": 0,
+    "skipped": true,
+    "vector_store_count": 3146
+  },
+  "phase2_fact_extraction": {
+    "papers": [
+      {
+        "paper": "Deep Residual Learning for Image Recognition",
+        "num_facts": 5,
+        "extraction_stats": {
+          "paper_id": "resnet_paper.pdf",
+          "entities_extracted": 13,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 0,
+          "total_facts": 5
+        },
+        "facts_sample": [
+          {
+            "subject": "CNN",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.95
+          },
+          {
+            "subject": "DenseNets",
+            "predicate": "IMPROVES",
+            "object": "CNN",
+            "confidence": 0.95
+          },
+          {
+            "subject": "R-CNN",
+            "predicate": "APPLIES_TO",
+            "object": "Fast R-CNN",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Mask R-CNN",
+            "predicate": "APPLIES_TO",
+            "object": "Keypoint Detection",
+            "confidence": 0.95
+          },
+          {
+            "subject": "ResNet-50-FPN",
+            "predicate": "APPLIES_TO",
+            "object": "Image Segmentation",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 26.07
+      },
+      {
+        "paper": "Densely Connected Convolutional Networks",
+        "num_facts": 6,
+        "extraction_stats": {
+          "paper_id": "densenet_paper.pdf",
+          "entities_extracted": 10,
+          "llm_facts_extracted": 6,
+          "pattern_facts_extracted": 0,
+          "total_facts": 6
+        },
+        "facts_sample": [
+          {
+            "subject": "MobileNet",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.7
+          },
+          {
+            "subject": "Softmax",
+            "predicate": "APPLIES_TO",
+            "object": "MobileNet",
+            "confidence": 0.5
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.95
+          },
+          {
+            "subject": "ReLU",
+            "predicate": "APPLIES_TO",
+            "object": "MobileNet",
+            "confidence": 0.6
+          },
+          {
+            "subject": "DenseNet",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.8
+          }
+        ],
+        "extraction_time": 26.06
+      },
+      {
+        "paper": "Adam: A Method for Stochastic Optimization",
+        "num_facts": 6,
+        "extraction_stats": {
+          "paper_id": "adam_paper.pdf",
+          "entities_extracted": 6,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 1,
+          "total_facts": 6
+        },
+        "facts_sample": [
+          {
+            "subject": "Adam",
+            "predicate": "APPLIES_TO",
+            "object": "ELECTRA-Base",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Corollary 4.2",
+            "predicate": "ACHIEVES",
+            "object": "Adam",
+            "confidence": 1.0
+          },
+          {
+            "subject": "Theorem 4.1",
+            "predicate": "USES_METHOD",
+            "object": "Adam",
+            "confidence": 1.0
+          },
+          {
+            "subject": "ELECTRA-Base",
+            "predicate": "DISCUSSES",
+            "object": "Theorem 4.1",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Duchi et al.",
+            "predicate": "PROPOSES",
+            "object": "Adam",
+            "confidence": 1.0
+          }
+        ],
+        "extraction_time": 15.76
+      },
+      {
+        "paper": "Batch Normalization: Accelerating Deep Network Training",
+        "num_facts": 10,
+        "extraction_stats": {
+          "paper_id": "batchnorm_paper.pdf",
+          "entities_extracted": 13,
+          "llm_facts_extracted": 10,
+          "pattern_facts_extracted": 0,
+          "total_facts": 10
+        },
+        "facts_sample": [
+          {
+            "subject": "Srivastava et al.",
+            "predicate": "APPLIES_TO",
+            "object": "Batch Normalization",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Stochastic Gradient Descent with Momentum",
+            "predicate": "APPLIES_TO",
+            "object": "Inception",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Inception",
+            "predicate": "DISCUSSES",
+            "object": "Local Response Normalization",
+            "confidence": 0.9
+          },
+          {
+            "subject": "ResNet-44",
+            "predicate": "APPLIES_TO",
+            "object": "MNIST",
+            "confidence": 0.7
+          },
+          {
+            "subject": "ResNet-110",
+            "predicate": "APPLIES_TO",
+            "object": "MNIST",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 35.95
+      },
+      {
+        "paper": "Layer Normalization",
+        "num_facts": 6,
+        "extraction_stats": {
+          "paper_id": "layernorm_paper.pdf",
+          "entities_extracted": 11,
+          "llm_facts_extracted": 6,
+          "pattern_facts_extracted": 0,
+          "total_facts": 6
+        },
+        "facts_sample": [
+          {
+            "subject": "Pooling",
+            "predicate": "USES_METHOD",
+            "object": "DenseNet",
+            "confidence": 0.8
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "APPLIES_TO",
+            "object": "ImageNet",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Convolutions",
+            "predicate": "USES_METHOD",
+            "object": "DenseNet",
+            "confidence": 0.8
+          },
+          {
+            "subject": "DenseNet",
+            "predicate": "APPLIES_TO",
+            "object": "ImageNet",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Batch Normalization",
+            "predicate": "USES_METHOD",
+            "object": "DenseNet",
+            "confidence": 0.8
+          }
+        ],
+        "extraction_time": 18.8
+      },
+      {
+        "paper": "Generative Adversarial Nets",
+        "num_facts": 5,
+        "extraction_stats": {
+          "paper_id": "gan_paper.pdf",
+          "entities_extracted": 14,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 0,
+          "total_facts": 5
+        },
+        "facts_sample": [
+          {
+            "subject": "Generator Net",
+            "predicate": "APPLIES_TO",
+            "object": "Masked Language Modeling",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Generator Net",
+            "predicate": "REQUIRES_DATA",
+            "object": "MNIST",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Discriminator Net",
+            "predicate": "APPLIES_TO",
+            "object": "CIFAR-10",
+            "confidence": 0.85
+          },
+          {
+            "subject": "Discriminator Net",
+            "predicate": "REQUIRES_RESOURCE",
+            "object": "Dropout",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Adversarial Nets",
+            "predicate": "APPLIES_TO",
+            "object": "Generator Net",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 20.27
+      },
+      {
+        "paper": "You Only Look Once: Unified, Real-Time Object Detection",
+        "num_facts": 4,
+        "extraction_stats": {
+          "paper_id": "yolo_paper.pdf",
+          "entities_extracted": 5,
+          "llm_facts_extracted": 4,
+          "pattern_facts_extracted": 0,
+          "total_facts": 4
+        },
+        "facts_sample": [
+          {
+            "subject": "YOLO",
+            "predicate": "APPLIES_TO",
+            "object": "Facebook AI Research",
+            "confidence": 0.6
+          },
+          {
+            "subject": "YOLO",
+            "predicate": "APPLIES_TO",
+            "object": "Allen Institute for AI",
+            "confidence": 0.7
+          },
+          {
+            "subject": "YOLO",
+            "predicate": "APPLIES_TO",
+            "object": "Object Detection",
+            "confidence": 0.95
+          },
+          {
+            "subject": "YOLO",
+            "predicate": "APPLIES_TO",
+            "object": "University of Washington",
+            "confidence": 0.8
+          }
+        ],
+        "extraction_time": 16.35
+      },
+      {
+        "paper": "Faster R-CNN: Towards Real-Time Object Detection",
+        "num_facts": 6,
+        "extraction_stats": {
+          "paper_id": "faster_rcnn_paper.pdf",
+          "entities_extracted": 9,
+          "llm_facts_extracted": 6,
+          "pattern_facts_extracted": 0,
+          "total_facts": 6
+        },
+        "facts_sample": [
+          {
+            "subject": "Faster R-CNN",
+            "predicate": "EXTENDS",
+            "object": "R-CNN",
+            "confidence": 0.9
+          },
+          {
+            "subject": "ResNet-101",
+            "predicate": "APPLIES_TO",
+            "object": "PASCAL VOC 2007",
+            "confidence": 0.9
+          },
+          {
+            "subject": "R-CNN",
+            "predicate": "APPLIES_TO",
+            "object": "PASCAL VOC 2007",
+            "confidence": 0.95
+          },
+          {
+            "subject": "DPM",
+            "predicate": "REQUIRES_RESOURCE",
+            "object": "Cloud TPU",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Faster R-CNN",
+            "predicate": "APPLIES_TO",
+            "object": "COCO",
+            "confidence": 0.9
+          }
+        ],
+        "extraction_time": 27.75
+      },
+      {
+        "paper": "SSD: Single Shot MultiBox Detector",
+        "num_facts": 4,
+        "extraction_stats": {
+          "paper_id": "ssd_paper.pdf",
+          "entities_extracted": 10,
+          "llm_facts_extracted": 2,
+          "pattern_facts_extracted": 2,
+          "total_facts": 4
+        },
+        "facts_sample": [
+          {
+            "subject": "SSD",
+            "predicate": "EXTENDS",
+            "object": "VGG16",
+            "confidence": 0.6
+          },
+          {
+            "subject": "SSD",
+            "predicate": "APPLIES_TO",
+            "object": "Object Detection",
+            "confidence": 0.9
+          },
+          {
+            "subject": "SSD",
+            "predicate": "IMPROVES",
+            "object": "YOLO",
+            "confidence": 0.6
+          },
+          {
+            "subject": "SSD",
+            "predicate": "APPLIES_TO",
+            "object": "Image Classification",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 19.11
+      },
+      {
+        "paper": "Mask R-CNN",
+        "num_facts": 3,
+        "extraction_stats": {
+          "paper_id": "mask_rcnn_paper.pdf",
+          "entities_extracted": 15,
+          "llm_facts_extracted": 3,
+          "pattern_facts_extracted": 0,
+          "total_facts": 3
+        },
+        "facts_sample": [
+          {
+            "subject": "Non-local",
+            "predicate": "EXTENDS",
+            "object": "X-152-FPN",
+            "confidence": 0.8
+          },
+          {
+            "subject": "ResNet-101-C4",
+            "predicate": "REQUIRES_RESOURCE",
+            "object": "NVIDIA Tesla M40 GPU",
+            "confidence": 0.8
+          },
+          {
+            "subject": "NVIDIA Tesla M40 GPU",
+            "predicate": "REQUIRES_RESOURCE",
+            "object": "test-time augmentation",
+            "confidence": 0.8
+          }
+        ],
+        "extraction_time": 29.53
+      },
+      {
+        "paper": "EfficientNet: Rethinking Model Scaling for CNNs",
+        "num_facts": 5,
+        "extraction_stats": {
+          "paper_id": "efficientnet_paper.pdf",
+          "entities_extracted": 6,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 0,
+          "total_facts": 5
+        },
+        "facts_sample": [
+          {
+            "subject": "ConvNet",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.95
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.9
+          },
+          {
+            "subject": "MobileNets",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.85
+          },
+          {
+            "subject": "Neural Architecture Search",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Medical Image Segmentation",
+            "predicate": "APPLIES_TO",
+            "object": "CNN",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 16.44
+      },
+      {
+        "paper": "An Image is Worth 16x16 Words: Transformers for Image Recognition",
+        "num_facts": 3,
+        "extraction_stats": {
+          "paper_id": "vit_paper.pdf",
+          "entities_extracted": 7,
+          "llm_facts_extracted": 3,
+          "pattern_facts_extracted": 0,
+          "total_facts": 3
+        },
+        "facts_sample": [
+          {
+            "subject": "RoIPool",
+            "predicate": "REQUIRES_RESOURCE",
+            "object": "ICML",
+            "confidence": 0.8
+          },
+          {
+            "subject": "ICML",
+            "predicate": "DISCUSSES",
+            "object": "ELECTRA",
+            "confidence": 0.9
+          },
+          {
+            "subject": "RoIAlign",
+            "predicate": "IMPROVES",
+            "object": "RoIPool",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 16.82
+      },
+      {
+        "paper": "Attention Is All You Need",
+        "num_facts": 8,
+        "extraction_stats": {
+          "paper_id": "attention_is_all_you_need.pdf",
+          "entities_extracted": 10,
+          "llm_facts_extracted": 8,
+          "pattern_facts_extracted": 0,
+          "total_facts": 8
+        },
+        "facts_sample": [
+          {
+            "subject": "attention",
+            "predicate": "APPLIES_TO",
+            "object": "anaphora resolution",
+            "confidence": 0.95
+          },
+          {
+            "subject": "registration process",
+            "predicate": "REQUIRES_DATA",
+            "object": "voting process",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Weissenborn et al.",
+            "predicate": "APPLIES_TO",
+            "object": "attention",
+            "confidence": 0.85
+          },
+          {
+            "subject": "attention",
+            "predicate": "IMPROVES",
+            "object": "anaphora resolution",
+            "confidence": 0.92
+          },
+          {
+            "subject": "American government",
+            "predicate": "HAS_CONSTRAINT",
+            "object": "law",
+            "confidence": 0.8
+          }
+        ],
+        "extraction_time": 23.33
+      },
+      {
+        "paper": "BERT: Pre-training of Deep Bidirectional Transformers",
+        "num_facts": 3,
+        "extraction_stats": {
+          "paper_id": "bert_paper.pdf",
+          "entities_extracted": 6,
+          "llm_facts_extracted": 3,
+          "pattern_facts_extracted": 0,
+          "total_facts": 3
+        },
+        "facts_sample": [
+          {
+            "subject": "MLM",
+            "predicate": "IMPROVES",
+            "object": "BERT",
+            "confidence": 0.9
+          },
+          {
+            "subject": "BERT",
+            "predicate": "APPLIES_TO",
+            "object": "Transformer",
+            "confidence": 0.95
+          },
+          {
+            "subject": "ECCV",
+            "predicate": "APPLIES_TO",
+            "object": "Transformer",
+            "confidence": 0.85
+          }
+        ],
+        "extraction_time": 18.48
+      },
+      {
+        "paper": "Language Models are Few-Shot Learners (GPT-3)",
+        "num_facts": 7,
+        "extraction_stats": {
+          "paper_id": "gpt3_paper.pdf",
+          "entities_extracted": 21,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 2,
+          "total_facts": 7
+        },
+        "facts_sample": [
+          {
+            "subject": "Lin20",
+            "predicate": "EVALUATED_ON",
+            "object": "GPT-3",
+            "confidence": 0.9
+          },
+          {
+            "subject": "GPT-3",
+            "predicate": "APPLIES_TO",
+            "object": "language model",
+            "confidence": 0.95
+          },
+          {
+            "subject": "GPT-3",
+            "predicate": "IMPROVES",
+            "object": "test-time sample ef ciency",
+            "confidence": 0.9
+          },
+          {
+            "subject": "pre-training",
+            "predicate": "REQUIRES_DATA",
+            "object": "human lifetime",
+            "confidence": 0.8
+          },
+          {
+            "subject": "CLY+19",
+            "predicate": "DISCUSSES",
+            "object": "GPT-3",
+            "confidence": 0.85
+          }
+        ],
+        "extraction_time": 29.09
+      },
+      {
+        "paper": "Exploring the Limits of Transfer Learning with T5",
+        "num_facts": 5,
+        "extraction_stats": {
+          "paper_id": "t5_paper.pdf",
+          "entities_extracted": 6,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 0,
+          "total_facts": 5
+        },
+        "facts_sample": [
+          {
+            "subject": "TensorFlow Datasets",
+            "predicate": "REQUIRES_DATA",
+            "object": "Transfer Learning",
+            "confidence": 0.7
+          },
+          {
+            "subject": "SentencePiece",
+            "predicate": "APPLIES_TO",
+            "object": "Transformer Model",
+            "confidence": 0.85
+          },
+          {
+            "subject": "Transfer Learning",
+            "predicate": "APPLIES_TO",
+            "object": "Transformer Model",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Google Brain Team",
+            "predicate": "DISCUSSES",
+            "object": "Transfer Learning",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Transformer Model",
+            "predicate": "APPLIES_TO",
+            "object": "C4",
+            "confidence": 0.9
+          }
+        ],
+        "extraction_time": 17.74
+      },
+      {
+        "paper": "RoBERTa: A Robustly Optimized BERT Pretraining Approach",
+        "num_facts": 6,
+        "extraction_stats": {
+          "paper_id": "roberta_paper.pdf",
+          "entities_extracted": 6,
+          "llm_facts_extracted": 6,
+          "pattern_facts_extracted": 0,
+          "total_facts": 6
+        },
+        "facts_sample": [
+          {
+            "subject": "BERT",
+            "predicate": "APPLIES_TO",
+            "object": "SQuAD",
+            "confidence": 0.95
+          },
+          {
+            "subject": "XLNet",
+            "predicate": "APPLIES_TO",
+            "object": "GLUE",
+            "confidence": 0.8
+          },
+          {
+            "subject": "BERT",
+            "predicate": "REQUIRES_DATA",
+            "object": "CC-NEW-S",
+            "confidence": 0.9
+          },
+          {
+            "subject": "BERT",
+            "predicate": "APPLIES_TO",
+            "object": "RACE",
+            "confidence": 0.95
+          },
+          {
+            "subject": "BERT",
+            "predicate": "APPLIES_TO",
+            "object": "GLUE",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 16.79
+      },
+      {
+        "paper": "ELECTRA: Pre-training Text Encoders as Discriminators",
+        "num_facts": 7,
+        "extraction_stats": {
+          "paper_id": "electra_paper.pdf",
+          "entities_extracted": 9,
+          "llm_facts_extracted": 6,
+          "pattern_facts_extracted": 1,
+          "total_facts": 7
+        },
+        "facts_sample": [
+          {
+            "subject": "NSP",
+            "predicate": "IMPROVES",
+            "object": "BERTBA",
+            "confidence": 0.6
+          },
+          {
+            "subject": "EMNLP",
+            "predicate": "APPLIES_TO",
+            "object": "arXiv",
+            "confidence": 0.95
+          },
+          {
+            "subject": "NSP",
+            "predicate": "APPLIES_TO",
+            "object": "ERNIE",
+            "confidence": 0.95
+          },
+          {
+            "subject": "arXiv",
+            "predicate": "DISCUSSES",
+            "object": "ERNIE",
+            "confidence": 0.9
+          },
+          {
+            "subject": "QA",
+            "predicate": "DISCUSSES",
+            "object": "ERNIE",
+            "confidence": 0.85
+          }
+        ],
+        "extraction_time": 24.32
+      },
+      {
+        "paper": "MobileNets: Efficient CNNs for Mobile Vision Applications",
+        "num_facts": 5,
+        "extraction_stats": {
+          "paper_id": "mobilenet_paper.pdf",
+          "entities_extracted": 7,
+          "llm_facts_extracted": 5,
+          "pattern_facts_extracted": 0,
+          "total_facts": 5
+        },
+        "facts_sample": [
+          {
+            "subject": "FaceNet",
+            "predicate": "APPLIES_TO",
+            "object": "Image Classification",
+            "confidence": 0.9
+          },
+          {
+            "subject": "MobileNetV1",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.6
+          },
+          {
+            "subject": "MobileNetV1",
+            "predicate": "APPLIES_TO",
+            "object": "ConvNets",
+            "confidence": 0.8
+          },
+          {
+            "subject": "ResNet",
+            "predicate": "USES_METHOD",
+            "object": "GPipe",
+            "confidence": 0.7
+          },
+          {
+            "subject": "GPipe",
+            "predicate": "APPLIES_TO",
+            "object": "Image Classification",
+            "confidence": 0.8
+          }
+        ],
+        "extraction_time": 16.87
+      },
+      {
+        "paper": "MobileNetV2: Inverted Residuals and Linear Bottlenecks",
+        "num_facts": 4,
+        "extraction_stats": {
+          "paper_id": "mobilenetv2_paper.pdf",
+          "entities_extracted": 14,
+          "llm_facts_extracted": 4,
+          "pattern_facts_extracted": 0,
+          "total_facts": 4
+        },
+        "facts_sample": [
+          {
+            "subject": "DenseNet",
+            "predicate": "APPLIES_TO",
+            "object": "SVHN",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Shuf eNet",
+            "predicate": "EXTENDS",
+            "object": "Group Convolutions",
+            "confidence": 0.85
+          },
+          {
+            "subject": "MobileNetV1",
+            "predicate": "APPLIES_TO",
+            "object": "SVHN",
+            "confidence": 0.95
+          },
+          {
+            "subject": "Fractal-Net",
+            "predicate": "DISCUSSES",
+            "object": "Dropout",
+            "confidence": 0.7
+          }
+        ],
+        "extraction_time": 24.05
+      },
+      {
+        "paper": "DistilBERT, a distilled version of BERT",
+        "num_facts": 7,
+        "extraction_stats": {
+          "paper_id": "distilbert_paper.pdf",
+          "entities_extracted": 8,
+          "llm_facts_extracted": 7,
+          "pattern_facts_extracted": 0,
+          "total_facts": 7
+        },
+        "facts_sample": [
+          {
+            "subject": "BERT-Large",
+            "predicate": "APPLIES_TO",
+            "object": "GLUE",
+            "confidence": 0.95
+          },
+          {
+            "subject": "ArXiv",
+            "predicate": "DISCUSSES",
+            "object": "BERT-base",
+            "confidence": 0.9
+          },
+          {
+            "subject": "RoBERTa",
+            "predicate": "APPLIES_TO",
+            "object": "GLUE",
+            "confidence": 0.9
+          },
+          {
+            "subject": "XLNet",
+            "predicate": "APPLIES_TO",
+            "object": "GLUE",
+            "confidence": 0.8
+          },
+          {
+            "subject": "ArXiv",
+            "predicate": "APPLIES_TO",
+            "object": "GLUE",
+            "confidence": 0.8
+          }
+        ],
+        "extraction_time": 21.06
+      },
+      {
+        "paper": "Distilling the Knowledge in a Neural Network",
+        "num_facts": 3,
+        "extraction_stats": {
+          "paper_id": "distillation_paper.pdf",
+          "entities_extracted": 5,
+          "llm_facts_extracted": 3,
+          "pattern_facts_extracted": 0,
+          "total_facts": 3
+        },
+        "facts_sample": [
+          {
+            "subject": "Knowledge Distillation",
+            "predicate": "DISCUSSES",
+            "object": "ImageNet",
+            "confidence": 0.8
+          },
+          {
+            "subject": "Inception",
+            "predicate": "APPLIES_TO",
+            "object": "Medical Image Segmentation",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Inception",
+            "predicate": "APPLIES_TO",
+            "object": "Stochastic Gradient Descent with Momentum",
+            "confidence": 0.95
+          }
+        ],
+        "extraction_time": 10.45
+      },
+      {
+        "paper": "SqueezeNet: AlexNet-level accuracy with 50x fewer parameters",
+        "num_facts": 4,
+        "extraction_stats": {
+          "paper_id": "squeezenet_paper.pdf",
+          "entities_extracted": 12,
+          "llm_facts_extracted": 4,
+          "pattern_facts_extracted": 0,
+          "total_facts": 4
+        },
+        "facts_sample": [
+          {
+            "subject": "Han et al.",
+            "predicate": "EVALUATED_ON",
+            "object": "AlexNet",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Denton et al.",
+            "predicate": "EVALUATED_ON",
+            "object": "AlexNet",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Huang et al.",
+            "predicate": "EVALUATED_ON",
+            "object": "GPipe",
+            "confidence": 0.9
+          },
+          {
+            "subject": "Szegedy et al.",
+            "predicate": "EVALUATED_ON",
+            "object": "GoogLeNet",
+            "confidence": 0.9
+          }
+        ],
+        "extraction_time": 37.38
+      }
+    ],
+    "total_facts": 122,
+    "total_time": 508.46,
+    "fact_table_stats": {
+      "total_entities": 187,
+      "total_facts": 122,
+      "total_inferred_facts": 0,
+      "entities_by_type": {
+        "METHOD": 80,
+        "CONCEPT": 39,
+        "DOMAIN": 31,
+        "METRIC": 6,
+        "DATASET": 9,
+        "FINDING": 6,
+        "PAPER": 16
+      },
+      "facts_by_predicate": {
+        "APPLIES_TO": 72,
+        "IMPROVES": 7,
+        "PROPOSES": 1,
+        "USES_METHOD": 6,
+        "ACHIEVES": 1,
+        "DISCUSSES": 11,
+        "EXTENDS": 5,
+        "REQUIRES_RESOURCE": 6,
+        "REQUIRES_DATA": 6,
+        "HAS_CONSTRAINT": 1,
+        "EVALUATED_ON": 5,
+        "CONTRADICTS": 1
+      },
+      "papers_indexed": 23
+    },
+    "all_facts": [
+      {
+        "fact_id": "f83c5bdf",
+        "subject": "Han et al.",
+        "subject_type": "PAPER",
+        "predicate": "EVALUATED_ON",
+        "object": "AlexNet",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "squeezenet_paper.pdf",
+        "evidence": "Han et al.'s Network Pruning evaluated on AlexNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "9128ea4c",
+        "subject": "Fractal-Net",
+        "subject_type": "METHOD",
+        "predicate": "DISCUSSES",
+        "object": "Dropout",
+        "object_type": "CONCEPT",
+        "confidence": 0.7,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "discussing the use of Dropout in Fractal-Net",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "6076b384",
+        "subject": "NVIDIA Tesla M40 GPU",
+        "subject_type": "DOMAIN",
+        "predicate": "REQUIRES_RESOURCE",
+        "object": "test-time augmentation",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "mask_rcnn_paper.pdf",
+        "evidence": "requires test-time augmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "009a6cbf",
+        "subject": "attention",
+        "subject_type": "CONCEPT",
+        "predicate": "IMPROVES",
+        "object": "anaphora resolution",
+        "object_type": "CONCEPT",
+        "confidence": 0.92,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "attention improves anaphora resolution",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "740bfce6",
+        "subject": "ResNet-44",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MNIST",
+        "object_type": "DOMAIN",
+        "confidence": 0.7,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used for MNIST classification",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "dc91c203",
+        "subject": "RoBERTa",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "using RoBERTa for GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "d32da078",
+        "subject": "language model",
+        "subject_type": "CONCEPT",
+        "predicate": "APPLIES_TO",
+        "object": "harmful applications",
+        "object_type": "CONCEPT",
+        "confidence": 0.6,
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "It therefore has the potential to advance both the bene cial and harmful applications of language mo",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "9cc635f9",
+        "subject": "ResNet-32",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MNIST",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used for MNIST classification",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "9c44b6f5",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Transformer",
+        "object_type": "CONCEPT",
+        "confidence": 0.95,
+        "source_paper": "bert_paper.pdf",
+        "evidence": "using BERT for transformer",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "f1dde2c2",
+        "subject": "Duchi et al.",
+        "subject_type": "PAPER",
+        "predicate": "PROPOSES",
+        "object": "Adam",
+        "object_type": "METHOD",
+        "confidence": 1.0,
+        "source_paper": "adam_paper.pdf",
+        "evidence": "proposing Adam in Duchi et al.",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b5672411",
+        "subject": "YOLO",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Allen Institute for AI",
+        "object_type": "DOMAIN",
+        "confidence": 0.7,
+        "source_paper": "yolo_paper.pdf",
+        "evidence": "collaboration with Allen Institute for AI",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "027d44ad",
+        "subject": "Knowledge Distillation",
+        "subject_type": "CONCEPT",
+        "predicate": "DISCUSSES",
+        "object": "ImageNet",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "distillation_paper.pdf",
+        "evidence": "a compression technique in which a compact model is trained to reproduce the behaviour of a larger model",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "e79a8718",
+        "subject": "arXiv",
+        "subject_type": "DOMAIN",
+        "predicate": "DISCUSSES",
+        "object": "ERNIE",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "arXiv discusses the paper ERNIE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "7bb16ce1",
+        "subject": "ArXiv",
+        "subject_type": "DATASET",
+        "predicate": "DISCUSSES",
+        "object": "BERT-base",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "discusses BERT-base in ArXiv paper",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "ab4d9388",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_DATA",
+        "object": "CC-NEW-S",
+        "object_type": "DATASET",
+        "confidence": 0.9,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "uses CC-NEW-S for pretraining",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "46d3d6e0",
+        "subject": "Ho et al.",
+        "subject_type": "PAPER",
+        "predicate": "APPLIES_TO",
+        "object": "attention",
+        "object_type": "CONCEPT",
+        "confidence": 0.83,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "Ho et al.'s work applies to attention mechanisms",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "a0a84766",
+        "subject": "ResNet-50-FPN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Image Segmentation",
+        "object_type": "CONCEPT",
+        "confidence": 0.95,
+        "source_paper": "resnet_paper.pdf",
+        "evidence": "used for image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "37c6fa9e",
+        "subject": "ResNet-20",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MNIST",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used for MNIST classification",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "375c738a",
+        "subject": "CNN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "resnet_paper.pdf",
+        "evidence": "used for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "8681c710",
+        "subject": "attention",
+        "subject_type": "CONCEPT",
+        "predicate": "APPLIES_TO",
+        "object": "anaphora resolution",
+        "object_type": "CONCEPT",
+        "confidence": 0.95,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "attention is used for anaphora resolution",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "8a176e93",
+        "subject": "GPT-3",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "language model",
+        "object_type": "CONCEPT",
+        "confidence": 0.95,
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "used for language modeling",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "5da1c9fc",
+        "subject": "DenseNets",
+        "subject_type": "METHOD",
+        "predicate": "IMPROVES",
+        "object": "CNN",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "resnet_paper.pdf",
+        "evidence": "improves CNN performance",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "396e8b13",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "SQuAD",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on SQuAD",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "9f21f405",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "USES_METHOD",
+        "object": "GPipe",
+        "object_type": "METHOD",
+        "confidence": 0.7,
+        "source_paper": "mobilenet_paper.pdf",
+        "evidence": "used in ResNet scaling",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "c68aefdc",
+        "subject": "pre-training",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_DATA",
+        "object": "human lifetime",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "requires human lifetime data",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "99ea5bbe",
+        "subject": "Inception",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Stochastic Gradient Descent with Momentum",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "distillation_paper.pdf",
+        "evidence": "trained using",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "43d04f56",
+        "subject": "NLI",
+        "subject_type": "DOMAIN",
+        "predicate": "DISCUSSES",
+        "object": "ERNIE",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "NLI discusses the paper ERNIE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "58830599",
+        "subject": "Softmax",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MobileNet",
+        "object_type": "METHOD",
+        "confidence": 0.5,
+        "source_paper": "densenet_paper.pdf",
+        "evidence": "using softmax in MobileNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "15ac5ecb",
+        "subject": "ReLU",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MobileNet",
+        "object_type": "METHOD",
+        "confidence": 0.6,
+        "source_paper": "densenet_paper.pdf",
+        "evidence": "using ReLU in MobileNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "471c203d",
+        "subject": "Adversarial Nets",
+        "subject_type": "CONCEPT",
+        "predicate": "APPLIES_TO",
+        "object": "Generator Net",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "gan_paper.pdf",
+        "evidence": "using adversarial nets for generator net training",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "d4d120c3",
+        "subject": "Theorem 4.1",
+        "subject_type": "CONCEPT",
+        "predicate": "USES_METHOD",
+        "object": "Adam",
+        "object_type": "METHOD",
+        "confidence": 1.0,
+        "source_paper": "adam_paper.pdf",
+        "evidence": "using Theorem 4.1 to prove Adam's method",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "9ed52f3d",
+        "subject": "CNN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "densenet_paper.pdf",
+        "evidence": "using CNN for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "cd22fd9a",
+        "subject": "BERT-base",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "using BERT-base for GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "57fcfde0",
+        "subject": "YOLO",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Object Detection",
+        "object_type": "CONCEPT",
+        "confidence": 0.95,
+        "source_paper": "yolo_paper.pdf",
+        "evidence": "approach to object detection",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "20192578",
+        "subject": "Batch Normalization",
+        "subject_type": "CONCEPT",
+        "predicate": "USES_METHOD",
+        "object": "DenseNet",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "layernorm_paper.pdf",
+        "evidence": "used in DenseNet architecture",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "9f40499f",
+        "subject": "Pooling",
+        "subject_type": "CONCEPT",
+        "predicate": "USES_METHOD",
+        "object": "DenseNet",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "layernorm_paper.pdf",
+        "evidence": "used in DenseNet architecture",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "5501fe71",
+        "subject": "Discriminator Net",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "CIFAR-10",
+        "object_type": "DATASET",
+        "confidence": 0.85,
+        "source_paper": "gan_paper.pdf",
+        "evidence": "discriminator net applied to CIFAR-10 dataset",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "2a6a4c34",
+        "subject": "ResNet-110",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MNIST",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used for MNIST classification",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "248cfe66",
+        "subject": "RoIAlign",
+        "subject_type": "METHOD",
+        "predicate": "IMPROVES",
+        "object": "RoIPool",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "improves RoIPool",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b72e6a76",
+        "subject": "Shuf eNet",
+        "subject_type": "METHOD",
+        "predicate": "EXTENDS",
+        "object": "Group Convolutions",
+        "object_type": "CONCEPT",
+        "confidence": 0.85,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "extending Group Convolutions with Shuf eNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b5206601",
+        "subject": "NSP",
+        "subject_type": "METHOD",
+        "predicate": "IMPROVES",
+        "object": "BERTBA",
+        "object_type": "METHOD",
+        "confidence": 0.6,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "W e  nd that this setting outperforms the originally published BERTBA S E results and that removing ",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "fe0c4f5d",
+        "subject": "Transfer Learning",
+        "subject_type": "CONCEPT",
+        "predicate": "APPLIES_TO",
+        "object": "Transformer Model",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "t5_paper.pdf",
+        "evidence": "using transfer learning for transformer model",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "33447d2f",
+        "subject": "MobileNetV1",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "ConvNets",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "mobilenet_paper.pdf",
+        "evidence": "used in MobileNetV1",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "f7caeba8",
+        "subject": "DenseNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "SVHN",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "using DenseNet for SVHN",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "d9d20a4b",
+        "subject": "Denton et al.",
+        "subject_type": "PAPER",
+        "predicate": "EVALUATED_ON",
+        "object": "AlexNet",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "squeezenet_paper.pdf",
+        "evidence": "Denton et al.'s SVD-based approach evaluated on AlexNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "8afeac50",
+        "subject": "MLM",
+        "subject_type": "METHOD",
+        "predicate": "IMPROVES",
+        "object": "BERT",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "bert_paper.pdf",
+        "evidence": "Masked language modeling improves BERT",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "27343982",
+        "subject": "Non-local",
+        "subject_type": "METHOD",
+        "predicate": "EXTENDS",
+        "object": "X-152-FPN",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "mask_rcnn_paper.pdf",
+        "evidence": "extends X-152-FPN",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "a3e08cab",
+        "subject": "GPT-3",
+        "subject_type": "METHOD",
+        "predicate": "IMPROVES",
+        "object": "test-time sample ef ciency",
+        "object_type": "METRIC",
+        "confidence": 0.9,
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "improves test-time sample ef ciency",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "72e396d1",
+        "subject": "Inception",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "distillation_paper.pdf",
+        "evidence": "used for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "a060f0b2",
+        "subject": "American government",
+        "subject_type": "DOMAIN",
+        "predicate": "HAS_CONSTRAINT",
+        "object": "law",
+        "object_type": "CONCEPT",
+        "confidence": 0.8,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "laws passed by American governments",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b1108b3e",
+        "subject": "XLNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "outperforms BERT on GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "989d26be",
+        "subject": "Batch Normalization",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_RESOURCE",
+        "object": "Inception",
+        "object_type": "PAPER",
+        "confidence": 0.9,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used in Inception paper",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "2c674599",
+        "subject": "YOLO",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "COCO",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "used for COCO segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "36a6ddfb",
+        "subject": "BERT-Base-Small",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "using BERT-Base-Small for GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "6f775537",
+        "subject": "Faster R-CNN",
+        "subject_type": "METHOD",
+        "predicate": "EXTENDS",
+        "object": "R-CNN",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "extends R-CNN with selective search",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "740bc94f",
+        "subject": "ResNet-101",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "PASCAL VOC 2007",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "used for PASCAL VOC 2007 detection",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "86a1beb4",
+        "subject": "Huang et al.",
+        "subject_type": "PAPER",
+        "predicate": "EVALUATED_ON",
+        "object": "GPipe",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "squeezenet_paper.pdf",
+        "evidence": "Huang et al.'s GPipe evaluated on ImageNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "17c458e1",
+        "subject": "R-CNN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Fast R-CNN",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "resnet_paper.pdf",
+        "evidence": "used by Fast R-CNN",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "f27c53b1",
+        "subject": "Generator Net",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_DATA",
+        "object": "MNIST",
+        "object_type": "DATASET",
+        "confidence": 0.9,
+        "source_paper": "gan_paper.pdf",
+        "evidence": "generator net trained on MNIST dataset",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "7d736710",
+        "subject": "DPM",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_RESOURCE",
+        "object": "Cloud TPU",
+        "object_type": "CONCEPT",
+        "confidence": 0.8,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "requires Cloud TPU for training",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "d6d5a66b",
+        "subject": "SentencePiece",
+        "subject_type": "METRIC",
+        "predicate": "APPLIES_TO",
+        "object": "Transformer Model",
+        "object_type": "METHOD",
+        "confidence": 0.85,
+        "source_paper": "t5_paper.pdf",
+        "evidence": "sentencepiece applied to transformer model",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "f5ade477",
+        "subject": "ECCV",
+        "subject_type": "DOMAIN",
+        "predicate": "APPLIES_TO",
+        "object": "Transformer",
+        "object_type": "CONCEPT",
+        "confidence": 0.85,
+        "source_paper": "bert_paper.pdf",
+        "evidence": "Applied to transformer at ECCV",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "66fe0b13",
+        "subject": "BERT-Large",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "using BERT-Large for GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "45cadf21",
+        "subject": "Discriminator Net",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_RESOURCE",
+        "object": "Dropout",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "gan_paper.pdf",
+        "evidence": "dropout required for discriminator net training",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "0a3593fb",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "densenet_paper.pdf",
+        "evidence": "using ResNet for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "9934fd46",
+        "subject": "DenseNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "densenet_paper.pdf",
+        "evidence": "using DenseNet for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "60ba3c16",
+        "subject": "RoIPool",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_RESOURCE",
+        "object": "ICML",
+        "object_type": "PAPER",
+        "confidence": 0.8,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "requires resource ICML",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "785bae2e",
+        "subject": "XLNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "using XLNet for GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "acc2a3f5",
+        "subject": "SSD",
+        "subject_type": "METHOD",
+        "predicate": "EXTENDS",
+        "object": "VGG16",
+        "object_type": "METHOD",
+        "confidence": 0.6,
+        "source_paper": "ssd_paper.pdf",
+        "evidence": "SSD: Single Shot MultiBox Detector 7 3 Experimental Results Base network Our experiments are all bas",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "ace5368a",
+        "subject": "NSP",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "ERNIE",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "NSP applies to ERNIE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b0648d67",
+        "subject": "ResNet-101-C4",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_RESOURCE",
+        "object": "NVIDIA Tesla M40 GPU",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "mask_rcnn_paper.pdf",
+        "evidence": "requires NVIDIA Tesla M40 GPU",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "998315de",
+        "subject": "Faster R-CNN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "COCO",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "used for COCO segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "33020d27",
+        "subject": "CLY+19",
+        "subject_type": "PAPER",
+        "predicate": "DISCUSSES",
+        "object": "GPT-3",
+        "object_type": "METHOD",
+        "confidence": 0.85,
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "discusses GPT-3 limitations",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "d8709c24",
+        "subject": "SSD",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Object Detection",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "ssd_paper.pdf",
+        "evidence": "used for object detection",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "5d0b20ee",
+        "subject": "zero-shot",
+        "subject_type": "FINDING",
+        "predicate": "CONTRADICTS",
+        "object": "one-shot",
+        "object_type": "FINDING",
+        "confidence": 0.5,
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "While GPT-3 takes a step towards test-time sample ef ciency closer to that of humans (one-shot or ze",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "f80e5009",
+        "subject": "TensorFlow Datasets",
+        "subject_type": "DATASET",
+        "predicate": "REQUIRES_DATA",
+        "object": "Transfer Learning",
+        "object_type": "CONCEPT",
+        "confidence": 0.7,
+        "source_paper": "t5_paper.pdf",
+        "evidence": "tensorflow datasets require transfer learning data",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "fb880537",
+        "subject": "Stochastic Gradient Descent with Momentum",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Inception",
+        "object_type": "PAPER",
+        "confidence": 0.95,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used in Inception paper",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b1ecc580",
+        "subject": "QA",
+        "subject_type": "DOMAIN",
+        "predicate": "DISCUSSES",
+        "object": "ERNIE",
+        "object_type": "METHOD",
+        "confidence": 0.85,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "QA discusses the paper ERNIE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "5adc551d",
+        "subject": "ICML",
+        "subject_type": "PAPER",
+        "predicate": "APPLIES_TO",
+        "object": "arXiv",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "ICML is another conference where papers like arXiv are presented",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "7f16b127",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "using ResNet for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "59278664",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "RACE",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on RACE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b8d76258",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "ecd9fab9",
+        "subject": "DenseNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "ImageNet",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "layernorm_paper.pdf",
+        "evidence": "used for image classification on ImageNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "eb03e142",
+        "subject": "Adam",
+        "subject_type": "METHOD",
+        "predicate": "EXTENDS",
+        "object": "Adagrad",
+        "object_type": "METHOD",
+        "confidence": 0.6,
+        "source_paper": "adam_paper.pdf",
+        "evidence": "In particular, the adaptive method, such as Adam and Adagrad, can achieve O(log d   T), an improveme",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "c35ae95b",
+        "subject": "GPipe",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Image Classification",
+        "object_type": "CONCEPT",
+        "confidence": 0.8,
+        "source_paper": "mobilenet_paper.pdf",
+        "evidence": "used in ImageNet top-1 accuracy",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "aa4723b9",
+        "subject": "EMNLP",
+        "subject_type": "PAPER",
+        "predicate": "APPLIES_TO",
+        "object": "arXiv",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "electra_paper.pdf",
+        "evidence": "EMNLP is a conference where papers like arXiv are presented",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "0cbd3f14",
+        "subject": "Lin20",
+        "subject_type": "PAPER",
+        "predicate": "EVALUATED_ON",
+        "object": "GPT-3",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "gpt3_paper.pdf",
+        "evidence": "evaluated on GPT-3 performance",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "ba6c299f",
+        "subject": "Generator Net",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Masked Language Modeling",
+        "object_type": "METHOD",
+        "confidence": 0.95,
+        "source_paper": "gan_paper.pdf",
+        "evidence": "generator net trained for masked language modeling",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "83351175",
+        "subject": "Mask R-CNN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Keypoint Detection",
+        "object_type": "CONCEPT",
+        "confidence": 0.95,
+        "source_paper": "resnet_paper.pdf",
+        "evidence": "applies to keypoint detection",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "64e69668",
+        "subject": "ICML",
+        "subject_type": "PAPER",
+        "predicate": "DISCUSSES",
+        "object": "ELECTRA",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "vit_paper.pdf",
+        "evidence": "discusses ELECTRA in ICML",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "40ea2269",
+        "subject": "ArXiv",
+        "subject_type": "DATASET",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "distilbert_paper.pdf",
+        "evidence": "using ArXiv for GLUE",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "5b625ed5",
+        "subject": "ELECTRA-Base",
+        "subject_type": "DOMAIN",
+        "predicate": "DISCUSSES",
+        "object": "Theorem 4.1",
+        "object_type": "CONCEPT",
+        "confidence": 0.8,
+        "source_paper": "adam_paper.pdf",
+        "evidence": "discussing Theorem 4.1 in ELECTRA-Base",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b1b08912",
+        "subject": "Convolutions",
+        "subject_type": "CONCEPT",
+        "predicate": "USES_METHOD",
+        "object": "DenseNet",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "layernorm_paper.pdf",
+        "evidence": "used in DenseNet architecture",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "5558ab6f",
+        "subject": "YOLO",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Facebook AI Research",
+        "object_type": "DOMAIN",
+        "confidence": 0.6,
+        "source_paper": "yolo_paper.pdf",
+        "evidence": "research conducted by Facebook AI Research",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "7ee2d98b",
+        "subject": "R-CNN",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "PASCAL VOC 2007",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "faster_rcnn_paper.pdf",
+        "evidence": "used for PASCAL VOC 2007 detection",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "c53ce478",
+        "subject": "SSD",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Image Classification",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "ssd_paper.pdf",
+        "evidence": "used for image classification",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "84e14895",
+        "subject": "MobileNets",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.85,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "using MobileNets for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "542a7ff8",
+        "subject": "ReLU",
+        "subject_type": "CONCEPT",
+        "predicate": "USES_METHOD",
+        "object": "DenseNet",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "layernorm_paper.pdf",
+        "evidence": "used in DenseNet architecture",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "107bbc24",
+        "subject": "Neural Architecture Search",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "using Neural Architecture Search for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "627ed5ee",
+        "subject": "Medical Image Segmentation",
+        "subject_type": "DOMAIN",
+        "predicate": "APPLIES_TO",
+        "object": "CNN",
+        "object_type": "CONCEPT",
+        "confidence": 0.95,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "using CNN for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "bc5b9956",
+        "subject": "Srivastava et al.",
+        "subject_type": "PAPER",
+        "predicate": "APPLIES_TO",
+        "object": "Batch Normalization",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "describes Batch Normalization method",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "fd76f10e",
+        "subject": "registration process",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_DATA",
+        "object": "voting process",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "registration and voting processes require data",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "fbafccf6",
+        "subject": "FaceNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Image Classification",
+        "object_type": "CONCEPT",
+        "confidence": 0.9,
+        "source_paper": "mobilenet_paper.pdf",
+        "evidence": "used for face recognition",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b964a9a4",
+        "subject": "Szegedy et al.",
+        "subject_type": "PAPER",
+        "predicate": "EVALUATED_ON",
+        "object": "GoogLeNet",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "squeezenet_paper.pdf",
+        "evidence": "Szegedy et al.'s GoogleNet evaluated on ImageNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "19977e41",
+        "subject": "MobileNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.7,
+        "source_paper": "densenet_paper.pdf",
+        "evidence": "using MobileNet for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "8b91a932",
+        "subject": "MobileNetV1",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.6,
+        "source_paper": "mobilenet_paper.pdf",
+        "evidence": "used for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "45c6ad27",
+        "subject": "YOLO",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "University of Washington",
+        "object_type": "DOMAIN",
+        "confidence": 0.8,
+        "source_paper": "yolo_paper.pdf",
+        "evidence": "research conducted at the University of Washington",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "e94fd284",
+        "subject": "MobileNetV1",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "SVHN",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "mobilenetv2_paper.pdf",
+        "evidence": "using MobileNetV1 for SVHN",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "2bf48d24",
+        "subject": "Inception",
+        "subject_type": "PAPER",
+        "predicate": "DISCUSSES",
+        "object": "Local Response Normalization",
+        "object_type": "METHOD",
+        "confidence": 0.9,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "discusses the necessity of Local Response Normalization",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "01a9e262",
+        "subject": "Weissenborn et al.",
+        "subject_type": "PAPER",
+        "predicate": "APPLIES_TO",
+        "object": "attention",
+        "object_type": "CONCEPT",
+        "confidence": 0.85,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "Weissenborn et al.'s work applies to attention mechanisms",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "83d9ae45",
+        "subject": "ConvNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "Medical Image Segmentation",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "efficientnet_paper.pdf",
+        "evidence": "using ConvNet for medical image segmentation",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "52fb41b2",
+        "subject": "ResNet",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "ImageNet",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "layernorm_paper.pdf",
+        "evidence": "used for image classification on ImageNet",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "2d38870b",
+        "subject": "SSD",
+        "subject_type": "METHOD",
+        "predicate": "IMPROVES",
+        "object": "YOLO",
+        "object_type": "METHOD",
+        "confidence": 0.6,
+        "source_paper": "ssd_paper.pdf",
+        "evidence": "It re- tains its simplicity and does not require any special op- erators while signi cantly improves",
+        "extraction_method": "pattern"
+      },
+      {
+        "fact_id": "56d85d70",
+        "subject": "Wang et al.",
+        "subject_type": "PAPER",
+        "predicate": "APPLIES_TO",
+        "object": "attention",
+        "object_type": "CONCEPT",
+        "confidence": 0.81,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "Wang et al.'s work applies to attention mechanisms",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "6cd29f08",
+        "subject": "BERT",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "GLUE",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "roberta_paper.pdf",
+        "evidence": "achieves state-of-the-art results on GLUE without multi-task netuning",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "7fa4a545",
+        "subject": "Adam",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "ELECTRA-Base",
+        "object_type": "DOMAIN",
+        "confidence": 0.95,
+        "source_paper": "adam_paper.pdf",
+        "evidence": "using Adam for ELECTRA-Base",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "b7f655ed",
+        "subject": "Corollary 4.2",
+        "subject_type": "FINDING",
+        "predicate": "ACHIEVES",
+        "object": "Adam",
+        "object_type": "METHOD",
+        "confidence": 1.0,
+        "source_paper": "adam_paper.pdf",
+        "evidence": "achieving Corollary 4.2 with Adam",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "7d8ba995",
+        "subject": "Cordonnier et al.",
+        "subject_type": "PAPER",
+        "predicate": "APPLIES_TO",
+        "object": "attention",
+        "object_type": "CONCEPT",
+        "confidence": 0.89,
+        "source_paper": "attention_is_all_you_need.pdf",
+        "evidence": "Cordonnier et al.'s work applies to attention mechanisms",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "bd86386e",
+        "subject": "Google Brain Team",
+        "subject_type": "DOMAIN",
+        "predicate": "DISCUSSES",
+        "object": "Transfer Learning",
+        "object_type": "CONCEPT",
+        "confidence": 0.8,
+        "source_paper": "t5_paper.pdf",
+        "evidence": "Google Brain team discussion on transfer learning",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "1709e265",
+        "subject": "Shuffle Training Examples",
+        "subject_type": "METHOD",
+        "predicate": "REQUIRES_DATA",
+        "object": "ResNet-20",
+        "object_type": "METHOD",
+        "confidence": 0.8,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used in ResNet-20 model",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "a539a0bb",
+        "subject": "ResNet-56",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "MNIST",
+        "object_type": "DOMAIN",
+        "confidence": 0.6,
+        "source_paper": "batchnorm_paper.pdf",
+        "evidence": "used for MNIST classification",
+        "extraction_method": "llm_combined"
+      },
+      {
+        "fact_id": "9c6d709b",
+        "subject": "Transformer Model",
+        "subject_type": "METHOD",
+        "predicate": "APPLIES_TO",
+        "object": "C4",
+        "object_type": "DOMAIN",
+        "confidence": 0.9,
+        "source_paper": "t5_paper.pdf",
+        "evidence": "transformer model applied to C4 domain",
+        "extraction_method": "llm_combined"
+      }
+    ]
+  },
+  "phase3_gap_detection": {
+    "topics": [
+      {
+        "topic": "deep learning architectures and optimization techniques",
+        "topic_key": "T1",
+        "num_papers_retrieved": 10,
+        "total_indicators": 2,
+        "indicators": [
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'deep learning architectures and optimization techniques' flagged by the dedicated NLI model (p=0.98). Requires human verification.",
+            "confidence": 0.983,
+            "adjusted_confidence": 0.983,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "supporting_quotes": [
+              {
+                "quote": "Generative Adversarial Nets. an Goodfellow is supported by the 2013 Google Fellowship in Deep Learning. Finally, we would like to thank Les Trois Brasseurs for stimulating our creativity. References [1] Bastien, F., Lamblin, P., Pascanu, R., Bergstra, J., Goodfellow, I. J., Bergeron, A., Bouchard, N",
+                "source_paper": "89e4c2ad-2e0a-4f8e-b817-6dccb5441011",
+                "match_score": 1.0
+              },
+              {
+                "quote": "Published as a conference paper at ICLR 2015. llowship in Deep Learning. REFERENCES Amari, Shun-Ichi. Natural gradient works ef ciently in learning. Neural computation, 10(2):251 276, 1998. Deng, Li, Li, Jinyu, Huang, Jui-Ting, Yao, Kaisheng, Yu, Dong, Seide, Frank, Seltzer, Michael, Zweig, Geoff, H",
+                "source_paper": "4578392e-9d12-47ac-97fa-4f55767459dd",
+                "match_score": 1.0
+              }
+            ],
+            "evidence_subgraph": [],
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          },
+          {
+            "type": "IndicatorType.INCOMPLETENESS",
+            "detection_method": "methodology_coverage",
+            "description": "Methodological incompleteness: all 10 papers use similar methodology (deep learning). Alternative methodological approaches are absent.",
+            "confidence": 0.8,
+            "adjusted_confidence": 0.8,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 2,
+            "supporting_quotes": [],
+            "evidence_subgraph": [],
+            "suggested_directions": [
+              "Apply alternative methodological approaches to this topic",
+              "Conduct a mixed-methods study"
+            ]
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 0,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 1
+        },
+        "verdicts": {
+          "PASS": 2,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 0
+        },
+        "confidence_scores": [
+          0.983,
+          0.8
+        ],
+        "analysis_time": 37.66,
+        "debate": {
+          "critic_model": "gpt-oss:latest",
+          "critic_parse_ok": true,
+          "kept": 2,
+          "rejected": 3,
+          "defended": 1,
+          "decisions": [
+            {
+              "index": 0,
+              "keep": true,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the quoted passages do not contain any contradictory findings, nor do they reference any facts listed in the provided triples. The claim of an inconsistency is therefore unsupported by the evidence.",
+              "defense": "The quotes from Paper A and Paper B mention different authors (Goodfellow and Amari) who are recognized in the field of deep learning. This difference in authorship could be seen as a contradiction between the two papers.",
+              "confidence_delta": 0.0
+            },
+            {
+              "index": 1,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the evidence quotes merely mention a natural‑gradient reference and a description of MobileNetV2; no contradictory statements are present, and no facts from the triple set support an inconsistency.",
+              "defense": null,
+              "confidence_delta": 0.0
+            },
+            {
+              "index": 2,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the claim of nine distinct clusters is not reflected in any of the supplied facts or triples, and the evidence is generic and unrelated to the specific papers.",
+              "defense": null,
+              "confidence_delta": 0.0
+            },
+            {
+              "index": 3,
+              "keep": true,
+              "critic_verdict": "KEEP",
+              "critic_reason": "INTER-PAPER satisfied (relates to all 10 papers); GROUNDED satisfied (all listed papers are deep‑learning models, so the claim that only deep‑learning methods are used is supported); SPECIFIC to the topic; confidence slightly overestimated given only two evidence items, so a modest downward adjustme",
+              "defense": null,
+              "confidence_delta": -0.1
+            },
+            {
+              "index": 4,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the evidence lists aspects such as batch normalization and architectural design choices that are actually covered by the provided facts (e.g., Batch Normalization USES_METHOD DenseNet), contradicting the claim that these aspects are missing.",
+              "defense": null,
+              "confidence_delta": 0.0
+            }
+          ]
+        },
+        "avg_confidence": 0.891,
+        "max_confidence": 0.983,
+        "min_confidence": 0.8
+      },
+      {
+        "topic": "computer vision object detection and image recognition",
+        "topic_key": "T2",
+        "num_papers_retrieved": 10,
+        "total_indicators": 1,
+        "indicators": [
+          {
+            "type": "IndicatorType.FRAGMENTATION",
+            "detection_method": "topic_clustering",
+            "description": "Literature on 'computer vision object detection and image recognition' appears fragmented into 10 distinct clusters with different approaches. No integrative framework found.",
+            "confidence": 0.9,
+            "adjusted_confidence": 0.9,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 10,
+            "supporting_quotes": [
+              {
+                "quote": "Figure 6: Qualitative Results.",
+                "source_paper": "/home/devnolife/wizard-research/research_papers/yolo_paper.pdf",
+                "match_score": 1.0
+              }
+            ],
+            "evidence_subgraph": [],
+            "suggested_directions": [
+              "Develop an integrative framework that unifies the 10 approaches",
+              "Conduct a systematic review comparing methodological paradigms"
+            ]
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 1,
+          "INCONSISTENCY": 0,
+          "INCOMPLETENESS": 0
+        },
+        "verdicts": {
+          "PASS": 1,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 0
+        },
+        "confidence_scores": [
+          0.9
+        ],
+        "analysis_time": 31.33,
+        "debate": {
+          "critic_model": "gpt-oss:latest",
+          "critic_parse_ok": true,
+          "kept": 1,
+          "rejected": 2,
+          "defended": 1,
+          "decisions": [
+            {
+              "index": 0,
+              "keep": true,
+              "critic_verdict": "REJECT",
+              "critic_reason": "INTER-PAPER violated: the claim refers to 10 clusters but only 4 papers are provided; GROUNDED violated: no evidence in the facts supports fragmentation or lack of integrative framework; SPECIFIC violated: generic statement about fragmentation without concrete evidence; CALIBRATED: confidence 0.9 is",
+              "defense": "The literature on 'computer vision object detection and image recognition' is indeed fragmented into distinct clusters with different approaches. Figure 6 in YOLO paper (Section 3) explicitly states that the authors have identified 10 distinct clusters of methods for object detection, which supports",
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 1,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "INTER-PAPER violated: the claim lists 10 uncovered aspects but the corpus contains only 4 papers; GROUNDED violated: the aspects mentioned (YOLO, SSD, Faster R-CNN) are explicitly addressed in the provided papers; SPECIFIC violated: generic incompleteness claim; CALIBRATED: confidence 0.828 is too h",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 2,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "INTER-PAPER violated: the claim states all 10 papers use qualitative methods, yet only 4 papers are available; GROUNDED violated: no methodological details are present in the facts; SPECIFIC violated: generic methodological claim; CALIBRATED: confidence 0.8 is overconfident given evidence_count (2) ",
+              "defense": null,
+              "confidence_delta": -0.2
+            }
+          ]
+        },
+        "avg_confidence": 0.9,
+        "max_confidence": 0.9,
+        "min_confidence": 0.9
+      },
+      {
+        "topic": "natural language processing and attention mechanisms",
+        "topic_key": "T3",
+        "num_papers_retrieved": 10,
+        "total_indicators": 0,
+        "indicators": [],
+        "distribution": {
+          "FRAGMENTATION": 0,
+          "INCONSISTENCY": 0,
+          "INCOMPLETENESS": 0
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 0
+        },
+        "confidence_scores": [],
+        "analysis_time": 30.69,
+        "debate": {
+          "critic_model": "gpt-oss:latest",
+          "critic_parse_ok": true,
+          "kept": 0,
+          "rejected": 6,
+          "defended": 0,
+          "decisions": [
+            {
+              "index": 0,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the claim about 10 missing aspects is not supported by any of the provided facts or SPO triples, and the evidence is generic.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 1,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: no methodological details are present in the facts, and the claim that all 10 papers share a single unidentified method cannot be verified.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 2,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "INTER-PAPER violated: the quoted passages do not demonstrate a clear contradiction about attention mechanisms, and GROUNDED is lacking because the facts contain no evidence of such a conflict.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 3,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "SPECIFIC violated: the statement about fragmentation is a generic template with no concrete evidence or cluster definitions in the facts.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 4,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the alleged contradiction between the two cited papers is not substantiated by the facts, and the evidence provided is incomplete.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 5,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the claim of a contradiction is unsupported by any factual evidence in the provided triples, and the cited passages do not reference attention mechanisms.",
+              "defense": null,
+              "confidence_delta": -0.2
+            }
+          ]
+        },
+        "avg_confidence": 0.0
+      },
+      {
+        "topic": "efficient deep learning deployment on resource-constrained edge devices",
+        "topic_key": "T4",
+        "num_papers_retrieved": 10,
+        "total_indicators": 1,
+        "indicators": [
+          {
+            "type": "IndicatorType.INCONSISTENCY",
+            "detection_method": "nli_cross_encoder",
+            "description": "Potential contradiction between two papers on 'efficient deep learning deployment on resource-constrained edge devices' flagged by the dedicated NLI model (p=0.99). Requires human verification.",
+            "confidence": 0.991,
+            "adjusted_confidence": 0.991,
+            "verdict": "RuleVerdictType.PASS",
+            "requires_human_validation": true,
+            "evidence_count": 3,
+            "supporting_quotes": [
+              {
+                "quote": "Published as a conference paper at ICLR 2015. llowship in Deep Learning. REFERENCES Amari, Shun-Ichi. Natural gradient works ef ciently in learning. Neural computation, 10(2):251 276, 1998. Deng, Li, Li, Jinyu, Huang, Jui-Ting, Yao, Kaisheng, Yu, Dong, Seide, Frank, Seltzer, Michael, Zweig, Geoff, H",
+                "source_paper": "4578392e-9d12-47ac-97fa-4f55767459dd",
+                "match_score": 1.0
+              },
+              {
+                "quote": "Published as a conference paper at ICLR 2020. the same size. Based on these  ndings, we use tied embeddings for further experiments in this paper. Smaller Generators If the generator and discriminator are the same size, training ELECTRA would take around twice as much compute per step as training on",
+                "source_paper": "71fdb931-c7ad-4e65-be3b-4a6f3d6a3b76",
+                "match_score": 1.0
+              }
+            ],
+            "evidence_subgraph": [],
+            "suggested_directions": [
+              "Verify whether these findings genuinely conflict",
+              "Design a study that reconciles the contradiction"
+            ]
+          }
+        ],
+        "distribution": {
+          "FRAGMENTATION": 0,
+          "INCONSISTENCY": 1,
+          "INCOMPLETENESS": 0
+        },
+        "verdicts": {
+          "PASS": 1,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 0
+        },
+        "confidence_scores": [
+          0.991
+        ],
+        "analysis_time": 32.43,
+        "debate": {
+          "critic_model": "gpt-oss:latest",
+          "critic_parse_ok": true,
+          "kept": 1,
+          "rejected": 7,
+          "defended": 1,
+          "decisions": [
+            {
+              "index": 0,
+              "keep": true,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the claim about a contradiction between two papers on efficient deployment is not supported by any facts in the provided list, and the cited papers (ICLR 2015 and ICLR 2020) are not represented in the facts.",
+              "defense": "Both papers discuss the use of natural gradients for efficient deep learning deployment on resource-constrained edge devices. Paper A (2015) mentions Amari's work on natural gradients, while Paper B (2020) discusses tied embeddings and smaller generators. The discrepancy in publication dates does no",
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 1,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the alleged contradiction between Generative Adversarial Nets and an ICLR 2015 paper is not backed by any facts in the list, and the topic of efficient deployment is absent from the cited facts.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 2,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: no evidence of fragmentation or cluster analysis appears in the facts, and the claim is not supported by any of the listed papers.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 3,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the purported inconsistency between arXiv:1502.03167v3 and an ICLR 2015 paper is not reflected in the facts, and the topic of efficient deployment is not mentioned.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 4,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the claim of missing 10 critical aspects is not supported by any aspect coverage facts in the list, and no such aspects are referenced.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 5,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the alleged inconsistency between arXiv:1502.03167v3 and an ICLR 2020 paper is not backed by any facts in the provided list.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 6,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the claimed contradiction between Generative Adversarial Nets and arXiv:1502.03167v3 is not supported by any facts in the list.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 7,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the alleged inconsistency between the Journal of Machine Learning Research 2020 paper and an ICLR 2015 paper is not reflected in the facts, and the topic of efficient deployment is absent.",
+              "defense": null,
+              "confidence_delta": -0.2
+            }
+          ]
+        },
+        "avg_confidence": 0.991,
+        "max_confidence": 0.991,
+        "min_confidence": 0.991
+      },
+      {
+        "topic": "quantum biology in marine ecosystems",
+        "topic_key": "TC",
+        "num_papers_retrieved": 10,
+        "total_indicators": 0,
+        "indicators": [],
+        "distribution": {
+          "FRAGMENTATION": 0,
+          "INCONSISTENCY": 0,
+          "INCOMPLETENESS": 0
+        },
+        "verdicts": {
+          "PASS": 0,
+          "FLAG": 0,
+          "REJECT": 0,
+          "NONE": 0
+        },
+        "confidence_scores": [],
+        "analysis_time": 27.79,
+        "debate": {
+          "critic_model": "gpt-oss:latest",
+          "critic_parse_ok": true,
+          "kept": 0,
+          "rejected": 8,
+          "defended": 0,
+          "decisions": [
+            {
+              "index": 0,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the indicator claims fragmentation of literature on quantum biology in marine ecosystems, yet none of the provided papers or extracted facts mention quantum biology or marine ecosystems.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 1,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the inconsistency claim references DistilBERT and an arXiv ML paper, both unrelated to quantum biology or marine ecosystems.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 2,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the incompleteness claim lists aspects of quantum coherence in marine organisms, but no such aspects appear in the facts or papers.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 3,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the methodological incompleteness claim refers to experimental methods in quantum biology, which are absent from the provided papers.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 4,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the inconsistency claim cites a JMLR paper and an ICLR conference paper, neither of which discuss quantum biology or marine ecosystems.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 5,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the inconsistency claim involves DistilBERT and an arXiv ML paper, unrelated to the target topic.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 6,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the inconsistency claim references an arXiv ML paper and an ICLR conference paper, none of which cover quantum biology in marine ecosystems.",
+              "defense": null,
+              "confidence_delta": -0.2
+            },
+            {
+              "index": 7,
+              "keep": false,
+              "critic_verdict": "REJECT",
+              "critic_reason": "GROUNDED violated: the inconsistency claim involves DistilBERT and an ICLR conference paper, both unrelated to quantum biology or marine ecosystems.",
+              "defense": null,
+              "confidence_delta": -0.2
+            }
+          ]
+        },
+        "avg_confidence": 0.0
+      }
+    ],
+    "total_time": 159.91
+  },
+  "phase4_rule_engine": {
+    "summary": {
+      "total_evaluated": 4,
+      "passed": 4,
+      "flagged": 0,
+      "rejected": 0,
+      "pass_rate": 100.0,
+      "flag_rate": 0.0,
+      "reject_rate": 0.0
+    },
+    "rules_triggered": [],
+    "total_time": 0.0
+  },
+  "phase5_adversarial": {
+    "cases": [
+      {
+        "case_id": "ADV-F1",
+        "rule_tested": "F1 (Resource Compatibility)",
+        "description": "Deploy a large GPT-4-scale language model directly on edge devices",
+        "expected_verdict": "REJECT",
+        "actual_verdict": "REJECT",
+        "match": true,
+        "original_confidence": 0.9,
+        "adjusted_confidence": 0.30000000000000004,
+        "rules_triggered": [
+          {
+            "rule": "F1",
+            "verdict": "REJECT",
+            "reason": "Method 'adv_large_llm' requires high resources but domain 'adv_edge_deployment' has low-resource constraint. Recommendation is infeasible."
+          },
+          {
+            "rule": "K2",
+            "verdict": "FLAG",
+            "reason": "No KG facts support 'adv_large_llm' applying to 'adv_edge_deployment'. Confidence downgraded."
+          }
+        ]
+      },
+      {
+        "case_id": "ADV-F2",
+        "rule_tested": "F2 (Data Compatibility)",
+        "description": "Apply fully supervised transformer training to rare disease imaging",
+        "expected_verdict": "FLAG",
+        "actual_verdict": "FLAG",
+        "match": true,
+        "original_confidence": 0.8,
+        "adjusted_confidence": 0.5000000000000001,
+        "rules_triggered": [
+          {
+            "rule": "F2",
+            "verdict": "FLAG",
+            "reason": "Method 'adv_supervised_transformer' requires large labeled data but domain 'adv_rare_disease_imaging' has scarce data. Needs human review."
+          },
+          {
+            "rule": "K2",
+            "verdict": "FLAG",
+            "reason": "No KG facts support 'adv_supervised_transformer' applying to 'adv_rare_disease_imaging'. Confidence downgraded."
+          }
+        ]
+      },
+      {
+        "case_id": "ADV-F3",
+        "rule_tested": "F3 (Scale Compatibility)",
+        "description": "Use the in-memory single-node algorithm for distributed large-scale cluster processing of big data",
+        "expected_verdict": "REJECT",
+        "actual_verdict": "REJECT",
+        "match": true,
+        "original_confidence": 0.85,
+        "adjusted_confidence": 0.24999999999999997,
+        "rules_triggered": [
+          {
+            "rule": "F3",
+            "verdict": "REJECT",
+            "reason": "Method requires single-machine but problem is distributed scale."
+          },
+          {
+            "rule": "K2",
+            "verdict": "FLAG",
+            "reason": "No KG facts support 'adv_inmemory_algo' applying to 'adv_bigdata_processing'. Confidence downgraded."
+          }
+        ]
+      },
+      {
+        "case_id": "ADV-K1",
+        "rule_tested": "K1 (Internal Contradiction)",
+        "description": "Both findings hold simultaneously despite reporting opposite results",
+        "expected_verdict": "FLAG",
+        "actual_verdict": "FLAG",
+        "match": true,
+        "original_confidence": 0.75,
+        "adjusted_confidence": 0.49999999999999994,
+        "rules_triggered": [
+          {
+            "rule": "C3",
+            "verdict": "FLAG",
+            "reason": "Insufficient evidence: knowledge graph unavailable for findings ['adv_finding_x', 'adv_finding_y'] — cannot verify confounding paths"
+          },
+          {
+            "rule": "K1",
+            "verdict": "FLAG",
+            "reason": "Internal contradiction detected: 'adv_finding_x' contradicts 'adv_finding_y' but both are in the same output."
+          }
+        ]
+      },
+      {
+        "case_id": "ADV-C1",
+        "rule_tested": "C1 (Causal Evidence)",
+        "description": "Method P causally improves outcome Q across the literature",
+        "expected_verdict": "FLAG",
+        "actual_verdict": "FLAG",
+        "match": true,
+        "original_confidence": 0.8,
+        "adjusted_confidence": 0.6,
+        "rules_triggered": [
+          {
+            "rule": "C1",
+            "verdict": "FLAG",
+            "reason": "Causal relationship between 'adv_finding_p' and 'adv_finding_q' supported by only 1 source(s). Downgraded to correlation."
+          },
+          {
+            "rule": "C3",
+            "verdict": "FLAG",
+            "reason": "Insufficient evidence: knowledge graph unavailable for findings ['adv_finding_p', 'adv_finding_q'] — cannot verify confounding paths"
+          }
+        ]
+      },
+      {
+        "case_id": "ADV-PASS",
+        "rule_tested": "Control (no violations)",
+        "description": "Literature lacks systematic comparison of normalization strategies",
+        "expected_verdict": "PASS",
+        "actual_verdict": "PASS",
+        "match": true,
+        "original_confidence": 0.7,
+        "adjusted_confidence": 0.7,
+        "rules_triggered": []
+      }
+    ],
+    "summary": {
+      "total_cases": 6,
+      "correct_verdicts": 6,
+      "accuracy": 100.0
+    },
+    "total_time": 0.03
+  },
+  "overall_metrics": {
+    "total_pipeline_time_seconds": 668.4,
+    "papers_processed": 23,
+    "total_chunks_ingested": 0,
+    "total_facts_extracted": 122,
+    "total_gap_indicators": 4,
+    "topics_analyzed": 4,
+    "avg_confidence": 0.918,
+    "avg_adjusted_confidence": 0.918,
+    "rule_engine_pass_rate": 100.0,
+    "rule_engine_flag_rate": 0.0,
+    "rule_engine_reject_rate": 0.0,
+    "rule_engine_rejection_rate_RERR": 0.0,
+    "adversarial_accuracy": 100.0,
+    "negative_control_topics": 1,
+    "negative_control_false_gaps": 0,
+    "negative_control_avg_confidence": 0,
+    "debate_candidates": 30,
+    "debate_rejected": 26,
+    "debate_defended": 3,
+    "debate_rejection_rate": 86.7
+  }
+}

@@ -18,6 +18,8 @@ const useAnalysisJob = (jobId, language, { onComplete } = {}) => {
   // neuro-symbolic, dst) — bukan hanya pesan terakhir.
   const appendActivity = useCallback((text, kind = 'info') => {
     if (!text) return
+    // Lewati pesan generik yang tidak menjelaskan apa-apa
+    if (/^(Memproses|Menunggu worker)\.{0,3}$/i.test(text.trim())) return
     setActivities(prev => {
       if (prev.length && prev[prev.length - 1].text === text) return prev
       const time = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })

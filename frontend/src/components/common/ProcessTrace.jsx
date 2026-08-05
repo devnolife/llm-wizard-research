@@ -338,8 +338,8 @@ const ProcessTrace = ({ data, tail = [] }) => {
                 ['K1 Non-kontradiksi', 'purple'], ['K2 Kecocokan fakta', 'purple'], ['K3 Transitivitas', 'purple'],
               ].map(([label, c]) => (
                 <span key={label} className={`rounded-full border px-2 py-0.5 font-medium ${c === 'blue' ? 'border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                    : c === 'amber' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
-                      : 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400'}`}>
+                  : c === 'amber' ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                    : 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400'}`}>
                   {label}
                 </span>
               ))}
@@ -443,80 +443,80 @@ const ProcessTrace = ({ data, tail = [] }) => {
       </div>
 
       <div className="p-5">
-      <ol className="relative">
-        {steps.map((step, index) => {
-          const Icon = step.icon
-          const a = STEP_ACCENTS[index % STEP_ACCENTS.length]
-          return (
-            <li key={index} className="relative flex gap-4 pb-8 last:pb-8">
-              <span className="absolute left-[19px] top-10 bottom-0 w-px bg-gradient-to-b from-border via-border to-transparent" aria-hidden="true" />
-              <span className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-2xl ring-4 ${a.ring} ${a.bg} ${a.text} shadow-sm`}>
-                <Icon className="h-[18px] w-[18px]" />
-              </span>
-              <div className="min-w-0 flex-1 pt-0.5">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${a.text}`}>
-                    Langkah {index + 1} dari {steps.length}
-                  </p>
-                  {step.time && (
-                    <span className="rounded-full bg-secondary/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">⏱ {step.time}</span>
-                  )}
-                </div>
-                <p className="mt-1 text-[15px] font-semibold leading-snug tracking-tight">{step.title}</p>
-
-                <div className="mt-3 space-y-2.5">
-                  {step.visual && <StepVisual {...step.visual} />}
-                  {showExplain && step.what && (
-                    <Blk icon={HelpCircle} label="Apa yang dilakukan">
-                      <p className="text-xs leading-relaxed text-foreground/85">{step.what}</p>
-                    </Blk>
-                  )}
-                  {step.example && (
-                    <Blk icon={FlaskConical} label="Contoh nyata dari jurnal Anda" tone="bg-secondary/30">
-                      {step.example}
-                    </Blk>
-                  )}
-                  {step.result && (
-                    <Blk icon={BarChart3} label="Hasil langkah ini" tone="bg-primary/[0.04]">
-                      <p className="text-xs font-medium text-foreground/90">{step.result}</p>
-                    </Blk>
-                  )}
-                  {showExplain && step.why && (
-                    <p className="flex items-start gap-1.5 pl-1 text-xs leading-relaxed text-muted-foreground">
-                      <CornerDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/60" />
-                      <span><strong className="text-foreground/80">Kenapa penting:</strong> {step.why}</span>
+        <ol className="relative">
+          {steps.map((step, index) => {
+            const Icon = step.icon
+            const a = STEP_ACCENTS[index % STEP_ACCENTS.length]
+            return (
+              <li key={index} className="relative flex gap-4 pb-8 last:pb-8">
+                <span className="absolute left-[19px] top-10 bottom-0 w-px bg-gradient-to-b from-border via-border to-transparent" aria-hidden="true" />
+                <span className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-2xl ring-4 ${a.ring} ${a.bg} ${a.text} shadow-sm`}>
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <p className={`text-[11px] font-bold uppercase tracking-[0.14em] ${a.text}`}>
+                      Langkah {index + 1} dari {steps.length}
                     </p>
-                  )}
-                </div>
-              </div>
-            </li>
-          )
-        })}
+                    {step.time && (
+                      <span className="rounded-full bg-secondary/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">⏱ {step.time}</span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[15px] font-semibold leading-snug tracking-tight">{step.title}</p>
 
-        {/* ── HASIL AKHIR — menyambung di timeline yang sama ── */}
-        {tail.map((item, index) => {
-          const Icon = item.icon
-          const isLast = index === tail.length - 1
-          return (
-            <li key={`tail-${index}`} className="relative flex gap-4 pb-8 last:pb-0">
-              {!isLast && (
-                <span className="absolute left-[19px] top-10 bottom-0 w-px bg-gradient-to-b from-border to-transparent" aria-hidden="true" />
-              )}
-              <span className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-2xl shadow-md ${item.highlight
-                ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white ring-4 ring-amber-500/25'
-                : 'bg-gradient-to-br from-primary to-primary/70 text-primary-foreground ring-4 ring-primary/20'}`}>
-                <Icon className="h-[18px] w-[18px]" />
-              </span>
-              <div className="min-w-0 flex-1 pt-0.5">
-                <p className={`mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] ${item.highlight ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
-                  {item.label}
-                </p>
-                {item.content}
-              </div>
-            </li>
-          )
-        })}
-      </ol>
+                  <div className="mt-3 space-y-2.5">
+                    {step.visual && <StepVisual {...step.visual} />}
+                    {showExplain && step.what && (
+                      <Blk icon={HelpCircle} label="Apa yang dilakukan">
+                        <p className="text-xs leading-relaxed text-foreground/85">{step.what}</p>
+                      </Blk>
+                    )}
+                    {step.example && (
+                      <Blk icon={FlaskConical} label="Contoh nyata dari jurnal Anda" tone="bg-secondary/30">
+                        {step.example}
+                      </Blk>
+                    )}
+                    {step.result && (
+                      <Blk icon={BarChart3} label="Hasil langkah ini" tone="bg-primary/[0.04]">
+                        <p className="text-xs font-medium text-foreground/90">{step.result}</p>
+                      </Blk>
+                    )}
+                    {showExplain && step.why && (
+                      <p className="flex items-start gap-1.5 pl-1 text-xs leading-relaxed text-muted-foreground">
+                        <CornerDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/60" />
+                        <span><strong className="text-foreground/80">Kenapa penting:</strong> {step.why}</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            )
+          })}
+
+          {/* ── HASIL AKHIR — menyambung di timeline yang sama ── */}
+          {tail.map((item, index) => {
+            const Icon = item.icon
+            const isLast = index === tail.length - 1
+            return (
+              <li key={`tail-${index}`} className="relative flex gap-4 pb-8 last:pb-0">
+                {!isLast && (
+                  <span className="absolute left-[19px] top-10 bottom-0 w-px bg-gradient-to-b from-border to-transparent" aria-hidden="true" />
+                )}
+                <span className={`relative z-10 grid h-10 w-10 shrink-0 place-items-center rounded-2xl shadow-md ${item.highlight
+                  ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white ring-4 ring-amber-500/25'
+                  : 'bg-gradient-to-br from-primary to-primary/70 text-primary-foreground ring-4 ring-primary/20'}`}>
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className={`mb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] ${item.highlight ? 'text-amber-600 dark:text-amber-400' : 'text-primary'}`}>
+                    {item.label}
+                  </p>
+                  {item.content}
+                </div>
+              </li>
+            )
+          })}
+        </ol>
       </div>
     </section>
   )
