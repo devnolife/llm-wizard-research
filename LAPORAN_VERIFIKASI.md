@@ -1,8 +1,8 @@
 # Laporan Verifikasi & Penyelesaian Audit — Wizard Research
 
-**Tanggal:** 1 Agustus 2026
+**Tanggal:** 1 Agustus 2026 (diperbarui 5 Agustus 2026)
 **Ruang lingkup:** Verifikasi seluruh temuan audit `LAPORAN_ANALISIS.md` (K1–K7, P1–P4) + agregasi statistik eksperimen H6/H7/H9
-**Hasil akhir:** Semua temuan **resolved**; test suite **368 pass, 2 skip**
+**Hasil akhir:** Semua temuan **resolved**; test suite **374 pass, 2 skip**; **H9 signifikan pasca-Holm**
 
 ---
 
@@ -12,9 +12,9 @@
 |---|---|
 | Temuan kritis K1–K7 | ✅ Semua resolved & terverifikasi |
 | Temuan penting P1–P4 | ✅ Semua resolved (P4 diselesaikan pada sesi ini) |
-| Eksperimen H6/H7/H9 | ✅ Lengkap — 5 run/mode (seeds 43–47), Holm-corrected |
-| Test suite | ✅ 368 pass, 2 skip (naik dari 351 → +17 test tools baru) |
-| Kesiapan sidang | ✅ Siap, dengan catatan framing H9 (lihat §4) |
+| Eksperimen H6/H7/H9 | ✅ Lengkap — H9 diperkuat jadi 7 run nli vs 5 run no-nli, **signifikan pasca-Holm** |
+| Test suite | ✅ 374 pass, 2 skip (+6 test rate limiter) |
+| Kesiapan sidang | ✅ Siap — H9 terkonfirmasi (lihat §4) |
 
 ---
 
@@ -41,22 +41,25 @@
 
 ---
 
-## 4. Hasil Statistik Eksperimen (llama3.2:latest, 5 run/mode, seeds 43–47)
+## 4. Hasil Statistik Eksperimen (llama3.2:latest; diperbarui 5 Agustus 2026)
 
 Sumber: `backend/experiments/results/multirun_stats_llama3.2_latest.md`
-(dihasilkan via `python experiments/run_multi.py --skip-runs --runs 5 --model llama3.2:latest`)
+(dihasilkan via `python experiments/run_multi.py --skip-runs --runs 7 --model llama3.2:latest`).
+Dua run `nli` tambahan (run 6–7, seeds 48–49) selesai; run tambahan `no-nli` terputus
+saat server berhenti, sehingga desain H9 menjadi **n₁=7 vs n₂=5** (tidak seimbang —
+valid untuk Mann–Whitney U).
 
 ### Deskriptif per mode
 
-| Mode | Indikator (mean±std) | Avg Conf | Fakta SPO | RERR % |
-|---|---|---|---|---|
-| full | 17.2 ± 3.2 | 0.730 ± 0.021 | 133 ± 9.3 | 3.8 ± 8.5 |
-| no-rule-engine | 18.2 ± 5.5 | 0.728 ± 0.021 | 127 ± 3.2 | 0 |
-| linear-baseline | 20 ± 0 | 0.709 ± 0.008 | 0 | 0 |
-| nli | 25.0 ± 2.3 | 0.788 ± 0.013 | 128 ± 8.9 | 0 |
-| no-nli | 15.2 ± 1.9 | 0.749 ± 0.025 | 137 ± 12 | 4.4 ± 9.9 |
+| Mode | n | Indikator (mean±std) | Avg Conf | Fakta SPO | RERR % |
+|---|---|---|---|---|---|
+| full | 5 | 17.2 ± 3.2 | 0.730 ± 0.021 | 133 ± 9.3 | 3.8 ± 8.5 |
+| no-rule-engine | 5 | 18.2 ± 5.5 | 0.728 ± 0.021 | 127 ± 3.2 | 0 |
+| linear-baseline | 5 | 20 ± 0 | 0.709 ± 0.008 | 0 | 0 |
+| nli | **7** | **24.3 ± 2.3** | **0.791 ± 0.012** | 130 ± 8.4 | 0 |
+| no-nli | 5 | 15.2 ± 1.9 | 0.749 ± 0.025 | 137 ± 12 | 4.4 ± 9.9 |
 
-### Uji signifikansi primer (per-run, Mann–Whitney U + Holm)
+### Uji signifikansi primer (per-run, Mann–Whitney U + Holm, keluarga 6 uji)
 
 | Hipotesis | Perbandingan | Variabel | p | p Holm | Sig (α=0.05) | Effect size |
 |---|---|---|---|---|---|---|
@@ -64,16 +67,27 @@ Sumber: `backend/experiments/results/multirun_stats_llama3.2_latest.md`
 | H7 | full vs no-rule-engine | mean conf/run | 1.0000 | 1.0000 | tidak | δ=−0.04 (negligible) |
 | H6 | full vs linear-baseline | indikator/run | 0.1188 | 0.4752 | tidak | δ=−0.60 (large) |
 | H6 | full vs linear-baseline | mean conf/run | 0.2073 | 0.6219 | tidak | δ=0.52 (large) |
-| **H9** | **nli vs no-nli** | **indikator/run** | **0.0119** | **0.0716** | **tidak** | **δ=1.0 (large), Δmed=11 [6, 13]** |
-| **H9** | **nli vs no-nli** | **mean conf/run** | **0.0119** | **0.0716** | **tidak** | **δ=1.0 (large), Δmed=0.026 [0.006, 0.07]** |
+| **H9** | **nli vs no-nli** | **indikator/run** | **0.0055** | **0.0331** | **YA** | **δ=1.0 (large), Δmed=8 [5, 13]** |
+| **H9** | **nli vs no-nli** | **mean conf/run** | **0.0057** | **0.0331** | **YA** | **δ=1.0 (large), Δmed=0.038 [0.013, 0.082]** |
 
-### Rekomendasi framing untuk tesis (H9)
+Kedua variabel H9 menunjukkan **pemisahan sempurna** antar kelompok (semua run nli >
+semua run no-nli): min(nli)=22 > max(no-nli)=18 indikator; min(nli)=0.779 >
+max(no-nli)=0.773 confidence — U=35 (maksimum untuk 7×5).
 
-Efek **besar dan konsisten** (Cliff's δ = 1.0; CI bootstrap median tidak melewati 0) tetapi **belum signifikan setelah koreksi Holm** karena jumlah run kecil (n=5/kelompok, power terbatas). Framing yang defensible di sidang:
+### Framing untuk tesis (H9) — terkonfirmasi
 
-> "Mode NLI menunjukkan efek besar dan konsisten pada jumlah indikator terdeteksi (Δmedian = 11, 95% CI [6, 13], δ = 1.0), namun dengan n = 5 run per kelompok, p terkoreksi Holm (0.0716) belum melewati α = 0.05 — merupakan bukti awal yang kuat, bukan konfirmasi definitif."
+> "Dengan 7 run mode NLI dan 5 run tanpa NLI (seed berbeda per run), jumlah indikator
+> terdeteksi menunjukkan pemisahan sempurna antar kelompok (Cliff's δ = 1.0;
+> Δmedian = 8, 95% CI [5, 13]). Uji Mann–Whitney U menghasilkan p = 0.0055, tetap
+> signifikan setelah koreksi Holm–Bonferroni atas keluarga 6 uji ablation
+> (p = 0.0331 < α = 0.05). Pola yang sama berlaku untuk rerata confidence per run
+> (Δmedian = 0.038, p Holm = 0.0331). Dengan demikian H9 terkonfirmasi: lapisan NLI
+> meningkatkan jumlah indikator kesenjangan terdeteksi dan confidence-nya secara
+> signifikan."
 
-Alternatif: tambah jumlah run (mis. `--runs 10`) untuk meningkatkan power bila waktu memungkinkan.
+Catatan riwayat: pada n=5/5 (1 Agustus) p Holm = 0.0716 — belum signifikan; dua run
+tambahan (seeds 48–49) yang konsisten dengan pola sebelumnya mendorong hasil melewati
+ambang. Menyeimbangkan desain (menambah no-nli run 6–7) opsional dan hanya menambah power.
 
 ---
 

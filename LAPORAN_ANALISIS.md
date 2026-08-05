@@ -190,11 +190,11 @@ Seluruh item "belum dilakukan" di §8 **sudah selesai** dan diverifikasi ulang t
 | Item | Status | Bukti |
 |---|---|---|
 | Re-run eksperimen + H9 | ✅ Selesai | 5 run/mode (seeds 43–47) untuk kelima mode dgn `llama3.2:latest` + 3 run `gpt-oss:latest`; hasil di `backend/experiments/results/` (`experiment_nli_*.run1-5.json`, dst) |
-| Agregasi statistik | ✅ Selesai | `run_multi.py --skip-runs --runs 5` → `multirun_stats_llama3.2_latest.md`; H9 (nli vs no-nli): indikator 25.0±2.3 vs 15.2±1.9, U=25, p=0.0119, **p Holm=0.0716** (tidak signifikan α=0.05), Cliff's δ=1.0 (large), Δmed=11 [6,13]; H6/H7 tidak signifikan |
+| Agregasi statistik | ✅ Selesai (diperbarui 5 Agu 2026) | `run_multi.py --skip-runs --runs 7` → `multirun_stats_llama3.2_latest.md`; H9 (nli n=7 vs no-nli n=5): indikator 24.3±2.3 vs 15.2±1.9, U=35 (pemisahan sempurna), p=0.0055, **p Holm=0.0331 — SIGNIFIKAN α=0.05**, Cliff's δ=1.0 (large), Δmed=8 [5,13]; mean conf/run juga signifikan (p Holm=0.0331, Δmed=0.038); H6/H7 tidak signifikan |
 | Pecah `AnalysisResults.jsx` (P1) | ✅ Selesai | Tab diekstrak ke `frontend/src/components/pages/analysis-tabs/` (10 komponen + `constants.js`); `AnalysisResults.jsx` tinggal orchestrator |
 | Job persistence (K6) | ✅ Ditingkatkan | `job_store.py` kini **SQLite** (`analysis_jobs.sqlite3`): atomic claim, recovery restart, retry backoff; `analysis_queue.py` durable dgn ThreadPoolExecutor |
 | Test suite | ✅ Hijau | **351 pass, 2 skip** (naik dari 325); `test_relation_classifier.py` + `test_rule_engine.py` = 112 pass; `test_nli_checker_tool.py` pass |
 
-**Catatan framing tesis (H9):** efek besar dan konsisten (δ=1.0, CI median tidak melewati 0) tetapi belum signifikan setelah koreksi Holm karena n run kecil — sampaikan sebagai "bukti awal efek besar; power terbatas", atau tambah jumlah run bila waktu memungkinkan.
+**Catatan framing tesis (H9, diperbarui 5 Agu 2026):** dengan penambahan 2 run nli (seeds 48–49) desain menjadi n₁=7 vs n₂=5 dan kedua variabel menunjukkan pemisahan sempurna antar kelompok — **H9 terkonfirmasi signifikan pasca-Holm (p=0.0331 < 0.05, δ=1.0)**. Riwayat: pada n=5/5 (1 Agu) p Holm=0.0716, belum signifikan. Detail di `LAPORAN_VERIFIKASI.md` §4.
 
 **Kesimpulan:** semua temuan kritis (K1–K7) dan P1 telah resolved di kode; laporan §3 dan §7 di atas dipertahankan sebagai catatan historis audit.

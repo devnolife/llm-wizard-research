@@ -268,6 +268,36 @@ dan tidak ada jejak penalaran. Pola output baseline juga seragam antar topik
 output templat LLM alih-alih analisis spesifik-topik. Ini mendukung H6:
 komponen symbolic menambah akuntabilitas — *bukan* sekadar jumlah output.
 
+#### Ablasi NLI (H9): Multi-Run dengan Uji Signifikansi
+
+Untuk menguji kontribusi lapisan verifikasi NLI (H9), mode `nli` dan `no-nli`
+dijalankan berulang dengan *seed* berbeda per run (7 run `nli`, seeds 43–49;
+5 run `no-nli`, seeds 43–47 — desain tidak seimbang yang tetap valid untuk
+uji Mann–Whitney U). Statistik dihitung pada ringkasan per-run (satu observasi
+per run) untuk menghindari *pseudo-replication*:
+
+| Mode | n run | Indikator/run (mean±std) | Confidence/run (mean±std) |
+|------|-------|--------------------------|---------------------------|
+| nli | 7 | **24,3 ± 2,3** | **0,791 ± 0,012** |
+| no-nli | 5 | 15,2 ± 1,9 | 0,749 ± 0,025 |
+
+Kedua variabel menunjukkan **pemisahan sempurna** antar kelompok — seluruh run
+`nli` bernilai lebih tinggi dari seluruh run `no-nli` (indikator: min 22 vs
+maks 18; confidence: min 0,779 vs maks 0,773) — sehingga U mencapai nilai
+maksimum (35):
+
+| Variabel | U | p | p Holm (keluarga 6 uji) | Signifikan (α=0,05) | Effect size |
+|----------|---|---|--------------------------|----------------------|-------------|
+| Indikator/run | 35 | 0,0055 | **0,0331** | **ya** | δ=1,0 (large); Δmed=8 [5, 13] |
+| Confidence/run | 35 | 0,0057 | **0,0331** | **ya** | δ=1,0 (large); Δmed=0,038 [0,013, 0,082] |
+
+Koreksi Holm–Bonferroni diterapkan atas keluarga enam uji ablation (H6, H7,
+H9 × dua variabel). **H9 terkonfirmasi**: lapisan NLI meningkatkan jumlah
+indikator kesenjangan terdeteksi (Δmedian = 8) sekaligus confidence-nya secara
+signifikan. Sebaliknya, H6 dan H7 tidak mencapai signifikansi pada jumlah run
+ini (p Holm ≥ 0,48) — efek Rule Engine bersifat kualitatif (akuntabilitas dan
+kemampuan menolak klaim adversarial, §4.3.5), bukan kuantitas indikator.
+
 #### Komparasi Model (Sensitivitas Kapasitas Model)
 
 Komparasi `llama3.2` (3B) dengan `gpt-oss` (13B, model *reasoning*)

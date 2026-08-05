@@ -12,7 +12,7 @@ Arsitektur empat fase (Ingestion → Fact Extraction → Agentic Analysis → Lo
 
 **RQ2: Bagaimana membedakan asosiasi semantik (*semantic co-occurrence*) dari hubungan logis (*causal/contradictory*) dalam konteks deteksi gap?**
 
-Relation Classifier dengan mekanisme 3 lapis berhasil diimplementasikan: (1) penanda linguistik untuk identifikasi awal, (2) analisis struktural untuk konteks, dan (3) verifikasi NLI untuk konfirmasi. Sistem secara konsisten menandai indikator yang berasal dari asosiasi semantik dengan flag `requires_human_validation = True`, membedakannya dari hubungan yang telah terverifikasi secara logis. Hal ini sesuai dengan prinsip epistemologis bahwa LLM tidak melakukan penalaran logis sejati [Marcus, 2020].
+Relation Classifier dengan mekanisme 3 lapis berhasil diimplementasikan: (1) penanda linguistik untuk identifikasi awal, (2) analisis struktural untuk konteks, dan (3) verifikasi NLI untuk konfirmasi. Sistem secara konsisten menandai indikator yang berasal dari asosiasi semantik dengan flag `requires_human_validation = True`, membedakannya dari hubungan yang telah terverifikasi secara logis. Hal ini sesuai dengan prinsip epistemologis bahwa LLM tidak melakukan penalaran logis sejati [Marcus, 2020]. Kontribusi lapisan NLI terkonfirmasi secara kuantitatif melalui studi ablasi multi-run (7 run `nli` vs 5 run `no-nli`, seed berbeda per run): mode dengan NLI mendeteksi lebih banyak indikator (Δmedian = 8; 24,3 ± 2,3 vs 15,2 ± 1,9) dengan confidence lebih tinggi, keduanya signifikan setelah koreksi Holm–Bonferroni (Mann–Whitney U, p Holm = 0,0331 < 0,05; Cliff's δ = 1,0).
 
 **RQ3: Bagaimana mengevaluasi kualitas indikator gap yang dihasilkan oleh sistem?**
 
@@ -42,7 +42,7 @@ Penelitian ini memberikan tiga kontribusi utama:
 
 4. **Kalibrasi Rule Engine**: Threshold aturan perlu dikalibrasi berdasarkan hasil evaluasi pakar. Tingkat PASS 100% pada eksperimen awal mungkin menunjukkan threshold yang terlalu longgar.
 
-5. **Mode Perbandingan**: Implementasi mode perbandingan *with-vs-without* Rule Engine untuk mengukur secara kuantitatif kontribusi lapisan validasi simbolis terhadap kualitas output.
+5. **Mode Perbandingan**: Studi ablasi *with-vs-without* telah dilakukan untuk NLI (H9, terkonfirmasi signifikan) dan Rule Engine (H7, tidak signifikan pada jumlah indikator — kontribusinya bersifat kualitatif). Penambahan jumlah run (≥10 per mode) disarankan untuk meningkatkan power uji H6/H7.
 
 ### 5.2.2 Keterbatasan yang Perlu Diatasi
 

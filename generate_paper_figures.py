@@ -34,10 +34,13 @@ MODEL = "llama3.2_latest"
 
 def load_runs(mode):
     runs = []
-    for i in (1, 2, 3):
-        p = RESULTS / f"experiment_{mode}_{MODEL}.run{i}.json"
-        if p.exists():
-            runs.append(json.load(open(p)))
+    paths = []
+    for p in RESULTS.glob(f"experiment_{mode}_{MODEL}.run*.json"):
+        suffix = p.stem.rsplit("run", 1)[-1]
+        if suffix.isdigit():  # skip backups like run0_backup
+            paths.append((int(suffix), p))
+    for _, p in sorted(paths):
+        runs.append(json.load(open(p)))
     return runs
 
 
