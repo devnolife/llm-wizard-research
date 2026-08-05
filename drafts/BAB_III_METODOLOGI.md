@@ -775,6 +775,22 @@ Evaluasi dilakukan pada tiga konfigurasi untuk mengisolasi kontribusi setiap kom
 | **Agentic Only** | Arsitektur *agentic* tanpa *Rule Engine* | H6 |
 | **Full System** | Arsitektur *agentic* + *Rule Engine* (sistem penuh) | H4, H5, H6, H7 |
 
+Sebagai ablasi tambahan pada lapisan validasi, dua mode eksperimen berikut
+melengkapi konfigurasi di atas (dieksekusi dengan protokol multi-run yang sama):
+
+| Mode Ablasi | Deskripsi | Menguji Hipotesis |
+|-------------|-----------|-------------------|
+| **nli / no-nli** | Sistem penuh dengan/tanpa model NLI *cross-encoder* terdedikasi sebagai sinyal kontradiksi independen | H9 |
+| **cross-critic** | Mode `nli` + debat lintas-model: LLM *critic* kedua (model berbeda) mengaudit setiap indikator gap terhadap empat kriteria (antar-paper, *grounded*, spesifik, terkalibrasi); indikator yang ditolak dapat dibela oleh LLM utama dengan bukti konkret sebelum keputusan akhir | H10 |
+
+Mode *cross-critic* memperluas siklus *Evaluate* pada arsitektur *agentic*
+dengan evaluator eksternal (model berbeda), mengatasi bias *self-preference*
+yang melekat pada kritik-diri satu model. Sebagai kontrol tambahan, setiap
+*run* menyertakan satu **topik kontrol negatif** — topik yang sengaja tidak
+ada dalam korpus — sehingga *false-gap rate* (jumlah indikator palsu pada
+topik kontrol) dapat diukur per konfigurasi; sistem yang terkalibrasi
+seharusnya menghasilkan ≈0 indikator pada topik tersebut.
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │            DESAIN EKSPERIMENTAL                            │
