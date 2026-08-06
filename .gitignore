@@ -124,3 +124,6 @@ research_papers/
 
 # Static HTML (superseded by React app)
 static/
+
+# graphify knowledge-graph cache (generated, local only)
+graphify-out/cache/
