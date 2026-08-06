@@ -21,8 +21,9 @@ wheels/
 *.egg
 
 # AI Research Skills (sync via: npx @orchestra-research/ai-research-skills update --local)
-.claude/skills/
-.agents/skills/
+# Tanpa garis miring di akhir agar pola tetap cocok saat .claude/skills berupa symlink ke ../.agents/skills
+.claude/skills
+.agents/skills
 
 # Virtual Environment
 venv/
