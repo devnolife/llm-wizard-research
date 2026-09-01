@@ -9,6 +9,21 @@ Themes are ordered by how many DISTINCT journals support them, with the
 project's own composite ``priority_score`` as the tie-breaker. No new composite
 formula is invented here — journal coverage and priority stay separate,
 reported numbers so the ranking remains auditable.
+
+KNOWN LIMITATION — large themes are not trustworthy yet
+-------------------------------------------------------
+``cluster_papers`` groups by single-linkage connected components, so one
+borderline pair chains two groups together. On the 35-journal corpus the top
+theme claimed 7 journals / 33 gaps under a label about legal frameworks, but its
+members actually spanned 5 topics: legal statements sat next to "adopt more
+advanced tools", "techniques fail error-rate criteria" and "training programmes
+are needed". That is a blob of loosely related practice gaps, not one theme, and
+its ``journal_support`` therefore overstates the real agreement.
+
+Small themes (2 journals) inspected so far are coherent. Treat this as an
+exploration aid: ``journal_support`` on a large theme is an upper bound, not
+evidence that N journals stated the same gap. Fixing it means moving off
+single-linkage (complete/average linkage) or confining a theme to one topic.
 """
 
 from __future__ import annotations
