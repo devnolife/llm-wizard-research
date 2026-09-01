@@ -32,8 +32,10 @@ from app.core.gap_detection.support_gap import (
     support_confidence,
 )
 from app.core.recommendation.novelty import (
+    NOVELTY_SWEET_SPOT,
     _Backend,
     novelty_band,
+    novelty_credit,
     priority_label,
     rank_proposals,
     score_proposal,
@@ -315,6 +317,22 @@ class TestNovelty:
         assert priority_label(0.7) == "high"
         assert priority_label(0.5) == "medium"
         assert priority_label(0.1) == "low"
+
+    def test_novelty_credit_separates_inside_sweet_spot(self):
+        """Flat credit across the band tied every sweet-spot proposal at 1.0."""
+        low, high = NOVELTY_SWEET_SPOT
+        mid = (low + high) / 2
+        assert novelty_credit(mid) == 1.0
+        assert novelty_credit(low) < novelty_credit((low + mid) / 2) < novelty_credit(mid)
+        assert novelty_credit(high) < novelty_credit((mid + high) / 2) < novelty_credit(mid)
+
+    def test_novelty_credit_is_continuous_and_bounded(self):
+        low, high = NOVELTY_SWEET_SPOT
+        assert abs(novelty_credit(low - 1e-9) - novelty_credit(low)) < 1e-6
+        assert abs(novelty_credit(high + 1e-9) - novelty_credit(high)) < 1e-6
+        assert novelty_credit(0.0) == 0.0
+        assert novelty_credit(1.0) == 0.0
+        assert all(0.0 <= novelty_credit(i / 100) <= 1.0 for i in range(101))
 
 
 class _TensorLikeEmbedder:

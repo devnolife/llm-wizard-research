@@ -38,6 +38,10 @@ from loguru import logger
 
 # A proposal too close to the corpus is derivative; too far is off-topic.
 NOVELTY_SWEET_SPOT = (0.25, 0.65)
+# Credit at the sweet-spot edges; the peak (1.0) sits at the band midpoint.
+# Flat credit across the whole band scored novelty 0.25 and 0.65 identically and
+# produced mass ties at the top of the ranking, broken only by input order.
+SWEET_SPOT_EDGE_CREDIT = 0.85
 # Weights for the composite priority score.
 W_GAP = 0.50
 W_NOVELTY = 0.30
@@ -177,6 +181,24 @@ def novelty_band(novelty: float) -> str:
     return "sweet_spot"
 
 
+def novelty_credit(novelty: float) -> float:
+    """Ranking credit for a novelty value, in [0, 1].
+
+    Peaks at the sweet-spot midpoint and decays continuously to 0 at both
+    extremes, so "already done" and "unrelated to the corpus" are still both
+    penalised while proposals inside the band remain separable.
+    """
+    low, high = NOVELTY_SWEET_SPOT
+    if novelty < low:
+        return SWEET_SPOT_EDGE_CREDIT * (novelty / low) if low else 0.0
+    if novelty > high:
+        span = max(1e-6, 1.0 - high)
+        return SWEET_SPOT_EDGE_CREDIT * max(0.0, (1.0 - novelty) / span)
+    mid = (low + high) / 2.0
+    half = max(1e-6, (high - low) / 2.0)
+    return 1.0 - (1.0 - SWEET_SPOT_EDGE_CREDIT) * ((novelty - mid) / half) ** 2
+
+
 def score_proposal(
     proposal: Dict[str, Any],
     corpus_texts: Sequence[str],
@@ -200,19 +222,9 @@ def score_proposal(
     band = novelty_band(novelty)
     act = actionability(text)
 
-    # Only the sweet spot gets full novelty credit; the extremes are discounted
-    # because both "already done" and "unrelated to the corpus" are bad answers.
-    low, high = NOVELTY_SWEET_SPOT
-    if band == "sweet_spot":
-        novelty_credit = 1.0
-    elif band == "derivative":
-        novelty_credit = novelty / low if low else 0.0
-    else:
-        novelty_credit = max(0.0, 1.0 - (novelty - high) / max(1e-6, 1.0 - high))
-
     priority = (
         W_GAP * max(0.0, min(1.0, gap_confidence))
-        + W_NOVELTY * novelty_credit
+        + W_NOVELTY * novelty_credit(novelty)
         + W_ACTIONABILITY * act
     )
 
