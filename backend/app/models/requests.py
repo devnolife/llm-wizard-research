@@ -40,6 +40,21 @@ class PaperSearchRequest(BaseModel):
     embedding_model: Optional[str] = Field("all-MiniLM-L6-v2", description="Embedding model")
 
 
+class PaperToDownload(BaseModel):
+    title: str = Field(..., min_length=1, max_length=500, description="Paper title (used for filename)")
+    doi: Optional[str] = Field(None, max_length=200, description="DOI for Unpaywall OA resolution")
+    pdf_url: Optional[str] = Field(None, max_length=2000, description="Direct PDF URL if already known")
+    source_api: Optional[str] = Field(None, max_length=50, description="Origin source API")
+
+
+class DownloadAnalyzeRequest(BaseModel):
+    papers: List[PaperToDownload] = Field(..., min_length=1, max_length=15, description="Papers to download and analyze")
+
+
+class IdeaToQueryRequest(BaseModel):
+    idea: str = Field(..., min_length=10, max_length=2000, description="Research idea (Indonesian or English) to convert into an academic search query")
+
+
 class MarkedPapersRequest(BaseModel):
     papers: List[Dict[str, Any]] = Field(..., description="User-marked papers to analyze (title, abstract, authors, year)")
     query: Optional[str] = Field(None, description="Original search query/topic")

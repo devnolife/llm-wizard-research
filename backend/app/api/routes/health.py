@@ -8,6 +8,10 @@ from pathlib import Path
 from pydantic import BaseModel
 from loguru import logger
 import os
+import subprocess
+import time
+
+import psutil
 
 from ...models.responses import HealthResponse
 from ..dependencies import get_glm_interface, get_vector_store
@@ -73,6 +77,121 @@ async def switch_model(req: ModelSwitchRequest):
         raise HTTPException(status_code=404, detail=f"Model '{req.model_name}' not found. Available: {names}")
     glm.switch_model(req.model_name)
     return {"status": "ok", "model": req.model_name}
+
+
+def _int_or(value: str, fallback: int = 0) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _collect_gpu_stats() -> list[dict]:
+    """Per-GPU memory/utilization/temperature + compute processes via nvidia-smi."""
+    try:
+        query = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,uuid,name,memory.used,memory.total,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if query.returncode != 0:
+        return []
+
+    gpus: dict[str, dict] = {}
+    for line in query.stdout.strip().splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) < 7:
+            continue
+        index, uuid, name, mem_used, mem_total, util, temp = parts[:7]
+        gpus[uuid] = {
+            "index": _int_or(index),
+            "name": name,
+            "memory_used_mb": _int_or(mem_used),
+            "memory_total_mb": _int_or(mem_total),
+            "utilization_percent": _int_or(util),
+            "temperature_c": _int_or(temp),
+            "processes": [],
+        }
+
+    try:
+        apps = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=gpu_uuid,pid,used_memory,process_name",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if apps.returncode == 0:
+            for line in apps.stdout.strip().splitlines():
+                parts = [part.strip() for part in line.split(",")]
+                if len(parts) < 4 or parts[0] not in gpus:
+                    continue
+                pid = _int_or(parts[1])
+                user = ""
+                try:
+                    user = psutil.Process(pid).username()
+                except (psutil.Error, OSError):
+                    pass
+                gpus[parts[0]]["processes"].append({
+                    "pid": pid,
+                    "user": user,
+                    "memory_mb": _int_or(parts[2]),
+                    "name": Path(",".join(parts[3:])).name,
+                })
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    return sorted(gpus.values(), key=lambda gpu: gpu["index"])
+
+
+@router.get("/api/system-stats")
+def get_system_stats():
+    """Pemakaian server saat ini: CPU, RAM, swap, disk, dan detail per-GPU.
+
+    Sync ``def`` (bukan async) supaya sampling psutil/nvidia-smi berjalan di
+    threadpool dan tidak memblokir event loop.
+    """
+    cpu_percent = psutil.cpu_percent(interval=0.2)
+    load1, load5, load15 = os.getloadavg()
+    memory = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+    disk = psutil.disk_usage(str(Path(__file__).resolve().parents[4]))
+
+    return {
+        "timestamp": time.time(),
+        "cpu": {
+            "percent": cpu_percent,
+            "cores": psutil.cpu_count() or 0,
+            "load_avg": [round(load1, 2), round(load5, 2), round(load15, 2)],
+        },
+        "memory": {
+            "total_mb": memory.total // (1024 * 1024),
+            "used_mb": memory.used // (1024 * 1024),
+            "available_mb": memory.available // (1024 * 1024),
+            "percent": memory.percent,
+        },
+        "swap": {
+            "total_mb": swap.total // (1024 * 1024),
+            "used_mb": swap.used // (1024 * 1024),
+            "percent": swap.percent,
+        },
+        "disk": {
+            "total_gb": round(disk.total / (1024 ** 3), 1),
+            "used_gb": round(disk.used / (1024 ** 3), 1),
+            "percent": disk.percent,
+        },
+        "gpus": _collect_gpu_stats(),
+    }
 
 
 @router.get("/health", response_model=HealthResponse)

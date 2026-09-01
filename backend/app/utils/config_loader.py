@@ -135,21 +135,21 @@ class FactExtractionConfig:
 
 @dataclass
 class OCRConfig:
-    """Unlimited-OCR fallback configuration.
+    """ocrd OCR service configuration.
 
-    OCR runs as a separate SGLang GPU service (see ocr_service/). When a PDF
-    yields too little text via pypdf (scanned / image-only documents), pages are
-    sent to the OCR service to recover structured Markdown text.
+    ocrd is a standalone GPU service (installed at ``~/ocr-service``, port
+    8792) exposing ``POST /v1/ocr``. When enabled, PDFs are sent to ocrd
+    first: digital PDFs are answered from their text layer in milliseconds,
+    scans go through GPU OCR (structured Markdown out). ``pypdf`` remains the
+    local fallback when the service is unreachable.
     """
     enabled: bool = False
-    service_url: str = "http://127.0.0.1:10000"
-    image_mode: str = "gundam"  # "gundam" (dense single page) or "base"
-    dpi: int = 200
-    concurrency: int = 4
-    timeout: int = 1200
-    min_chars_per_page: int = 50  # below this avg -> treat as scanned, try OCR
-    ngram_size: int = 35
-    ngram_window: int = 128
+    service_url: str = "http://127.0.0.1:8792"
+    api_key: str = ""  # sent as X-API-Key when set
+    image_mode: str = "gundam"  # "gundam" (accurate) or "base" (fast)
+    dpi: int = 0  # 0 = defer to the server's OCRD_PDF_DPI
+    timeout: int = 1800
+    prefer_text_layer: bool = True  # let ocrd skip OCR for text-layer PDFs
     validate_service_on_startup: bool = False
 
 
@@ -334,18 +334,18 @@ class ConfigLoader:
             pattern_extension_confidence=float(fact_thresholds.get("pattern_extension", 0.6)),
         )
         
-        # OCR Configuration (Unlimited-OCR fallback service)
+        # OCR Configuration (ocrd document OCR service)
         ocr_cfg = yaml_config.get("ocr", {})
         ocr_config = OCRConfig(
             enabled=_env_bool("OCR_ENABLED", ocr_cfg.get("enabled", False)),
-            service_url=os.getenv("OCR_SERVICE_URL") or ocr_cfg.get("service_url", "http://127.0.0.1:10000"),
+            service_url=os.getenv("OCR_SERVICE_URL") or ocr_cfg.get("service_url", "http://127.0.0.1:8792"),
+            api_key=os.getenv("OCR_API_KEY") or ocr_cfg.get("api_key", ""),
             image_mode=os.getenv("OCR_IMAGE_MODE") or ocr_cfg.get("image_mode", "gundam"),
-            dpi=int(os.getenv("OCR_DPI", ocr_cfg.get("dpi", 200))),
-            concurrency=int(os.getenv("OCR_CONCURRENCY", ocr_cfg.get("concurrency", 4))),
-            timeout=int(os.getenv("OCR_TIMEOUT", ocr_cfg.get("timeout", 1200))),
-            min_chars_per_page=int(os.getenv("OCR_MIN_CHARS_PER_PAGE", ocr_cfg.get("min_chars_per_page", 50))),
-            ngram_size=int(os.getenv("OCR_NGRAM_SIZE", ocr_cfg.get("ngram_size", 35))),
-            ngram_window=int(os.getenv("OCR_NGRAM_WINDOW", ocr_cfg.get("ngram_window", 128))),
+            dpi=int(os.getenv("OCR_DPI", ocr_cfg.get("dpi", 0))),
+            timeout=int(os.getenv("OCR_TIMEOUT", ocr_cfg.get("timeout", 1800))),
+            prefer_text_layer=_env_bool(
+                "OCR_PREFER_TEXT_LAYER", ocr_cfg.get("prefer_text_layer", True)
+            ),
             validate_service_on_startup=_env_bool(
                 "OCR_VALIDATE_ON_STARTUP", ocr_cfg.get("validate_service_on_startup", False)
             ),
@@ -400,8 +400,8 @@ class ConfigLoader:
             raise ValueError("analysis_queue.max_workers must be between 1 and 2")
         if config.queue.max_attempts < 1:
             raise ValueError("analysis_queue.max_attempts must be at least 1")
-        if config.ocr.dpi < 72 or config.ocr.concurrency < 1 or config.ocr.timeout < 1:
-            raise ValueError("OCR dpi, concurrency, and timeout must be positive")
+        if config.ocr.dpi < 0 or config.ocr.timeout < 1:
+            raise ValueError("OCR dpi must be >= 0 and timeout must be positive")
     
     def get_config(self) -> AppConfig:
         """Get the loaded configuration"""
@@ -413,6 +413,8 @@ class ConfigLoader:
         for section in ("neo4j",):
             if section in summary and "password" in summary[section]:
                 summary[section]["password"] = "***" if summary[section]["password"] else ""
+        if "ocr" in summary and "api_key" in summary["ocr"]:
+            summary["ocr"]["api_key"] = "***" if summary["ocr"]["api_key"] else ""
         summary["config_path"] = str(self.config_path) if self.config_path else None
         return summary
     

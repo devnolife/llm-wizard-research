@@ -20,6 +20,8 @@ except ImportError:
 
 from loguru import logger
 
+from . import copilot_client
+
 
 @dataclass
 class ModelConfig:
@@ -37,6 +39,10 @@ class ModelConfig:
     # Max worker threads for generate_batch(). Should be <= Ollama's
     # OLLAMA_NUM_PARALLEL so requests actually run concurrently server-side.
     max_parallel: int = int(os.getenv("OLLAMA_NUM_PARALLEL", "4"))
+    # Text-generation engine: "copilot" (GitHub Copilot via copilotd) or
+    # "ollama" (local). Empty = auto: env LLM_ENGINE, else "copilot" whenever
+    # copilotd is configured (COPILOTD_URL), else "ollama".
+    engine: str = ""
 
 
 @dataclass
@@ -129,6 +135,7 @@ class GLMInterface:
     """
     _MAX_TRANSIENT_RETRIES = 2
     _TRANSIENT_RETRY_DELAYS = (1, 2)
+    _COPILOT_RETRY_DELAYS = (2, 5)
     _semaphore_lock = threading.Lock()
     _request_semaphore: threading.BoundedSemaphore | None = None
     _semaphore_capacity = 0
@@ -143,9 +150,39 @@ class GLMInterface:
         self.config = config or ModelConfig()
         self.client = ollama.Client(host=self.config.base_url, timeout=self.config.timeout)
         self.configure_concurrency(self.config.max_parallel)
-        
-        logger.info(f"Initialized GLM Interface with model: {self.config.model_name}")
+
+        engine = (self.config.engine or os.getenv("LLM_ENGINE", "")).strip().lower()
+        if not engine:
+            engine = "copilot" if copilot_client.is_configured() else "ollama"
+        if engine == "copilot" and not copilot_client.is_configured():
+            logger.warning("LLM_ENGINE=copilot but COPILOTD_URL is empty — using Ollama")
+            engine = "ollama"
+        self.engine = engine
+
+        if self.engine == "copilot":
+            logger.info(
+                f"Initialized GLM Interface with engine copilot (model: {self._copilot_model()}), "
+                f"Ollama fallback model: {self.config.model_name}"
+            )
+        else:
+            logger.info(f"Initialized GLM Interface with model: {self.config.model_name}")
         logger.info(f"Ollama base URL: {self.config.base_url}")
+
+    @staticmethod
+    def _copilot_model() -> str:
+        return (os.getenv("COPILOTD_MODEL") or copilot_client.DEFAULT_MODEL).strip()
+
+    @staticmethod
+    def _copilot_strict() -> bool:
+        """When strict (default), never silently fall back to Ollama."""
+        return os.getenv("COPILOT_STRICT", "1").strip().lower() not in ("0", "false", "no")
+
+    @property
+    def active_model_name(self) -> str:
+        """Model identifier of the engine actually answering requests."""
+        if self.engine == "copilot":
+            return f"copilot:{self._copilot_model()}"
+        return self.config.model_name
 
     @classmethod
     def configure_concurrency(cls, max_parallel: int) -> None:
@@ -384,8 +421,62 @@ class GLMInterface:
                     results[idx] = ""
         return results
     
+    def _copilot_complete(self, messages: List[Dict], format: Optional[str] = None) -> Optional[str]:
+        """Generate via copilotd (GitHub Copilot) with bounded retries.
+
+        Returns the generated text, or None when copilotd is unavailable and
+        strict mode is off (caller then falls back to local Ollama). In strict
+        mode (COPILOT_STRICT=1, default) unavailability raises instead, so
+        results are guaranteed to come from the Copilot model.
+        """
+        system = "\n\n".join(
+            m["content"] for m in messages if m.get("role") == "system" and m.get("content")
+        )
+        convo = [m for m in messages if m.get("role") != "system"]
+        if len(convo) == 1:
+            prompt = convo[0].get("content", "")
+        else:
+            prompt = "\n\n".join(
+                f"[{str(m.get('role', 'user')).upper()}]\n{m.get('content', '')}" for m in convo
+            )
+
+        attempts = len(self._COPILOT_RETRY_DELAYS) + 1
+        start_time = time.time()
+        for attempt in range(attempts):
+            with self._acquire_request_slot():
+                result = copilot_client.generate(
+                    prompt,
+                    system=system,
+                    json_mode=(format == "json"),
+                    model=self._copilot_model(),
+                    timeout=float(self.config.timeout),
+                )
+            if result:
+                text, model_id = result
+                logger.info(f"copilotd ({model_id}) answered in {time.time() - start_time:.2f}s")
+                return text
+            if attempt < attempts - 1:
+                delay = self._COPILOT_RETRY_DELAYS[attempt]
+                logger.warning(
+                    f"copilotd attempt {attempt + 1}/{attempts} failed; retrying in {delay}s"
+                )
+                time.sleep(delay)
+
+        if self._copilot_strict():
+            raise RuntimeError(
+                "copilotd unavailable after retries and COPILOT_STRICT is on — "
+                "refusing to fall back to local Ollama"
+            )
+        return None
+
     def _generate_complete(self, messages: List[Dict], options: Dict, format: Optional[str] = None) -> str:
         """Generate complete response (non-streaming)"""
+        if self.engine == "copilot":
+            text = self._copilot_complete(messages, format=format)
+            if text is not None:
+                return text
+            logger.warning("copilotd unavailable — falling back to local Ollama for this request")
+
         start_time = time.time()
         
         kwargs = {}
@@ -430,6 +521,14 @@ class GLMInterface:
     
     def _generate_stream(self, messages: List[Dict], options: Dict) -> Generator[str, None, None]:
         """Generate streaming response"""
+        if self.engine == "copilot":
+            # copilotd has no streaming endpoint — emit the full answer once.
+            text = self._copilot_complete(messages)
+            if text is not None:
+                yield text
+                return
+            logger.warning("copilotd unavailable — streaming via local Ollama for this request")
+
         for attempt in range(self._MAX_TRANSIENT_RETRIES + 1):
             yielded_content = False
             try:
@@ -500,32 +599,7 @@ class GLMInterface:
             "num_ctx": self.config.num_ctx,
         }
         
-        with self._acquire_request_slot():
-            try:
-                response = self._call_with_retries(
-                    "chat",
-                    lambda: self.client.chat(
-                        model=self.config.model_name,
-                        messages=messages,
-                        options=options,
-                        stream=False,
-                        keep_alive=self.config.keep_alive,
-                    )
-                )
-            except TypeError:
-                response = self._call_with_retries(
-                    "chat",
-                    lambda: self.client.chat(
-                        model=self.config.model_name,
-                        messages=messages,
-                        options=options,
-                        stream=False,
-                    )
-                )
-        
-        assistant_response = response['message']['content']
-        
-        return assistant_response
+        return self._generate_complete(messages, options)
     
     def clear_history(self):
         """Legacy no-op; histories are owned by durable chat sessions now."""
@@ -629,7 +703,10 @@ class GLMInterface:
             raise
     
     def __repr__(self) -> str:
-        return f"GLMInterface(model={self.config.model_name}, base_url={self.config.base_url})"
+        return (
+            f"GLMInterface(engine={self.engine}, model={self.active_model_name}, "
+            f"base_url={self.config.base_url})"
+        )
 
 
 # Preferred alias — the interface is model-agnostic (works with any Ollama model)

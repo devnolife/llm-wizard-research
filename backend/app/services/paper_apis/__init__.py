@@ -15,6 +15,8 @@ from .pubmed import PubMedAPI
 from .core import CoreAPI
 from .europe_pmc import EuropePMCAPI
 from .sciencedirect import ScienceDirectAPI
+from .scopus import ScopusAPI
+from .unpaywall import UnpaywallAPI
 from .aggregator import AggregatedPaperAPI
 
 __all__ = [
@@ -27,5 +29,7 @@ __all__ = [
     "CoreAPI",
     "EuropePMCAPI",
     "ScienceDirectAPI",
+    "ScopusAPI",
+    "UnpaywallAPI",
     "AggregatedPaperAPI",
 ]

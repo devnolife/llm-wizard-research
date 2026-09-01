@@ -5,6 +5,7 @@ import aiohttp
 from typing import Dict, List, Optional
 from loguru import logger
 
+from . import http_cache
 from .base import PaperMetadata, _strip_markup
 
 
@@ -111,3 +112,46 @@ class CrossRefAPI:
                 continue
         
         return papers
+
+    def get_by_doi(self, doi: str) -> Optional[PaperMetadata]:
+        """Fetch metadata for a single DOI via https://api.crossref.org/works/{doi} (sync, cached)."""
+        data = http_cache.get_json(f"https://api.crossref.org/works/{doi}", headers=self.headers)
+        item = (data or {}).get("message")
+        if not item:
+            return None
+
+        try:
+            authors = []
+            for author in item.get("author", []):
+                given = author.get("given", "")
+                family = author.get("family", "")
+                authors.append(f"{given} {family}".strip())
+
+            year = None
+            if item.get("published-print"):
+                year = item["published-print"]["date-parts"][0][0]
+            elif item.get("published-online"):
+                year = item["published-online"]["date-parts"][0][0]
+
+            abstract = _strip_markup(item.get("abstract", ""))
+
+            item_doi = item.get("DOI", "")
+            url = f"https://doi.org/{item_doi}" if item_doi else item.get("URL")
+
+            return PaperMetadata(
+                paper_id=item_doi or item.get("URL", ""),
+                title=(item.get("title") or [""])[0],
+                authors=authors,
+                abstract=abstract,
+                year=year,
+                journal=(item.get("container-title") or [""])[0],
+                doi=item_doi,
+                url=url,
+                pdf_url=None,
+                citation_count=item.get("is-referenced-by-count", 0),
+                source_api="crossref",
+                raw_data=item
+            )
+        except Exception as e:
+            logger.warning(f"Failed to parse CrossRef DOI entry: {e}")
+            return None

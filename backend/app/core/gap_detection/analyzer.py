@@ -34,9 +34,90 @@ from ...models.responses import (
 )
 from ..knowledge.fact_table import EntityType
 from .quote_grounding import extract_supporting_quotes, verify_quote_against_papers
+from .claim_normalization import (
+    ALIGNMENT_GATE,
+    NormalizedClaim,
+    normalize_claims,
+)
+from .adjudication import (
+    NLI_NOISE_FLOOR,
+    AdjudicationResult,
+    adjudicate_contradiction,
+)
+from .semantic_match import SemanticMatcher
+from .coverage_map import build_coverage_matrix, mark_important_columns
+from .calibration import Calibrator, build_provenance, load_calibrator
+from .support_gap import (
+    MAX_REPORTED_CLAIMS,
+    analyze_support,
+    support_confidence,
+)
+from .graph_metrics import (
+    OVERLAP_FRAGMENTED_MAX,
+    Q_COHESIVE_MIN,
+    cluster_papers,
+    rank_bridges,
+    rescue_singletons,
+)
 
 # Re-export for backward compatibility
 GapIndicatorType = IndicatorType
+
+_ASPECT_STOPWORDS = {
+    "the", "a", "an", "and", "or", "of", "for", "in", "on", "to",
+    "with", "by", "from", "vs", "versus", "such", "as", "e.g",
+    "dan", "atau", "yang", "dalam", "pada", "untuk", "dari",
+}
+
+
+def aspect_terms(aspect: str) -> List[str]:
+    """Content words of an expected aspect, used for grounding AND quoting.
+
+    Aspects arrive as long phrases ("Chain of custody dan integritas bukti
+    digital"), so whole-phrase substring matching never hits a sentence. Both
+    the grounding test and the quote extractor must therefore work on the same
+    content words, otherwise an aspect can be reported as corpus-grounded while
+    no quote is retrievable and the provenance chain breaks permanently.
+    """
+    return [
+        w for w in (
+            token.strip(".,()[]:;\"'") for token in (aspect or "").lower().split()
+        )
+        if len(w) > 3 and w not in _ASPECT_STOPWORDS
+    ]
+
+
+def _paper_ref(paper: Dict[str, Any]) -> str:
+    """Human-readable, stable reference for a paper.
+
+    Prefers the source filename (reliably clean and journal-identifying),
+    then the extracted title (often a running header/URL in scanned PDFs),
+    then internal ids, so `related_papers` in gap indicators names the actual
+    journals instead of empty strings (retrieval passages carry title/source
+    but no doc_id).
+    """
+    meta = paper.get("metadata") or {}
+    for candidate in (
+        paper.get("source"), meta.get("source"),
+        paper.get("title"), meta.get("title"),
+        paper.get("doc_id"), paper.get("id"),
+    ):
+        text = " ".join(str(candidate).split()) if candidate else ""
+        if text and text.lower() != "unknown":
+            return text
+    return ""
+
+
+def _paper_refs(papers: List[Dict[str, Any]]) -> List[str]:
+    """Unique, ordered, non-empty references for a list of papers."""
+    seen: Set[str] = set()
+    refs: List[str] = []
+    for p in papers:
+        ref = _paper_ref(p)
+        if ref and ref not in seen:
+            seen.add(ref)
+            refs.append(ref)
+    return refs
 
 
 @dataclass
@@ -66,12 +147,25 @@ class GapIndicator:
     # KG evidence subgraph (ala SciAgentsDiscovery): edge dicts
     # [{"from","from_name","to","to_name","predicate","source_paper"}]
     evidence_subgraph: List[Dict] = field(default_factory=list)
+    # Post-hoc calibrated confidence + selective abstention (P9). `needs_review`
+    # means the system declines to present this as a finding.
+    calibrated_confidence: Optional[float] = None
+    needs_review: bool = False
+    abstention_reasons: List[str] = field(default_factory=list)
+    calibration: Dict[str, Any] = field(default_factory=dict)
+    # claim -> cited record -> retrieved passage -> validation outcome
+    provenance: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "indicator_type": self.indicator_type.value,
             "description": self.description,
             "confidence": self.confidence,
+            "calibrated_confidence": self.calibrated_confidence,
+            "needs_review": self.needs_review,
+            "abstention_reasons": self.abstention_reasons,
+            "calibration": self.calibration,
+            "provenance": self.provenance,
             "related_papers": self.related_papers,
             "evidence": self.evidence[:5],
             "supporting_quotes": self.supporting_quotes[:5],
@@ -90,6 +184,11 @@ class GapIndicator:
             description=self.description,
             confidence=self.confidence,
             adjusted_confidence=self.adjusted_confidence,
+            calibrated_confidence=self.calibrated_confidence,
+            needs_review=self.needs_review,
+            abstention_reasons=self.abstention_reasons,
+            calibration=self.calibration,
+            provenance=self.provenance,
             rule_engine_verdict=self.rule_engine_verdict,
             requires_human_validation=self.requires_human_validation,
             evidence=self.evidence[:5],
@@ -134,6 +233,9 @@ class GapAnalyzer:
         self.fact_table = fact_table
         self.relation_classifier = relation_classifier
         self.rule_engine = rule_engine
+        # Post-hoc calibration (P9). Stays an identity map until enough expert
+        # labels exist, so confidences are never silently rescaled.
+        self.calibrator = load_calibrator()
         
         logger.info("GapAnalyzer initialized (Cooper/Booth 3-indicator model)")
     
@@ -168,9 +270,18 @@ class GapAnalyzer:
         # Indicator 3: Collective Incompleteness
         indicators.extend(self._detect_incompleteness(topic, papers))
         
+        # Indicator 4: Evidence-support gap (retrieval failure)
+        if depth in ["standard", "comprehensive"]:
+            indicators.extend(self._detect_support_gap(topic, papers))
+        
         # Validate through Rule Engine (if available)
         if self.rule_engine:
             indicators = self._validate_with_rule_engine(indicators)
+        else:
+            # Calibration and provenance are independent of the symbolic layer;
+            # without a rule engine the chain simply records no verdict.
+            for indicator in indicators:
+                self._apply_calibration(indicator, "")
         
         # Rank by confidence
         indicators.sort(key=lambda x: x.confidence, reverse=True)
@@ -198,46 +309,68 @@ class GapAnalyzer:
         papers: List[Dict[str, Any]],
     ) -> List[GapIndicator]:
         """
-        Detect fragmentation: papers address the same phenomenon from 
+        Detect fragmentation: papers address the same phenomenon from
         different angles but do not integrate their findings.
-        
-        Methods:
-        - Topic clustering: find papers in isolated clusters
-        - Citation gap: papers that should cite each other but don't
-        - Theory diversity: same phenomenon, different theoretical lenses
+
+        Methods (upgraded per the P6 review):
+        - Embedding clustering reported with modularity Q and silhouette,
+          replacing an order-dependent greedy keyword pass
+        - Entropy-gated centroid reassignment so niche topics are not dropped
+        - Link prediction (CN / Jaccard / Adamic-Adar / resource allocation /
+          preferential attachment) with betweenness brokers to rank concrete
+          bridge candidates, replacing a binary path-exists isolation ratio
         """
         indicators = []
-        
+
         if len(papers) < 2:
             return indicators
-        
-        # Method 1: Keyword/approach clustering
+
+        # Method 1: approach clustering with structural quality metrics
         paper_approaches = self._extract_approaches(papers)
-        clusters = self._cluster_approaches(paper_approaches)
-        
+        embedder = getattr(self.vector_store, "embedding_model", None) if self.vector_store else None
+        cluster_result = cluster_papers(paper_approaches, embedder=embedder)
+        gating = rescue_singletons(paper_approaches, cluster_result, embedder=embedder)
+        clusters = gating.clusters
+
         if len(clusters) >= 2:
-            # Multiple distinct clusters = potential fragmentation
             cluster_descriptions = []
-            for cluster_id, cluster_papers in clusters.items():
+            for cluster_id, member_papers in clusters.items():
                 approaches = set()
-                for pid in cluster_papers:
+                for pid in member_papers:
                     approaches.update(paper_approaches.get(pid, []))
                 cluster_descriptions.append(
-                    f"Cluster {cluster_id + 1}: {', '.join(list(approaches)[:3])}"
+                    f"Cluster {cluster_id + 1} ({len(member_papers)} paper(s)): "
+                    f"{', '.join(list(approaches)[:3])}"
                 )
-            
+
+            evidence = cluster_descriptions + [
+                f"Structural metrics: modularity Q={cluster_result.modularity:.2f}, "
+                f"silhouette={cluster_result.silhouette:.2f}, inter-cluster "
+                f"vocabulary overlap={cluster_result.inter_cluster_overlap:.0%} "
+                f"(clustering: {cluster_result.method}).",
+                f"Interpretation: {cluster_result.interpretation}.",
+            ]
+            if gating.reassigned or gating.ambiguous:
+                evidence.append(
+                    f"Entropy gating: {len(gating.reassigned)} singleton paper(s) "
+                    f"reassigned to the nearest centroid, {len(gating.ambiguous)} left "
+                    f"ambiguous; cluster coverage {gating.coverage_before:.0%} "
+                    f"-> {gating.coverage_after:.0%}."
+                )
+
             indicators.append(GapIndicator(
                 indicator_type=GapIndicatorType.FRAGMENTATION,
                 description=(
                     f"Literature on '{topic}' appears fragmented into "
-                    f"{len(clusters)} distinct clusters with different approaches. "
+                    f"{len(clusters)} distinct clusters with different approaches "
+                    f"(modularity Q={cluster_result.modularity:.2f}). "
                     f"No integrative framework found."
                 ),
                 confidence=self._calibrate_fragmentation_confidence(
-                    clusters, paper_approaches
+                    clusters, paper_approaches, cluster_result,
                 ),
                 related_papers=[pid for pids in clusters.values() for pid in pids],
-                evidence=cluster_descriptions,
+                evidence=evidence,
                 supporting_quotes=extract_supporting_quotes(
                     terms=[a for pids in clusters.values() for pid in pids
                            for a in paper_approaches.get(pid, [])][:8],
@@ -251,31 +384,71 @@ class GapAnalyzer:
                 sub_indicators=[
                     {"cluster_id": cid, "papers": pids}
                     for cid, pids in clusters.items()
+                ] + [
+                    {"cluster_metrics": cluster_result.to_dict()},
+                    {"entropy_gating": gating.to_dict()},
                 ],
             ))
-        
-        # Method 2: Check cross-referencing via KG
+
+        # Method 2: structural isolation + ranked bridge candidates via the KG
         if self.knowledge_graph and self.fact_table:
-            isolation_score = self._compute_isolation_score(papers)
-            if isolation_score > 0.6:
+            isolation = self._analyze_structural_isolation(papers)
+            if isolation["isolation_score"] > 0.6:
+                bridges = isolation["bridges"]
+                evidence = [
+                    f"Isolation score: {isolation['isolation_score']:.2f} "
+                    f"(mean normalized path distance between paper entities; "
+                    f"1.00 = no connecting path at all).",
+                    f"Disconnected entity pairs: {isolation['disconnected_pairs']}"
+                    f"/{isolation['total_pairs']}.",
+                ]
+                for bridge in bridges[:3]:
+                    evidence.append(
+                        f"Bridge candidate: '{bridge['source']}' <-> '{bridge['target']}' "
+                        f"(score {bridge['score']:.2f}; CN={bridge['common_neighbors']}, "
+                        f"AA={bridge['adamic_adar']:.2f}, RA={bridge['resource_allocation']:.2f}, "
+                        f"Jaccard={bridge['jaccard']:.2f}"
+                        + (f", broker via '{bridge['broker']}'" if bridge["broker"] else "")
+                        + ")."
+                    )
+                if isolation["filtered"]:
+                    evidence.append(
+                        f"False-bridge filters rejected {len(isolation['filtered'])} "
+                        f"candidate(s): "
+                        + "; ".join(
+                            f"{f['source']}<->{f['target']} ({f['filtered_reason']})"
+                            for f in isolation["filtered"][:3]
+                        )
+                        + "."
+                    )
+
                 indicators.append(GapIndicator(
                     indicator_type=GapIndicatorType.FRAGMENTATION,
                     description=(
-                        f"Papers on '{topic}' show low cross-referencing "
-                        f"(isolation score: {isolation_score:.2f}). "
-                        f"Findings exist in silos."
+                        f"Papers on '{topic}' show low structural connectivity "
+                        f"(isolation score: {isolation['isolation_score']:.2f}). "
+                        + (
+                            f"{len(bridges)} ranked bridge candidate(s) identified "
+                            f"between the isolated streams."
+                            if bridges else "Findings exist in silos."
+                        )
                     ),
-                    confidence=isolation_score,
-                    related_papers=[p.get("doc_id", "") for p in papers],
-                    evidence=[f"Isolation score: {isolation_score:.2f}"],
-                    suggested_directions=[
-                        "Investigate connections between isolated research streams",
-                    ],
+                    confidence=round(isolation["isolation_score"], 3),
+                    related_papers=_paper_refs(papers),
+                    evidence=evidence,
+                    suggested_directions=(
+                        [
+                            f"Investigate the link between '{b['source']}' and "
+                            f"'{b['target']}'"
+                            for b in bridges[:2]
+                        ] or ["Investigate connections between isolated research streams"]
+                    ),
                     detection_method="citation_isolation",
+                    sub_indicators=[{"bridge_candidates": bridges}],
                 ))
-        
+
         return indicators
-    
+
     # -------------------------------------------------------------------
     # Indicator 2: INCONSISTENCY
     # -------------------------------------------------------------------
@@ -448,13 +621,21 @@ class GapAnalyzer:
         
         # Extract covered aspects from papers
         covered_aspects = self._extract_covered_aspects(papers)
+        expected_aspects: List[str] = []
         
         # Use LLM to identify expected aspects
         if self.llm:
             expected_aspects = self._identify_expected_aspects(topic)
             
-            uncovered = [a for a in expected_aspects if a.lower() not in 
-                        {c.lower() for c in covered_aspects}]
+            # Semantic matching instead of exact lowercase comparison (P8).
+            # An exact match treated "reproducibility" and "reproducible
+            # experiments" as different aspects and reported the second as an
+            # uncovered gap — a pure false positive.
+            matcher = SemanticMatcher.from_vector_store(self.vector_store)
+            covered_matches, uncovered_matches = matcher.split_covered(
+                expected_aspects, sorted(covered_aspects)
+            )
+            uncovered = [m.aspect for m in uncovered_matches]
             
             if uncovered:
                 # Ground each uncovered aspect against the corpus vocabulary:
@@ -478,7 +659,7 @@ class GapAnalyzer:
                         f"any of the {len(papers)} papers analyzed."
                     ),
                     confidence=min(conf, 0.85),
-                    related_papers=[p.get("doc_id", "") for p in papers],
+                    related_papers=_paper_refs(papers),
                     evidence=[
                         f"Uncovered aspects: {', '.join(uncovered[:5])}",
                         f"Covered aspects: {', '.join(list(covered_aspects)[:5])}",
@@ -488,17 +669,115 @@ class GapAnalyzer:
                         f"uncovered aspects have terminology present in the corpus"
                         + (f"; ungrounded (parametric): {', '.join(ungrounded[:3])}"
                            if ungrounded else "") + ".",
+                        f"Aspect matching: semantic "
+                        f"({'embedding' if matcher.uses_embeddings else 'lexical fallback'}), "
+                        f"{len(covered_matches)} expected aspect(s) matched to corpus "
+                        f"vocabulary despite different wording.",
                     ],
                     # Kutipan utk aspek grounded: terminologinya ADA di korpus
                     # tapi tidak dibahas sistematis — tunjukkan kalimatnya.
+                    # Pakai kata-isi aspek (bukan frasa utuh) agar konsisten
+                    # dengan uji grounding; frasa panjang tidak pernah cocok.
                     supporting_quotes=extract_supporting_quotes(
-                        terms=grounded[:5], papers=papers,
+                        terms=[
+                            term
+                            for aspect in grounded[:5]
+                            for term in aspect_terms(aspect)[:4]
+                        ],
+                        papers=papers,
                     ),
                     suggested_directions=[
                         f"Investigate: {aspect}" for aspect in (grounded + ungrounded)[:3]
                     ],
                     detection_method="aspect_coverage",
+                    sub_indicators=[
+                        {"aspect_matches": [m.to_dict() for m in uncovered_matches[:12]]}
+                    ],
                 ))
+        
+        # Evidence Gap Map (P8): an explicit domain/setting x outcome matrix
+        # whose cells hold STUDY COUNTS, not weighted scores. Empty cells are
+        # gap CANDIDATES — the literature provides no prespecified rule such as
+        # "count < k and quality < q", so significance comes from the explicit
+        # importance overlay rather than an invented threshold.
+        if len(papers) >= 3:
+            matrix = build_coverage_matrix(papers, paper_ref=_paper_ref)
+            # A map needs at least a 2x2 grid to say anything: with a single row
+            # or column there is nothing to compare against, and every cell is
+            # trivially "the whole corpus".
+            if len(matrix.rows) >= 2 and len(matrix.columns) >= 2:
+                matrix = mark_important_columns(
+                    matrix,
+                    expected_aspects,
+                    matcher=SemanticMatcher.from_vector_store(self.vector_store),
+                )
+                candidates = matrix.candidate_gaps()
+                significant = [c for c in candidates if c.important and c.status == "empty"]
+                # Thin cells alone are not a gap — the P8 signal is an EMPTY
+                # cell. Without one the description degenerates into "0 of N
+                # cells hold no study", which is a non-finding.
+                if matrix.empty_cells:
+                    # Confidence follows how sparse the map actually is, and is
+                    # capped below the aspect-coverage signal because an empty
+                    # cell is weaker evidence than a named uncovered aspect.
+                    sparsity = 1.0 - matrix.density
+                    importance_ratio = len(significant) / max(1, len(candidates))
+                    conf = round(min(0.75, 0.25 + 0.35 * sparsity + 0.2 * importance_ratio), 3)
+                    indicators.append(GapIndicator(
+                        indicator_type=GapIndicatorType.INCOMPLETENESS,
+                        description=(
+                            f"Evidence gap map for '{topic}': "
+                            f"{len(matrix.empty_cells)} of "
+                            f"{len(matrix.rows) * len(matrix.columns)} "
+                            f"row x column cells hold no study "
+                            f"({len(matrix.rows)} domain/setting rows x "
+                            f"{len(matrix.columns)} outcome columns; "
+                            f"coverage density {matrix.density:.0%})."
+                        ),
+                        confidence=conf,
+                        related_papers=_paper_refs(papers),
+                        evidence=[
+                            f"Rows (domain/setting/intervention): "
+                            f"{', '.join(matrix.rows[:6])}",
+                            f"Columns (outcome/question dimension): "
+                            f"{', '.join(matrix.columns[:6])}",
+                            f"Cell values are study counts, not weighted evidence "
+                            f"scores; one study may occupy several cells "
+                            f"(many-to-many mapping).",
+                        ] + [
+                            f"Candidate gap: '{c.row}' x '{c.column}' — "
+                            f"{c.study_count} study(ies) [{c.status}]"
+                            + (" — flagged decision-relevant" if c.important else "")
+                            for c in candidates[:5]
+                        ] + [
+                            "No prespecified count/quality rule is applied: empty "
+                            "cells are candidates for reviewer judgement, not "
+                            "confirmed gaps.",
+                        ] + (
+                            [f"Unmapped papers (no row or column matched): "
+                             f"{len(matrix.unmapped_papers)}"]
+                            if matrix.unmapped_papers else []
+                        ),
+                        suggested_directions=[
+                            f"Study '{c.column}' in the '{c.row}' context"
+                            for c in (significant or candidates)[:3]
+                        ],
+                        # Sel kosong adalah klaim tentang KETIADAAN, jadi yang
+                        # dapat dikutip adalah kalimat yang membuktikan baris dan
+                        # kolomnya memang ada di korpus — hanya tidak pernah
+                        # bertemu dalam satu studi.
+                        supporting_quotes=extract_supporting_quotes(
+                            terms=[
+                                term
+                                for cell in (significant or candidates)[:2]
+                                for axis in (cell.row, cell.column)
+                                for term in aspect_terms(axis)
+                            ],
+                            papers=papers,
+                        ),
+                        detection_method="evidence_gap_map",
+                        sub_indicators=[{"coverage_matrix": matrix.to_dict()}],
+                    ))
         
         # Check for missing methodology diversity
         methods_used = self._extract_methods(papers)
@@ -515,11 +794,22 @@ class GapAnalyzer:
                     f"Alternative methodological approaches are absent."
                 ),
                 confidence=conf,
-                related_papers=[p.get("doc_id", "") for p in papers],
+                related_papers=_paper_refs(papers),
                 evidence=[
                     f"Methods found: {', '.join(methods_used) or 'unidentified'}",
                     f"All {len(papers)} papers share a single methodological approach.",
                 ],
+                # Klaim "semua jurnal memakai metode yang sama" justru dibuktikan
+                # oleh kalimat tempat metode itu disebut, jadi provenansnya bisa
+                # ditelusuri, bukan sekadar hitungan.
+                supporting_quotes=extract_supporting_quotes(
+                    terms=[
+                        term
+                        for method in list(methods_used)[:3]
+                        for term in aspect_terms(method)
+                    ],
+                    papers=papers,
+                ),
                 suggested_directions=[
                     "Apply alternative methodological approaches to this topic",
                     "Conduct a mixed-methods study",
@@ -527,6 +817,103 @@ class GapAnalyzer:
                 detection_method="methodology_coverage",
             ))
         
+        return indicators
+    
+    # -------------------------------------------------------------------
+    # Indicator 4: EVIDENCE-SUPPORT GAP
+    # -------------------------------------------------------------------
+    
+    def _detect_support_gap(
+        self,
+        topic: str,
+        papers: List[Dict[str, Any]],
+    ) -> List[GapIndicator]:
+        """
+        Detect claims the corpus asserts but cannot ground in primary evidence.
+
+        Per the P5/P9 reviews, retrieval failure is itself a finding: when a
+        claim recurs across papers yet leave-one-out retrieval turns up no
+        primary-evidence passage, the literature is echoing rather than
+        demonstrating. This complements INCOMPLETENESS, which covers aspects
+        that are never raised at all.
+        """
+        indicators: List[GapIndicator] = []
+
+        if len(papers) < 3:
+            return indicators
+
+        matcher = SemanticMatcher.from_vector_store(self.vector_store)
+        report = analyze_support(papers, _paper_ref, matcher=matcher)
+        confidence = support_confidence(report)
+        if confidence <= 0.0:
+            logger.debug(
+                f"Support gap: {report.unsupported}/{report.total_claims} claims "
+                f"ungrounded (ratio {report.unsupported_ratio}) — below threshold"
+            )
+            return indicators
+
+        gaps = report.gaps[:MAX_REPORTED_CLAIMS]
+        if not gaps:
+            return indicators
+
+        involved = []
+        for assessment in gaps:
+            if assessment.claim.paper_ref not in involved:
+                involved.append(assessment.claim.paper_ref)
+
+        evidence = [
+            f"{report.unsupported} dari {report.total_claims} klaim terperiksa "
+            f"({report.unsupported_ratio:.0%}) tidak menemukan paragraf bukti "
+            f"primer pendukung di jurnal lain.",
+        ]
+        if report.echo_claims:
+            evidence.append(
+                f"{report.echo_claims} klaim diulang lintas jurnal tanpa bukti "
+                f"primer baru (citation echo)."
+            )
+        evidence.extend(
+            f"[{a.claim.paper_ref}] \"{a.claim.text[:150]}\" — "
+            f"dukungan {a.support_score:.2f}; {'; '.join(a.reasons[:2])}"
+            for a in gaps[:3]
+        )
+
+        supporting_quotes = [
+            {
+                "quote": a.claim.text[:300],
+                "source_paper": a.claim.paper_ref,
+                "match_score": round(1.0 - a.support_score, 4),
+                "context": "; ".join(a.reasons[:2]),
+                "verified": True,
+            }
+            for a in gaps[:5]
+        ]
+
+        directions = [
+            "Lakukan studi primer untuk menguji klaim yang selama ini hanya diulang",
+            "Replikasi klaim inti dengan data dan protokol yang dilaporkan terbuka",
+        ]
+        if report.echo_claims:
+            directions.append(
+                "Telusuri rantai sitasi klaim berulang untuk menemukan sumber "
+                "primer aslinya (atau membuktikan ketiadaannya)"
+            )
+
+        indicators.append(GapIndicator(
+            indicator_type=GapIndicatorType.SUPPORT_GAP,
+            description=(
+                f"Ketiadaan dukungan bukti pada '{topic}': "
+                f"{report.unsupported} dari {report.total_claims} klaim yang "
+                f"diperiksa diasersikan tanpa bukti primer yang dapat ditemukan "
+                f"di korpus. Aspeknya dibahas, tetapi tidak dibuktikan."
+            ),
+            confidence=confidence,
+            related_papers=involved,
+            evidence=evidence[:5],
+            supporting_quotes=supporting_quotes,
+            suggested_directions=directions,
+            detection_method="evidence_support",
+        ))
+
         return indicators
     
     # -------------------------------------------------------------------
@@ -538,8 +925,14 @@ class GapAnalyzer:
         indicators: List[GapIndicator],
     ) -> List[GapIndicator]:
         """
-        Pass each indicator through the Rule Engine for validation.
-        Updates the rule_engine_verdict field.
+        Pass each indicator through the Rule Engine for validation, then apply
+        post-hoc calibration, selective abstention and provenance (P9).
+
+        The symbolic verdict is treated as *evidence about* the claim rather
+        than a second opinion to average: PASS corroborates, FLAG discounts,
+        REJECT abstains. Indicators that survive but fall below the abstention
+        band are kept with ``needs_review=True`` instead of being presented as
+        findings.
         """
         validated = []
         for indicator in indicators:
@@ -560,6 +953,13 @@ class GapAnalyzer:
                 if isinstance(report.overall_verdict, str) else report.overall_verdict
             indicator.adjusted_confidence = report.adjusted_confidence
             indicator.confidence = report.adjusted_confidence
+
+            verdict_value = (
+                indicator.rule_engine_verdict.value
+                if hasattr(indicator.rule_engine_verdict, "value")
+                else str(indicator.rule_engine_verdict or "")
+            )
+            self._apply_calibration(indicator, verdict_value, report)
             
             # Only include if not REJECTED
             if indicator.rule_engine_verdict != RuleVerdictType.REJECT:
@@ -570,6 +970,57 @@ class GapAnalyzer:
                 )
         
         return validated
+
+    def _apply_calibration(
+        self,
+        indicator: GapIndicator,
+        verdict_value: str,
+        report: Any = None,
+    ) -> None:
+        """Attach calibrated confidence, abstention flag and provenance chain."""
+        result = self.calibrator.calibrate(indicator.confidence, verdict_value)
+        indicator.calibrated_confidence = result["calibrated_confidence"]
+        indicator.needs_review = bool(result["needs_review"])
+        indicator.abstention_reasons = list(result["abstention_reasons"])
+        indicator.calibration = result
+        # A gap that cannot be traced back to a passage is not defensible even
+        # when its number looks good, so a broken chain forces human review.
+        detail = self._summarize_rule_report(report)
+        chain = build_provenance(
+            claim=indicator.description,
+            cited_records=indicator.related_papers,
+            retrieved_passages=indicator.supporting_quotes,
+            validation_outcome=verdict_value,
+            validation_detail=detail,
+        )
+        indicator.provenance = chain.to_dict()
+        if not chain.complete:
+            indicator.needs_review = True
+            indicator.abstention_reasons.append(
+                "provenans belum lengkap: " + ", ".join(chain.broken_links) + " hilang"
+            )
+        indicator.requires_human_validation = (
+            indicator.requires_human_validation or indicator.needs_review
+        )
+
+    @staticmethod
+    def _summarize_rule_report(report: Any) -> str:
+        """One-line summary of which rules actually fired."""
+        results = getattr(report, "results", None)
+        if not results:
+            return ""
+        fired = []
+        for r in results:
+            rule = getattr(r, "rule", None)
+            rule_id = getattr(rule, "rule_id", "") if rule is not None else ""
+            verdict = getattr(r, "verdict", "")
+            verdict = getattr(verdict, "value", verdict)
+            if rule_id and verdict != "PASS":
+                fired.append(f"{rule_id}:{verdict}")
+        if not fired:
+            checked = getattr(report, "rules_checked", len(results))
+            return f"{checked} aturan diuji, tidak ada pelanggaran"
+        return ", ".join(fired[:9])
     
     # -------------------------------------------------------------------
     # Helper methods
@@ -676,15 +1127,17 @@ class GapAnalyzer:
         self,
         clusters: Dict[int, List[str]],
         paper_approaches: Dict[str, List[str]],
+        cluster_result=None,
     ) -> float:
         """
-        Derive fragmentation confidence from measured cluster separation rather
-        than a fixed `0.5 + 0.1 * n` heuristic.
+        Derive fragmentation confidence from measured structure.
 
-        Combines two evidence signals:
-          - breadth: how many distinct clusters relative to papers, and
-          - separation: average pairwise dissimilarity (1 - Jaccard) between
-            cluster approach-sets. Highly distinct clusters → stronger signal.
+        When the graph metrics are available (P6), the dominant term is the
+        distance from the cohesive reference band: a corpus whose modularity
+        sits near the fragmented reference (Q≈0.42 with inter-cluster overlap
+        below 15 %) scores high, one near the cohesive reference (Q≈0.93,
+        silhouette≈0.97) scores low. Without them the estimator falls back to
+        approach-set separation.
         """
         n_clusters = len(clusters)
         if n_clusters < 2:
@@ -713,9 +1166,28 @@ class GapAnalyzer:
         total_papers = len(paper_approaches) or 1
         breadth = min(1.0, n_clusters / total_papers)
 
-        # Weighted blend, clamped to a defensible band.
-        confidence = 0.35 + 0.4 * separation + 0.15 * breadth
-        return round(max(0.3, min(confidence, 0.9)), 3)
+        if cluster_result is None:
+            confidence = 0.35 + 0.4 * separation + 0.15 * breadth
+            return round(max(0.3, min(confidence, 0.9)), 3)
+
+        # Cohesion penalty: high modularity WITH high silhouette means the
+        # clusters are well-formed and mutually distinct — that is a cohesive
+        # field, not a fragmented one.
+        cohesion = 0.0
+        if cluster_result.modularity >= Q_COHESIVE_MIN:
+            cohesion = min(1.0, cluster_result.silhouette + 0.2)
+        # Low vocabulary overlap between clusters is the fragmentation signal.
+        disconnection = 1.0 - min(1.0, cluster_result.inter_cluster_overlap
+                                  / max(OVERLAP_FRAGMENTED_MAX, 1e-6))
+
+        confidence = (
+            0.30
+            + 0.30 * disconnection
+            + 0.20 * separation
+            + 0.10 * breadth
+            - 0.25 * cohesion
+        )
+        return round(max(0.25, min(confidence, 0.9)), 3)
 
     def _detect_contradictions_nli(
         self,
@@ -723,69 +1195,141 @@ class GapAnalyzer:
         papers: List[Dict[str, Any]],
     ) -> List[GapIndicator]:
         """
-        Detect contradictions using the dedicated cross-encoder NLI model — an
-        evidence signal independent of the generative LLM.
+        Detect contradictions through the adjudicated pipeline mandated by the
+        P7 literature review:
 
-        Compares paper claim snippets pairwise; a contradiction is only reported
-        when the NLI model assigns it above its own threshold, and the reported
-        confidence is the NLI score itself (calibrated, not hand-picked).
+            normalize claims -> align variables (PICO) -> extract effect
+            direction -> NLI -> adjudicate heterogeneity -> label
+
+        Raw pairwise NLI is deliberately NOT the decision rule. The report
+        states plainly that "pairwise NLI alone is insufficient" and that "no
+        universal final contradiction-score cutoff is reported", so the NLI
+        probability enters only as one evidence term inside
+        `adjudicate_contradiction`, which returns one of four labels
+        (contradiction / heterogeneous / non-comparable / inconclusive).
+
+        Only `contradiction` becomes an INCONSISTENCY indicator; screened-out
+        pairs are kept in `sub_indicators` so a reviewer can see what was
+        rejected and why.
         """
         nli = getattr(self.relation_classifier, "nli_model", None) if self.relation_classifier else None
-        if nli is None or not getattr(nli, "available", False):
+        nli_available = nli is not None and getattr(nli, "available", False)
+
+        # Normalize each paper into comparable propositions. Papers with no
+        # claim-bearing sentence contribute nothing, which alone removes a
+        # large class of false positives coming from background prose.
+        claims_by_paper: List[Tuple[str, List[NormalizedClaim]]] = []
+        for p in papers[:8]:
+            pid = _paper_ref(p)
+            normalized = normalize_claims(p, pid, max_claims=3)
+            if normalized:
+                claims_by_paper.append((pid, normalized))
+
+        if len(claims_by_paper) < 2:
             return []
 
-        # Build a short claim snippet per paper (title + leading findings text).
-        claims: List[Tuple[str, str]] = []  # (paper_id, snippet)
-        for p in papers[:6]:
-            pid = p.get("doc_id", p.get("id", ""))
-            title = p.get("metadata", {}).get("title", "")
-            snippet = (title + ". " + p.get("content", "")[:300]).strip()
-            if snippet:
-                claims.append((pid, snippet))
-
+        embedder = getattr(self.vector_store, "embedding_model", None) if self.vector_store else None
         indicators: List[GapIndicator] = []
-        seen_pairs: Set[Tuple[str, str]] = set()
-        for i in range(len(claims)):
-            for j in range(i + 1, len(claims)):
-                pid_a, snip_a = claims[i]
-                pid_b, snip_b = claims[j]
-                key = tuple(sorted((pid_a, pid_b)))
-                if key in seen_pairs:
+        screened: List[Dict[str, Any]] = []
+
+        for i in range(len(claims_by_paper)):
+            for j in range(i + 1, len(claims_by_paper)):
+                pid_a, claims_a = claims_by_paper[i]
+                pid_b, claims_b = claims_by_paper[j]
+
+                best = None  # (verdict, claim_a, claim_b)
+                for claim_a in claims_a:
+                    for claim_b in claims_b:
+                        nli_score = 0.0
+                        if nli_available:
+                            try:
+                                result = nli.check_contradiction(claim_a.text, claim_b.text)
+                                if result:
+                                    nli_score = float(result.get("confidence", 0.0))
+                                    if not result.get("is_contradiction"):
+                                        # Entailment/neutral: keep the score but
+                                        # never let it argue FOR a contradiction.
+                                        nli_score = min(nli_score, NLI_NOISE_FLOOR - 0.01)
+                            except Exception as e:
+                                logger.debug(f"NLI check failed: {e}")
+
+                        verdict = adjudicate_contradiction(
+                            claim_a, claim_b, nli_score=nli_score, embedder=embedder,
+                        )
+                        if best is None:
+                            best = (verdict, claim_a, claim_b)
+                        elif verdict.is_contradiction and (
+                            not best[0].is_contradiction
+                            or verdict.confidence > best[0].confidence
+                        ):
+                            best = (verdict, claim_a, claim_b)
+
+                if best is None:
                     continue
-                seen_pairs.add(key)
-                try:
-                    result = nli.check_contradiction(snip_a, snip_b)
-                except Exception as e:
-                    logger.debug(f"NLI check failed: {e}")
+                verdict, claim_a, claim_b = best
+                if not verdict.is_contradiction:
+                    screened.append({
+                        "papers": [pid_a, pid_b],
+                        "adjudication": verdict.label.value,
+                        "reason": verdict.reason,
+                    })
                     continue
-                if result and result.get("is_contradiction"):
-                    score = float(result.get("confidence", 0.0))
-                    indicators.append(GapIndicator(
-                        indicator_type=GapIndicatorType.INCONSISTENCY,
-                        description=(
-                            f"Potential contradiction between two papers on "
-                            f"'{topic}' flagged by the dedicated NLI model "
-                            f"(p={score:.2f}). Requires human verification."
-                        ),
-                        confidence=round(score, 3),
-                        related_papers=[pid_a, pid_b],
-                        evidence=[
-                            f"Paper A: {snip_a[:160]}",
-                            f"Paper B: {snip_b[:160]}",
-                            f"NLI contradiction probability: {score:.2f} "
-                            f"(decoupled from the generative LLM).",
-                        ],
-                        # Snippet NLI diambil langsung dari chunk → verbatim.
-                        supporting_quotes=[
-                            {"quote": snip_a[:300], "source_paper": pid_a, "match_score": 1.0},
-                            {"quote": snip_b[:300], "source_paper": pid_b, "match_score": 1.0},
-                        ],
-                        suggested_directions=[
-                            "Verify whether these findings genuinely conflict",
-                            "Design a study that reconciles the contradiction",
-                        ],
-                        detection_method="nli_cross_encoder",
-                    ))
+
+                alignment_note = ""
+                if verdict.alignment:
+                    alignment_note = (
+                        f"Variable alignment: {verdict.alignment.score:.2f} "
+                        f"(gate {ALIGNMENT_GATE:.2f}"
+                        + (", relaxed matching — PICO context incomplete"
+                           if verdict.alignment.relaxed else "")
+                        + ")"
+                    )
+                nli_note = (
+                    f"NLI contradiction probability: {verdict.nli_score:.2f} "
+                    f"(evidence term, not the decision rule)."
+                ) if nli_available else (
+                    "NLI model unavailable — decision rests on normalized effect "
+                    "directions and variable alignment."
+                )
+
+                indicators.append(GapIndicator(
+                    indicator_type=GapIndicatorType.INCONSISTENCY,
+                    description=(
+                        f"Adjudicated contradiction between two papers on "
+                        f"'{topic}': {claim_a.signed_direction} vs "
+                        f"{claim_b.signed_direction}. Screened against "
+                        f"heterogeneity and comparability; requires human "
+                        f"verification."
+                    ),
+                    confidence=round(verdict.confidence, 3),
+                    related_papers=[pid_a, pid_b],
+                    evidence=[e for e in [
+                        f"Paper A claim: {claim_a.text[:200]}",
+                        f"Paper B claim: {claim_b.text[:200]}",
+                        f"Adjudication: {verdict.label.value} — {verdict.reason}",
+                        alignment_note,
+                        nli_note,
+                    ] if e],
+                    supporting_quotes=[
+                        {"quote": claim_a.text[:300], "source_paper": pid_a, "match_score": 1.0},
+                        {"quote": claim_b.text[:300], "source_paper": pid_b, "match_score": 1.0},
+                    ],
+                    suggested_directions=[
+                        "Verify whether these findings genuinely conflict",
+                        "Investigate moderators that could explain the divergence",
+                        "Design a study that reconciles the contradiction",
+                    ],
+                    detection_method="nli_adjudicated" if nli_available else "claim_adjudication",
+                    sub_indicators=[verdict.to_dict()],
+                ))
+
+        if screened:
+            logger.info(
+                f"Contradiction adjudication screened out {len(screened)} pair(s): "
+                + ", ".join(sorted({s["adjudication"] for s in screened}))
+            )
+            for indicator in indicators:
+                indicator.sub_indicators.append({"screened_pairs": screened[:10]})
         return indicators
 
     
@@ -795,7 +1339,7 @@ class GapAnalyzer:
         """Extract research approaches/keywords from each paper."""
         approaches = {}
         for paper in papers:
-            pid = paper.get("doc_id", paper.get("id", ""))
+            pid = _paper_ref(paper)
             keywords = paper.get("metadata", {}).get("keywords", [])
             content = paper.get("content", "").lower()
             
@@ -819,75 +1363,109 @@ class GapAnalyzer:
     def _cluster_approaches(
         self, paper_approaches: Dict[str, List[str]]
     ) -> Dict[int, List[str]]:
-        """Simple clustering based on keyword overlap."""
-        papers = list(paper_approaches.keys())
-        if len(papers) < 2:
-            return {0: papers}
-        
-        # Compute pairwise similarity
-        clusters: Dict[int, List[str]] = {}
-        assigned = set()
-        cluster_id = 0
-        
-        for i, pid in enumerate(papers):
-            if pid in assigned:
+        """Cluster papers by approach vocabulary (order-independent).
+
+        Thin wrapper over `graph_metrics.cluster_papers` kept for callers that
+        only need the grouping; `_detect_fragmentation` uses the full
+        `ClusterResult` so it can report modularity and silhouette.
+        """
+        embedder = getattr(self.vector_store, "embedding_model", None) if self.vector_store else None
+        return cluster_papers(paper_approaches, embedder=embedder).clusters
+
+    def _analyze_structural_isolation(
+        self, papers: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Measure how isolated the corpus entities are in the KG and propose
+        ranked bridges between the disconnected parts.
+
+        Replaces the previous binary "is there a path" ratio, which threw away
+        path length and could not say *which* connection is worth making. The
+        isolation score is now the mean normalized path distance: unreachable
+        pairs score 1.0, directly linked pairs score 0.0, and everything in
+        between decays with hop count.
+        """
+        empty = {
+            "isolation_score": 0.0,
+            "disconnected_pairs": 0,
+            "total_pairs": 0,
+            "bridges": [],
+            "filtered": [],
+        }
+        graph = getattr(self.knowledge_graph, "graph", None)
+        if graph is None or not self.fact_table:
+            return empty
+
+        # Work on entities that actually carry findings, not raw paper ids:
+        # retrieval passages rarely expose a doc_id, which made the old
+        # implementation silently return 0.0 on real jobs.
+        paper_refs = {_paper_ref(p) for p in papers if _paper_ref(p)}
+        node_names: Dict[str, str] = {}
+        node_types: Dict[str, str] = {}
+        candidates: List[str] = []
+        for node_id, data in graph.nodes(data=True):
+            source_paper = str(data.get("source_paper") or "")
+            if paper_refs and source_paper and not any(
+                source_paper in ref or ref in source_paper for ref in paper_refs
+            ):
                 continue
-            
-            cluster = [pid]
-            assigned.add(pid)
-            
-            for j, other_pid in enumerate(papers[i+1:], i+1):
-                if other_pid in assigned:
-                    continue
-                
-                # Jaccard similarity
-                set_a = set(k.lower() for k in paper_approaches.get(pid, []))
-                set_b = set(k.lower() for k in paper_approaches.get(other_pid, []))
-                
-                if set_a and set_b:
-                    similarity = len(set_a & set_b) / len(set_a | set_b)
-                else:
-                    similarity = 0
-                
-                if similarity > 0.3:
-                    cluster.append(other_pid)
-                    assigned.add(other_pid)
-            
-            clusters[cluster_id] = cluster
-            cluster_id += 1
-        
-        return clusters
-    
+            node_names[node_id] = data.get("name", node_id)
+            node_types[node_id] = data.get("entity_type", "")
+            candidates.append(node_id)
+
+        if len(candidates) < 2:
+            return empty
+
+        try:
+            import networkx as nx
+            undirected = graph.to_undirected()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"Structural isolation unavailable: {exc}")
+            return empty
+
+        sample = candidates[:30]
+        distances: List[float] = []
+        disconnected: List[Tuple[str, str]] = []
+        for i, node_a in enumerate(sample):
+            for node_b in sample[i + 1:]:
+                try:
+                    hops = nx.shortest_path_length(undirected, node_a, node_b)
+                    # Normalize: 1 hop -> 0.0, 2 hops -> 0.5, 3 -> 0.67 ...
+                    distances.append(1.0 - 1.0 / max(1, hops))
+                except Exception:
+                    distances.append(1.0)
+                    disconnected.append((node_a, node_b))
+
+        if not distances:
+            return empty
+
+        isolation_score = sum(distances) / len(distances)
+        node_years = {
+            node_id: data.get("year")
+            for node_id, data in graph.nodes(data=True)
+            if data.get("year")
+        }
+        kept, filtered = rank_bridges(
+            undirected,
+            disconnected[:60],
+            node_names=node_names,
+            node_types=node_types,
+            node_years=node_years,
+        )
+        return {
+            "isolation_score": round(isolation_score, 3),
+            "disconnected_pairs": len(disconnected),
+            "total_pairs": len(distances),
+            "bridges": [b.to_dict() for b in kept],
+            "filtered": [f.to_dict() for f in filtered],
+        }
+
     def _compute_isolation_score(
         self, papers: List[Dict[str, Any]]
     ) -> float:
-        """
-        Compute how isolated papers are from each other in the KG.
-        High score = more fragmented.
-        """
-        if not self.knowledge_graph or len(papers) < 2:
-            return 0.0
-        
-        paper_ids = [p.get("doc_id", "") for p in papers if p.get("doc_id")]
-        if len(paper_ids) < 2:
-            return 0.0
-        
-        connected_pairs = 0
-        total_pairs = 0
-        
-        for i, pid_a in enumerate(paper_ids):
-            for pid_b in paper_ids[i+1:]:
-                total_pairs += 1
-                path = self.knowledge_graph.find_shortest_path(pid_a, pid_b)
-                if path:
-                    connected_pairs += 1
-        
-        if total_pairs == 0:
-            return 0.0
-        
-        # Isolation = 1 - connectivity ratio
-        return 1.0 - (connected_pairs / total_pairs)
-    
+        """Backward-compatible scalar view of `_analyze_structural_isolation`."""
+        return self._analyze_structural_isolation(papers)["isolation_score"]
+
     def _detect_contradictions_llm(
         self,
         topic: str,
@@ -920,6 +1498,8 @@ For each contradiction found, provide:
 List contradictions (if none found, say "No contradictions detected"):"""
 
         try:
+            from ...services.skill_guidance import wrap_prompt as _skill_wrap
+            prompt, _sk = _skill_wrap("contradictions", prompt)
             response = self.llm.generate(prompt, temperature=0.2, max_tokens=1000)
             
             if "no contradiction" not in response.lower():
@@ -945,7 +1525,7 @@ List contradictions (if none found, say "No contradictions detected"):"""
                     confidence=0.4,  # LLM-only signal: lower trust than the
                     # dedicated NLI cross-encoder (used as a fallback when NLI
                     # is unavailable or finds nothing).
-                    related_papers=[p.get("doc_id", "") for p in papers[:5]],
+                    related_papers=_paper_refs(papers[:5]),
                     evidence=[response[:500]],
                     supporting_quotes=verified_quotes[:3],
                     suggested_directions=[
@@ -996,19 +1576,13 @@ List contradictions (if none found, say "No contradictions detected"):"""
         purely from the LLM's parametric knowledge and may reflect
         pre-training bias rather than a real coverage gap in this corpus.
         """
-        stopwords = {
-            "the", "a", "an", "and", "or", "of", "for", "in", "on", "to",
-            "with", "by", "from", "vs", "versus", "such", "as", "e.g",
-        }
+        stopwords = _ASPECT_STOPWORDS
         corpus_text = " ".join(
             p.get("content", "").lower() for p in papers
         )
         grounded, ungrounded = [], []
         for aspect in aspects:
-            words = [
-                w.strip(".,()") for w in aspect.lower().split()
-                if len(w) > 3 and w.lower() not in stopwords
-            ]
+            words = aspect_terms(aspect)
             if words and any(w in corpus_text for w in words):
                 grounded.append(aspect)
             else:
@@ -1031,6 +1605,8 @@ Return ONLY a numbered list, one aspect per line. Example:
 Critical aspects for "{topic}":"""
 
         try:
+            from ...services.skill_guidance import wrap_prompt as _skill_wrap
+            prompt, _sk = _skill_wrap("aspects", prompt)
             response = self.llm.generate(prompt, temperature=0.3, max_tokens=300)
             aspects = []
             for line in response.strip().split('\n'):

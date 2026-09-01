@@ -25,9 +25,14 @@ Komponen inti yang membedakan sistem ini dari pipeline RAG+LLM konvensional:
 | Fact Extractor (`fact_extractor.py`) | 599 | Ekstraksi entitas dan relasi dari teks |
 | Relation Classifier (`relation_classifier.py`) | 453 | Klasifikasi 3 jenis hubungan (kookurensi, kausal, kontradiksi) |
 | Coordinator Agent (`coordinator.py`) | 737 | Orkestrator LangGraph dengan 5 tool agen |
-| Gap Analyzer (`analyzer.py`) | ~400 | Deteksi 3 indikator gap (fragmentasi, inkonsistensi, ketidaklengkapan) |
+| Gap Analyzer (`analyzer.py`) | 1.610 | Deteksi 4 indikator gap (fragmentasi, inkonsistensi, ketidaklengkapan, ketiadaan dukungan bukti) |
+| Support Gap (`support_gap.py`) | 423 | Indikator ke-4: uji kegagalan retrieval bukti primer *leave-one-out* |
+| Graph Metrics (`graph_metrics.py`) | 567 | Modularitas Newman, prediksi tautan Adamic-Adar, isolasi struktural |
+| Coverage Map (`coverage_map.py`) | 273 | *Evidence gap map* (Snilstveit dkk., 2016) untuk indikator ketidaklengkapan |
+| Calibration (`calibration.py`) | 470 | ECE/Brier/AURC, *temperature scaling*, abstensi selektif, rantai provenans |
+| Novelty (`novelty.py`) | 305 | Skor kebaruan semantik untuk pemeringkatan usulan (bukan indikator gap) |
 
-**Total**: ~3.450 baris kode Python untuk komponen inti, dengan 197 unit test yang semuanya lulus.
+**Total**: ~5.700 baris kode Python untuk komponen inti, dengan 508 unit test yang semuanya lulus.
 
 ### 4.1.3 Teknologi yang Digunakan
 
@@ -88,13 +93,21 @@ Sesuai framework evaluasi pada BAB III, metrik yang diukur:
 | Kode | Metrik | Deskripsi |
 |------|--------|-----------|
 | M1 | Jumlah Indikator Gap | Total indikator yang terdeteksi per topik |
-| M2 | Distribusi Tipe Indikator | Proporsi Fragmentasi:Inkonsistensi:Ketidaklengkapan |
+| M2 | Distribusi Tipe Indikator | Proporsi Fragmentasi:Inkonsistensi:Ketidaklengkapan:Ketiadaan Dukungan Bukti |
 | M3 | Skor Kepercayaan (Confidence) | Rata-rata, min, max confidence per indikator |
 | M4 | Verdict Rule Engine | Distribusi PASS/FLAG/REJECT |
 | M5 | Waktu Eksekusi | Durasi per fase pipeline |
 | M6 | Kebutuhan Validasi Manusia | Proporsi indikator yang membutuhkan verifikasi |
 | M7 | RERR (*Rule Engine Rejection Rate*) | Persentase output LLM yang tidak lolos bersih (FLAG+REJECT) |
 | M8 | Akurasi Adversarial | Persentase kasus adversarial dengan verdict sesuai harapan |
+| M9 | Kalibrasi (ECE, Brier, AURC) | Selisih keyakinan–akurasi, galat kuadrat, dan area risiko-cakupan |
+| M10 | Laju Abstensi Selektif | Proporsi indikator ber-`needs_review` beserta alasan abstensi |
+| M11 | Kelengkapan Provenans | Proporsi indikator dengan rantai klaim→jurnal→kutipan→validasi utuh |
+| M12 | Kebaruan Usulan | Distribusi *band* kebaruan (derivative / sweet spot / off-topic) usulan |
+
+Metrik M9–M12 ditambahkan pada revisi metodologi (Subbab 3.6–3.7) sebagai
+konsekuensi penambahan indikator keempat dan lapisan kalibrasi; M1–M8 tetap
+diukur agar hasil pra-revisi dan pasca-revisi dapat dibandingkan langsung.
 
 Metrik berbasis pakar (EAR, LCS, AS, FDR, SHG, REP — hipotesis H4–H5) diukur
 terpisah melalui instrumen penilaian di `backend/experiments/expert_eval/`
@@ -129,7 +142,7 @@ sekadar meloloskan semua input.
 
 Hasil yang dilaporkan pada bagian ini berasal dari eksperimen konfigurasi penuh
 (*full mode*) dengan model `llama3.2` (3B) terhadap korpus benchmark 23 paper,
-kecuali dinyatakan lain. Hasil ablasi dan komparasi model dibahas pada §4.3.6.
+kecuali dinyatakan lain. Hasil ablasi dan komparasi model dibahas pada Subbab 4.3.6.
 
 ### 4.3.1 Hasil Ingestion dan Preprocessing (Fase 1)
 
@@ -163,6 +176,11 @@ menghasilkan 0 fakta karena konten terdominasi notasi matematis yang tidak
 mengandung pola relasi SPO yang dikenali.
 
 ### 4.3.3 Hasil Deteksi Gap (Fase 3)
+
+Hasil pada subbab ini berasal dari **pipeline pra-revisi (tiga indikator)** pada
+korpus benchmark 23 paper, dan dipertahankan sebagai garis dasar pembanding.
+Hasil pipeline empat indikator beserta lapisan kalibrasi dilaporkan terpisah di
+Subbab 4.3.8.
 
 Sistem mengidentifikasi **14 indikator gap** dari 4 topik query:
 
@@ -219,7 +237,7 @@ Tingkat PASS 100% pada korpus benchmark **bukan** indikasi lapisan validasi
 tidak bekerja, melainkan konsekuensi karakteristik input: indikator yang
 dihasilkan dari paper berkualitas tinggi memang tidak melanggar aturan
 kelayakan/kausalitas/konsistensi. Untuk membuktikan kemampuan diskriminatif
-Rule Engine, dilakukan validasi adversarial (§4.3.5).
+Rule Engine, dilakukan validasi adversarial (Subbab 4.3.5).
 
 ### 4.3.5 Hasil Validasi Adversarial
 
@@ -242,7 +260,7 @@ dan meloloskan klaim kontrol:
 klaim yang tidak layak secara sumber daya dan skala, (2) menandai klaim dengan
 data tidak kompatibel, kontradiksi internal, dan klaim kausal tanpa bukti,
 serta (3) meloloskan klaim kontrol yang valid — membuktikan verdict PASS pada
-§4.3.4 bukan karena Rule Engine meloloskan semua input.
+Subbab 4.3.4 bukan karena Rule Engine meloloskan semua input.
 
 Hasil ini menjawab kekhawatiran kalibrasi: penurunan confidence terbesar
 terjadi pada pelanggaran kelayakan keras (F1: −0,60; F3: −0,60), sedangkan
@@ -296,7 +314,7 @@ H9 × dua variabel). **H9 terkonfirmasi**: lapisan NLI meningkatkan jumlah
 indikator kesenjangan terdeteksi (Δmedian = 8) sekaligus confidence-nya secara
 signifikan. Sebaliknya, H6 dan H7 tidak mencapai signifikansi pada jumlah run
 ini (p Holm ≥ 0,48) — efek Rule Engine bersifat kualitatif (akuntabilitas dan
-kemampuan menolak klaim adversarial, §4.3.5), bukan kuantitas indikator.
+kemampuan menolak klaim adversarial, Subbab 4.3.5), bukan kuantitas indikator.
 
 #### Komparasi Model (Sensitivitas Kapasitas Model)
 
@@ -326,6 +344,104 @@ utama, sementara komponen symbolic (Rule Engine) beroperasi hampir instan
 (<0,1 detik untuk 14 indikator + 6 kasus adversarial) — penambahan lapisan
 validasi logis praktis tanpa *overhead*.
 
+### 4.3.8 Hasil Pipeline Empat Indikator dan Lapisan Kalibrasi
+
+Setelah revisi metodologi (Subbab 3.6–3.7), pipeline diuji pada korpus aplikatif
+**35 jurnal forensika digital** (3.095 chunk, 5 topik hasil klasterisasi, tanpa
+duplikat). Subbab ini melaporkan metrik M9–M12 yang tidak dapat diukur pada
+pipeline pra-revisi.
+
+#### Tabel 4.3: Ringkasan Eksekusi Pipeline Empat Indikator
+
+| Aspek | Nilai |
+|-------|-------|
+| Jurnal diproses | 35 (35 baru, 0 duplikat) |
+| Chunk terindeks | 3.095 |
+| Topik terdeteksi | 5 |
+| Indikator lolos validasi | 2 (keduanya KETIDAKLENGKAPAN) |
+| Verdict Rule Engine | 2 PASS, 0 FLAG, 0 REJECT (RERR 0,0%) |
+| Waktu total pipeline | 308,1 detik (~5,1 menit) |
+
+#### M9 — Kalibrasi
+
+| Indikator | Confidence Mentah | Confidence Terkalibrasi | Temperature |
+|-----------|-------------------|-------------------------|-------------|
+| Ketidaklengkapan kolektif (10 aspek kritis tak tercakup) | 0,850 | 0,935 | 1,0 |
+| Ketidaklengkapan metodologis (10 jurnal memakai *case study*) | 0,800 | 0,880 | 1,0 |
+
+Temperature bernilai 1,0 karena himpunan label pakar masih kosong
+(`calibration_labels = 0`, di bawah `MIN_CALIBRATION_LABELS = 4`), sehingga
+kalibrator beroperasi sebagai pemetaan identitas dan kenaikan skor semata-mata
+berasal dari pengali verdict `PASS` (×1,10). ECE, Brier, dan AURC karena itu
+**belum dapat dilaporkan** dan akan diukur setelah instrumen penilaian pakar
+(Subbab 4.2.3) terkumpul. Status ini ditampilkan apa adanya di antarmuka
+("belum ada label pakar (identitas)") agar tidak disalahartikan sebagai
+kalibrasi yang sudah tervalidasi — konsisten dengan prinsip bahwa keyakinan
+model tidak boleh disajikan lebih meyakinkan daripada bukti pendukungnya.
+
+#### M10 — Abstensi Selektif dan M11 — Kelengkapan Provenans
+
+| Metrik | Sebelum Perbaikan | Sesudah Perbaikan |
+|--------|-------------------|-------------------|
+| Indikator ber-`needs_review` | 4/4 (100%) | 0/2 (0%) |
+| Rantai provenans lengkap | 0/4 (0%) | 2/2 (100%) |
+| Kutipan verbatim per indikator | 0 | 3 |
+
+Pengujian pada korpus nyata mengungkap tiga cacat implementasi yang tidak
+terlihat pada uji sintetis dan seluruhnya bersifat *silent* (tidak memunculkan
+galat):
+
+1. **Asimetri istilah grounding–kutipan.** Uji *grounding* menyatakan sebuah
+   aspek "ada di korpus" bila salah satu kata-isinya muncul, sedangkan
+   pengambil kutipan mencocokkan **frasa utuh**. Aspek berupa frasa panjang
+   ("*Chain of custody* dan integritas bukti digital") karenanya selalu lolos
+   grounding namun tidak pernah menghasilkan kutipan, sehingga rantai provenans
+   permanen terputus dan **seluruh** indikator dipaksa `needs_review`. Perbaikan
+   menyatukan kedua uji pada fungsi `aspect_terms()` yang sama.
+2. **Indikator metodologis tanpa kutipan.** Klaim "semua jurnal memakai metode
+   yang sama" tidak pernah menyertakan kutipan, padahal justru kalimat tempat
+   metode itu disebut merupakan buktinya.
+3. **Peta bukti degeneratif.** Matriks 1×1 dengan kerapatan 100% tetap
+   memancarkan indikator berbunyi "0 dari 1 sel tidak memuat studi" — sebuah
+   non-temuan. Gate diperketat menjadi minimal 2×2 **dan** wajib memiliki
+   sedikitnya satu sel kosong, sesuai definisi *evidence gap map* (Snilstveit
+   dkk., 2016) yang menempatkan sel kosong sebagai sinyal, bukan sel tipis.
+
+Setelah perbaikan, abstensi menjadi **selektif**: kedua indikator memiliki
+rantai klaim → 6 jurnal terkutip → 3 kutipan verbatim → verdict `PASS`
+("9 aturan diuji, tidak ada pelanggaran") yang utuh, sehingga tidak lagi
+ditandai butuh peninjauan. Ini adalah perilaku yang diinginkan: abstensi hanya
+bermakna bila ia membedakan, bukan bila ia menyala untuk semua keluaran.
+
+#### M12 — Kebaruan Usulan
+
+| Usulan | Indikator Dijawab | Kebaruan | *Band* | Skor Prioritas |
+|--------|-------------------|----------|--------|----------------|
+| 1 | KETIDAKLENGKAPAN | 0,358 | *sweet spot* | 0,968 |
+| 2 | KETIDAKLENGKAPAN | 0,361 | *sweet spot* | 0,968 |
+| 3 | KETIDAKLENGKAPAN | 0,309 | *sweet spot* | 0,834 |
+| 4 | KETIDAKLENGKAPAN | 0,412 | *sweet spot* | 0,834 |
+| 5 | KETIADAAN DUKUNGAN BUKTI | 0,430 | *sweet spot* | 0,367 |
+
+Seluruh usulan jatuh pada rentang *sweet spot* (0,25–0,65), yaitu cukup berbeda
+dari korpus untuk tidak sekadar mengulang, namun masih cukup dekat untuk tetap
+relevan. Usulan ke-5 memperoleh prioritas jauh lebih rendah (0,367) meskipun
+kebaruannya tertinggi, karena indikator KETIADAAN DUKUNGAN BUKTI **tidak**
+terdeteksi pada korpus ini sehingga bobot `gap_confidence`-nya nol. Perilaku ini
+mengonfirmasi keputusan desain pada Subbab 3.6.2: kebaruan semantik hanya berfungsi
+sebagai sinyal **pemeringkatan** dan tidak pernah dapat mengangkat usulan yang
+tidak berjangkar pada indikator gap yang benar-benar terdeteksi.
+
+#### Catatan Reproduksibilitas
+
+Ketiga cacat di atas hanya terungkap ketika pipeline dijalankan pada dokumen
+nyata; uji sintetis tidak menangkapnya karena memakai frasa pendek, *embedder*
+tiruan, dan matriks yang selalu berukuran memadai. Karena itu ditambahkan 35
+unit test regresi (`backend/tests/test_gap_upgrade.py`) yang secara eksplisit
+menguji kondisi-kondisi tersebut — termasuk *embedder* yang mengembalikan
+`Tensor`, korpus dengan `sample_chunks` bertipe dict, dan matriks degeneratif —
+sehingga total menjadi **508 unit test** yang seluruhnya lulus.
+
 ---
 
 ## 4.4 Pembahasan
@@ -351,6 +467,21 @@ Framework evaluasi 8 metrik (M1-M8) berhasil diterapkan. Hasil menunjukkan:
 - M6 (Validasi manual): 100% indikator membutuhkan validasi manusia
 - M7 (RERR baseline): baseline linear tidak memiliki mekanisme penolakan sama sekali
 - M8 (Akurasi adversarial): 6/6 (100%) — Rule Engine terbukti diskriminatif
+
+Metrik M9–M12 yang ditambahkan pada revisi metodologi diukur pada korpus
+aplikatif (Subbab 4.3.8):
+- M9 (Kalibrasi): temperature 1,0 — kalibrator masih identitas karena label
+  pakar belum terkumpul; ECE/Brier/AURC ditangguhkan, bukan diklaim
+- M10 (Abstensi selektif): 0/2 indikator ber-`needs_review` setelah perbaikan
+  provenans (sebelumnya 100%, yakni tidak diskriminatif)
+- M11 (Kelengkapan provenans): 2/2 (100%) rantai klaim→jurnal→kutipan→validasi
+- M12 (Kebaruan usulan): 5/5 usulan pada *band sweet spot*; usulan tanpa
+  jangkar indikator otomatis turun prioritas (0,367 vs 0,968)
+
+Perbandingan M6 (100% butuh validasi manusia, pra-revisi) dengan M10 (0%
+pasca-revisi) menegaskan bahwa nilai sebuah mekanisme abstensi terletak pada
+kemampuannya **membedakan**; abstensi yang menyala untuk setiap keluaran secara
+informasional setara dengan tidak ada abstensi sama sekali.
 
 ### 4.4.2 Keunggulan Pendekatan Neuro-Symbolic
 
@@ -385,7 +516,12 @@ Berdasarkan hasil eksperimen, keunggulan pendekatan Neuro-Symbolic dibandingkan 
 4. **Evaluasi Pakar Tertunda**: Metrik berbasis pakar (EAR, LCS, AS, FDR, SHG,
    REP) belum diukur — instrumen penilaian (form XLSX + kalkulator metrik)
    telah disiapkan di `experiments/expert_eval/` dan menunggu sesi penilaian
-   pakar terhadap output final sistem.
+   pakar terhadap output final sistem. Konsekuensi langsungnya, kalibrator
+   temperature scaling masih beroperasi sebagai pemetaan identitas
+   (`temperature = 1,0`) karena himpunan label pakar belum mencapai
+   `MIN_CALIBRATION_LABELS = 4`, sehingga ECE, Brier, dan AURC (M9) belum dapat
+   dilaporkan. Sistem menampilkan status ini secara eksplisit di antarmuka
+   alih-alih menyajikan angka kalibrasi yang belum tervalidasi.
 
 5. **Kalibrasi Verdict pada Data Bersih**: Pada indikator yang dihasilkan dari
    paper benchmark berkualitas tinggi, Rule Engine cenderung memberi verdict
@@ -393,7 +529,7 @@ Berdasarkan hasil eksperimen, keunggulan pendekatan Neuro-Symbolic dibandingkan 
    meloloskan semua input), eksperimen dilengkapi **fase validasi adversarial**:
    6 klaim yang dirancang melanggar aturan spesifik disuntikkan ke FactTable
    terisolasi, dan verdict aktual dibandingkan dengan verdict yang diharapkan
-   (lihat §4.3.4). Threshold penyesuaian confidence per aturan masih bersifat
+   (lihat Subbab 4.3.4). Threshold penyesuaian confidence per aturan masih bersifat
    *rule-of-thumb* dan menjadi kandidat analisis sensitivitas pada penelitian
    lanjutan.
 
@@ -403,6 +539,16 @@ Berdasarkan hasil eksperimen, keunggulan pendekatan Neuro-Symbolic dibandingkan 
    pengetahuan parametrik model, bukan murni dari korpus yang dianalisis. Ini
    merupakan ancaman validitas internal yang melekat pada semua sistem berbasis
    LLM dan dimitigasi sebagian oleh *grounding* RAG serta validasi simbolis.
+
+7. **Cacat Terungkap Hanya pada Korpus Nyata**: Tiga cacat implementasi
+   (asimetri istilah grounding–kutipan, indikator metodologis tanpa kutipan,
+   dan peta bukti degeneratif — Subbab 4.3.8) tidak terdeteksi oleh uji sintetis dan
+   seluruhnya bersifat *silent*. Temuan ini menunjukkan bahwa uji unit dengan
+   data buatan tidak memadai untuk memvalidasi lapisan provenans: data buatan
+   cenderung memakai frasa pendek dan matriks berukuran memadai, sehingga
+   kondisi batas yang justru dominan pada dokumen nyata tidak pernah tersentuh.
+   Mitigasinya adalah menambahkan uji regresi yang meniru bentuk data produksi
+   secara spesifik, bukan sekadar bentuk yang valid.
 
 ### 4.4.4 Perbandingan dengan Studi Terkait
 
@@ -416,5 +562,7 @@ Berdasarkan hasil eksperimen, keunggulan pendekatan Neuro-Symbolic dibandingkan 
 | Jenis output | "Research gaps" | "Gap indicators + human validation flag" |
 | Representasi pengetahuan | Embedding saja | Embedding + SPO Knowledge Graph |
 | Deteksi kontradiksi | LLM generatif (sirkuler) | Marker linguistik + NLI cross-encoder terdedikasi (opsional) + fakta KG |
+| Keyakinan keluaran | Skor mentah LLM | Terkalibrasi + abstensi selektif + rantai provenans |
+| Peringkat usulan | Urutan generasi LLM | Skor komposit gap × kebaruan × ketertindakan |
 
 Dibandingkan dengan sistem seperti ResearchRabbit [2023] dan Elicit [2023] yang menggunakan pipeline RAG end-to-end, pendekatan Wizard Research menambahkan lapisan validasi simbolis yang memberikan jaminan tambahan terhadap kualitas output. Namun, sistem ini masih memerlukan validasi oleh pakar untuk mengukur akurasi aktual indikator gap.

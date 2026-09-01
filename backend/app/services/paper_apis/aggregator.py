@@ -12,6 +12,7 @@ from .pubmed import PubMedAPI
 from .core import CoreAPI
 from .europe_pmc import EuropePMCAPI
 from .sciencedirect import ScienceDirectAPI
+from .scopus import ScopusAPI
 
 
 class AggregatedPaperAPI:
@@ -37,6 +38,9 @@ class AggregatedPaperAPI:
         self.core = CoreAPI(api_key=core_key)
         self.europe_pmc = EuropePMCAPI(email=crossref_email)
         self.sciencedirect = ScienceDirectAPI(
+            api_key=elsevier_key, insttoken=elsevier_insttoken
+        )
+        self.scopus = ScopusAPI(
             api_key=elsevier_key, insttoken=elsevier_insttoken
         )
     
@@ -94,6 +98,10 @@ class AggregatedPaperAPI:
         if "sciencedirect" in sources:
             tasks.append(self.sciencedirect.search(query, max_results_per_source, year_from, year_to))
             source_names.append("sciencedirect")
+        
+        if "scopus" in sources:
+            tasks.append(self.scopus.search(query, max_results_per_source, year_from, year_to))
+            source_names.append("scopus")
         
         # Execute all searches in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)

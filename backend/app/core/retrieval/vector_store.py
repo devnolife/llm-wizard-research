@@ -433,6 +433,48 @@ class VectorStore:
             logger.error(f"Failed to get all documents: {e}")
             return []
     
+    def get_chunks_by_sources(
+        self,
+        sources: List[str],
+    ) -> List[Document]:
+        """Ambil seluruh chunk milik sekumpulan berkas sumber.
+
+        Dipakai untuk mengekspor hasil tahap PDF→chunk sebuah job analisis.
+        Satu PDF yang sama bisa terindeks berulang kali oleh beberapa job
+        (kolom ``analysis_job_id`` berbeda), jadi hasilnya dideduplikasi
+        berdasarkan pasangan ``(source, chunk_index)`` dan diurutkan agar
+        keluarannya stabil serta jumlahnya cocok dengan ``total_chunks`` job.
+        """
+        if not sources:
+            return []
+        seen: dict[tuple, Document] = {}
+        for source in sources:
+            try:
+                res = self.collection.get(
+                    where={"source": source},
+                    include=["documents", "metadatas"],
+                )
+            except Exception as e:
+                logger.error(f"Failed to fetch chunks for '{source}': {e}")
+                continue
+            for doc_id, content, metadata in zip(
+                res.get("ids") or [],
+                res.get("documents") or [],
+                res.get("metadatas") or [],
+            ):
+                meta = metadata or {}
+                key = (meta.get("source"), meta.get("chunk_index"))
+                if key in seen:
+                    continue
+                seen[key] = Document(id=doc_id, content=content, metadata=meta)
+        return sorted(
+            seen.values(),
+            key=lambda d: (
+                str(d.metadata.get("source") or ""),
+                int(d.metadata.get("chunk_index") or 0),
+            ),
+        )
+
     def clear_collection(self):
         """Delete all documents in the collection"""
         try:

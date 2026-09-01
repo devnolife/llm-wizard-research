@@ -129,6 +129,19 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_job_events_job ON job_events(job_id, event_id);
 
+        CREATE TABLE IF NOT EXISTS job_stage_artifacts (
+            artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_job_stage_artifacts
+            ON job_stage_artifacts(job_id, artifact_id);
+
         CREATE TABLE IF NOT EXISTS conversations (
             conversation_id TEXT PRIMARY KEY,
             created_at REAL NOT NULL,
@@ -404,6 +417,30 @@ def update_job(job_id: str, **updates: Any) -> JobRecord | None:
         return deepcopy(job)
 
 
+def delete_job(job_id: str) -> JobRecord | None:
+    """Delete one job (events/artifacts cascade) and return the removed record."""
+    with _LOCK:
+        if _LEGACY_MODE:
+            job = _JOBS.pop(job_id, None)
+            if job is None:
+                return None
+            if _STORE_PATH is not None:
+                _legacy_write(_STORE_PATH)
+            return deepcopy(job)
+        target = _ensure_sqlite()
+        with _connect(target) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+            if row is None:
+                conn.rollback()
+                _JOBS.pop(job_id, None)
+                return None
+            conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+            conn.commit()
+        _JOBS.pop(job_id, None)
+        return _row_to_job(row)
+
+
 def get_job(job_id: str) -> JobRecord | None:
     """Return a persisted job by ID."""
     with _LOCK:
@@ -521,6 +558,7 @@ def retry_job(job_id: str, delay_seconds: float = 0) -> JobRecord | None:
         progress=0,
         error=None,
         cancel_requested=False,
+        attempt=0,
         available_at=time.time() + max(0, delay_seconds),
         message="Analisis dijadwalkan ulang",
         results=None,
@@ -577,6 +615,84 @@ def get_job_events(job_id: str, after_event_id: int = 0) -> list[dict[str, Any]]
             "duration_ms": row["duration_ms"],
             "created_at": row["created_at"],
             "data": _json_loads(row["data_json"], {}),
+        }
+        for row in rows
+    ]
+
+
+_ARTIFACT_MAX_FIELD_CHARS = 6000
+_ARTIFACT_MAX_LIST_ITEMS = 50
+_ARTIFACT_TRUNCATION_SUFFIX = " …[terpotong]"
+
+
+def _bound_artifact_value(value: Any, max_field_chars: int) -> Any:
+    """Cap artifact payload sizes so stage snapshots stay lightweight.
+
+    Unlike ``_sanitize_event_data`` this intentionally KEEPS content (prompts,
+    responses, extraction previews) — artifacts exist so the process UI can
+    show real intermediate results.  Only sizes are bounded.
+    """
+    if isinstance(value, str):
+        if len(value) > max_field_chars:
+            return value[:max_field_chars] + _ARTIFACT_TRUNCATION_SUFFIX
+        return value
+    if isinstance(value, bool) or isinstance(value, (int, float)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {
+            str(key): _bound_artifact_value(item, max_field_chars)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [
+            _bound_artifact_value(item, max_field_chars)
+            for item in list(value)[:_ARTIFACT_MAX_LIST_ITEMS]
+        ]
+    return str(value)[:max_field_chars]
+
+
+def add_stage_artifact(
+    job_id: str,
+    phase: str,
+    kind: str,
+    label: str = "",
+    payload: dict[str, Any] | None = None,
+    max_field_chars: int = _ARTIFACT_MAX_FIELD_CHARS,
+) -> None:
+    """Persist a per-stage artifact (result / llm trace / extraction preview)."""
+    bounded = _bound_artifact_value(payload or {}, max_field_chars)
+    with _LOCK:
+        target = _ensure_sqlite()
+        with _connect(target) as conn:
+            conn.execute(
+                """
+                INSERT INTO job_stage_artifacts (job_id, phase, kind, label, created_at, payload_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (job_id, phase, kind, label, time.time(), _json_dumps(bounded)),
+            )
+
+
+def get_stage_artifacts(job_id: str, phase: str | None = None) -> list[dict[str, Any]]:
+    """Return ordered stage artifacts, optionally filtered by phase."""
+    query = "SELECT * FROM job_stage_artifacts WHERE job_id = ?"
+    params: list[Any] = [job_id]
+    if phase:
+        query += " AND phase = ?"
+        params.append(phase)
+    query += " ORDER BY artifact_id ASC"
+    with _LOCK:
+        target = _ensure_sqlite()
+        with _connect(target) as conn:
+            rows = conn.execute(query, params).fetchall()
+    return [
+        {
+            "id": row["artifact_id"],
+            "phase": row["phase"],
+            "kind": row["kind"],
+            "label": row["label"],
+            "created_at": row["created_at"],
+            "payload": _json_loads(row["payload_json"], {}),
         }
         for row in rows
     ]
@@ -689,6 +805,9 @@ def cleanup_expired(retention_days: int = 30, telemetry_retention_days: int = 14
             expired_events = conn.execute(
                 "DELETE FROM job_events WHERE created_at < ?", (event_cutoff,)
             ).rowcount
+            expired_artifacts = conn.execute(
+                "DELETE FROM job_stage_artifacts WHERE created_at < ?", (event_cutoff,)
+            ).rowcount
             rows = conn.execute(
                 """
                 SELECT job_id, data_json FROM jobs WHERE status IN ('completed', 'failed', 'cancelled')
@@ -714,6 +833,7 @@ def cleanup_expired(retention_days: int = 30, telemetry_retention_days: int = 14
     return {
         "conversations": expired_conversations,
         "events": expired_events,
+        "artifacts": expired_artifacts,
         "jobs": expired_jobs,
         "job_ids": job_ids,
         "input_dirs": input_dirs,

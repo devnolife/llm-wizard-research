@@ -13,7 +13,7 @@ from loguru import logger
 import os
 import shutil
 
-from .api.routes import health, documents, papers, analysis, graph
+from .api.routes import health, documents, papers, analysis, graph, skills
 from .telemetry.recorder import telemetry_middleware
 from .utils.config_loader import get_config, get_effective_config_summary
 
@@ -101,7 +101,7 @@ async def add_request_telemetry(request, call_next):
     return await telemetry_middleware(request, call_next)
 
 
-# Rate limiting (sliding window per client IP; /health exempt)
+# Rate limiting (sliding window per client IP; monitoring GETs exempt — see rate_limit.py)
 if config.api.rate_limit_enabled:
     from .utils.rate_limit import create_rate_limit_middleware
 
@@ -117,6 +117,7 @@ app.include_router(documents.router, prefix="/api", tags=["Documents"])
 app.include_router(papers.router, prefix="/api/papers", tags=["Papers"])
 app.include_router(analysis.router, prefix="/api", tags=["Analysis"])
 app.include_router(graph.router, prefix="/api", tags=["Knowledge Graph"])
+app.include_router(skills.router, prefix="/api/skills", tags=["Skills"])
 
 
 if __name__ == "__main__":

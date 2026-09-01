@@ -46,7 +46,7 @@ def test_generate_retries_transient_connect_error_then_succeeds(monkeypatch):
     sleep_calls = []
     monkeypatch.setattr(llm_service.time, "sleep", lambda delay: sleep_calls.append(delay))
 
-    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest"))
+    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest", engine="ollama"))
     interface.client = Mock()
     interface.client.chat.side_effect = [
         httpx.ConnectError("connection refused"),
@@ -65,7 +65,7 @@ def test_generate_does_not_retry_non_transient_response_error(monkeypatch):
     sleep_mock = Mock()
     monkeypatch.setattr(llm_service.time, "sleep", sleep_mock)
 
-    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest"))
+    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest", engine="ollama"))
     interface.client = Mock()
     interface.client.chat.side_effect = ollama.ResponseError("model not found", status_code=404)
 
@@ -74,6 +74,57 @@ def test_generate_does_not_retry_non_transient_response_error(monkeypatch):
 
     assert interface.client.chat.call_count == 1
     sleep_mock.assert_not_called()
+
+
+def test_generate_uses_copilot_engine(monkeypatch):
+    """With engine=copilot, generation goes through copilotd, not Ollama."""
+    monkeypatch.setattr(
+        llm_service.copilot_client, "is_configured", lambda: True
+    )
+    monkeypatch.setattr(
+        llm_service.copilot_client,
+        "generate",
+        Mock(return_value=("copilot says hi", "copilot:claude-opus-4.8-fast")),
+    )
+
+    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest", engine="copilot"))
+    interface.client = Mock()
+
+    response = interface.generate("hello", system_prompt="be brief")
+
+    assert response == "copilot says hi"
+    interface.client.chat.assert_not_called()
+    assert interface.active_model_name.startswith("copilot:")
+
+
+def test_copilot_strict_raises_when_unavailable(monkeypatch):
+    """Strict mode refuses the silent Ollama fallback when copilotd is down."""
+    monkeypatch.setattr(llm_service.time, "sleep", lambda _: None)
+    monkeypatch.setattr(llm_service.copilot_client, "is_configured", lambda: True)
+    monkeypatch.setattr(llm_service.copilot_client, "generate", Mock(return_value=None))
+    monkeypatch.setenv("COPILOT_STRICT", "1")
+
+    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest", engine="copilot"))
+    interface.client = Mock()
+
+    with pytest.raises(RuntimeError):
+        interface.generate("hello")
+
+    interface.client.chat.assert_not_called()
+
+
+def test_copilot_non_strict_falls_back_to_ollama(monkeypatch):
+    """With strict mode off, copilotd downtime falls back to local Ollama."""
+    monkeypatch.setattr(llm_service.time, "sleep", lambda _: None)
+    monkeypatch.setattr(llm_service.copilot_client, "is_configured", lambda: True)
+    monkeypatch.setattr(llm_service.copilot_client, "generate", Mock(return_value=None))
+    monkeypatch.setenv("COPILOT_STRICT", "0")
+
+    interface = GLMInterface(ModelConfig(model_name="llama3.2:latest", engine="copilot"))
+    interface.client = Mock()
+    interface.client.chat.return_value = {"message": {"content": "ollama fallback"}}
+
+    assert interface.generate("hello") == "ollama fallback"
 
 
 def test_prompt_template():

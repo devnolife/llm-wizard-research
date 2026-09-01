@@ -40,6 +40,10 @@ class IndicatorType(str, Enum):
     FRAGMENTATION = "FRAGMENTATION"
     INCONSISTENCY = "INCONSISTENCY"
     INCOMPLETENESS = "INCOMPLETENESS"
+    # Indicator 4 (LeapSpace P5/P9): an aspect IS asserted across the corpus
+    # yet no primary evidence for it can be retrieved — distinct from
+    # INCOMPLETENESS, where the aspect is never discussed at all.
+    SUPPORT_GAP = "SUPPORT_GAP"
 
 
 class RuleVerdictType(str, Enum):
@@ -88,6 +92,27 @@ class GapIndicatorModel(BaseModel):
     description: str = ""
     confidence: float = Field(0.0, ge=0.0, le=1.0)
     adjusted_confidence: Optional[float] = None
+    calibrated_confidence: Optional[float] = Field(
+        None,
+        description="Post-hoc calibrated confidence (temperature scaling + "
+                    "conformal cutoff), fused with the Rule Engine verdict.",
+    )
+    needs_review: bool = Field(
+        False,
+        description="True when the system abstains: the indicator is withheld "
+                    "as a finding and routed to human review instead.",
+    )
+    abstention_reasons: List[str] = Field(default_factory=list)
+    calibration: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Calibration detail: temperature, conformal cutoff, "
+                    "raw vs calibrated confidence.",
+    )
+    provenance: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Provenance chain: claim -> cited record -> retrieved "
+                    "passage -> validation outcome.",
+    )
     rule_engine_verdict: Optional[RuleVerdictType] = None
     requires_human_validation: bool = True
     evidence: List[str] = Field(default_factory=list)

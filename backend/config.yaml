@@ -133,15 +133,13 @@ telemetry:
 # Optional Unlimited-OCR fallback for scanned PDFs. OCR remains best-effort:
 # unavailable service keeps the native pypdf result instead of failing ingest.
 ocr:
-  enabled: false
-  service_url: "http://127.0.0.1:10000"
+  enabled: true
+  service_url: "http://127.0.0.1:8792"
+  api_key: ""
   image_mode: "gundam"
-  dpi: 200
-  concurrency: 4
-  timeout: 1200
-  min_chars_per_page: 50
-  ngram_size: 35
-  ngram_window: 128
+  dpi: 0
+  timeout: 1800
+  prefer_text_layer: true
   validate_service_on_startup: false
 
 # Rule-Based Validation Layer Configuration

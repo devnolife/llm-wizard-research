@@ -21,18 +21,16 @@ analysis_queue:
 ocr:
   enabled: true
   dpi: 150
-  concurrency: 2
   timeout: 90
-  min_chars_per_page: 20
 """,
         encoding="utf-8",
     )
     monkeypatch.setattr(config_loader, "load_project_env", lambda: None)
     for name in (
       "OLLAMA_KEEP_ALIVE", "OLLAMA_NUM_PARALLEL", "OCR_ENABLED",
-      "MIN_RELEVANCE_SCORE", "OCR_SERVICE_URL", "OCR_IMAGE_MODE", "OCR_DPI",
-      "OCR_CONCURRENCY", "OCR_TIMEOUT", "OCR_MIN_CHARS_PER_PAGE",
-      "OCR_NGRAM_SIZE", "OCR_NGRAM_WINDOW", "OCR_VALIDATE_ON_STARTUP",
+      "MIN_RELEVANCE_SCORE", "OCR_SERVICE_URL", "OCR_API_KEY",
+      "OCR_IMAGE_MODE", "OCR_DPI", "OCR_TIMEOUT", "OCR_PREFER_TEXT_LAYER",
+      "OCR_VALIDATE_ON_STARTUP",
     ):
       monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("OLLAMA_MODEL", "env-model")
@@ -50,6 +48,8 @@ ocr:
     assert config.queue.max_attempts == 3
     assert config.ocr.enabled is True
     assert config.ocr.dpi == 150
+    assert config.ocr.timeout == 90
+    assert config.ocr.prefer_text_layer is True
 
 
 def test_config_rejects_more_than_two_local_analysis_workers(tmp_path, monkeypatch):

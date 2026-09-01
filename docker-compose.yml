@@ -41,6 +41,17 @@ services:
       - neo4j_logs:/logs
     restart: unless-stopped
 
+  # GROBID — high-quality PDF metadata + IMRaD structure (TAHAP 1, optional).
+  # Enable with: docker compose --profile grobid up -d grobid
+  # then set GROBID_URL=http://localhost:8070 for the backend.
+  grobid:
+    profiles: ["grobid"]
+    image: lfoppiano/grobid:0.8.1
+    container_name: grobid
+    ports:
+      - "8070:8070"
+    restart: unless-stopped
+
 volumes:
   neo4j_data:
   neo4j_logs:

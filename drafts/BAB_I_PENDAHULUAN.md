@@ -31,7 +31,7 @@ Berdasarkan kesenjangan tersebut, penelitian ini merumuskan tiga pertanyaan pene
 
 1. **Sejauh mana pendekatan *agentic multi-step reasoning* yang dilengkapi *rule-based validation* mampu mendeteksi indikator *synthesis gap* (fragmentasi, inkonsistensi, dan ketidaklengkapan kolektif) dalam literatur ilmiah?**
 
-   Pertanyaan ini menguji kemampuan inti sistem dalam mengidentifikasi tiga indikator utama *synthesis gap* sebagaimana didefinisikan oleh Cooper [1998] dan Booth et al. [2012]. Fragmentasi merujuk pada kondisi literatur yang terpecah-pecah tanpa integrasi; inkonsistensi merujuk pada temuan empiris yang saling bertentangan tanpa rekonsiliasi; dan ketidaklengkapan kolektif merujuk pada aspek-aspek kritis fenomena yang belum tercakup secara bersama oleh literatur yang ada.
+   Pertanyaan ini menguji kemampuan inti sistem dalam mengidentifikasi empat indikator utama *synthesis gap* yang dikembangkan dari kerangka Cooper [1998] dan Booth et al. [2012]. Fragmentasi merujuk pada kondisi literatur yang terpecah-pecah tanpa integrasi; inkonsistensi merujuk pada temuan empiris yang saling bertentangan tanpa rekonsiliasi; ketidaklengkapan kolektif merujuk pada aspek-aspek kritis fenomena yang belum tercakup secara bersama oleh literatur yang ada; dan ketiadaan dukungan bukti merujuk pada klaim yang berulang kali diasersikan lintas paper tetapi tidak memiliki bukti primer yang dapat ditelusuri di dalam korpus.
 
 2. **Bagaimana mekanisme pembeda asosiasi semantik dan hubungan logis (kausalitas/kontradiksi) serta *rule-based validation* memengaruhi tingkat akurasi dan *false discovery rate* dalam deteksi indikator *synthesis gap*?**
 
@@ -49,7 +49,7 @@ Berdasarkan rumusan masalah di atas, penelitian ini memiliki tujuan sebagai beri
 
 1. **Mengukur kemampuan pendekatan *Neuro-Symbolic Agentic* dalam mendeteksi indikator *synthesis gap*.**
 
-   Secara spesifik, tujuan ini mencakup pengembangan dan evaluasi sistem yang mengintegrasikan arsitektur *agentic multi-step reasoning*, RAG, *Knowledge Graph*, dan *Rule-Based Validation Layer* untuk mendeteksi tiga indikator *synthesis gap* — fragmentasi, inkonsistensi, dan ketidaklengkapan kolektif — dalam korpus literatur ilmiah. Evaluasi dilakukan melalui validasi pakar dengan metrik *Precision*, *Recall*, dan *F1-score*, serta perbandingan terhadap pendekatan *baseline* (*LLM-only*, analisis dokumen tunggal).
+   Secara spesifik, tujuan ini mencakup pengembangan dan evaluasi sistem yang mengintegrasikan arsitektur *agentic multi-step reasoning*, RAG, *Knowledge Graph*, dan *Rule-Based Validation Layer* untuk mendeteksi empat indikator *synthesis gap* — fragmentasi, inkonsistensi, ketidaklengkapan kolektif, dan ketiadaan dukungan bukti — dalam korpus literatur ilmiah. Evaluasi dilakukan melalui validasi pakar dengan metrik *Precision*, *Recall*, dan *F1-score*, serta perbandingan terhadap pendekatan *baseline* (*LLM-only*, analisis dokumen tunggal).
 
 2. **Menganalisis pengaruh mekanisme pembeda asosiasi semantik–hubungan logis dan *rule-based validation* terhadap kualitas deteksi.**
 
@@ -71,7 +71,7 @@ a. **Kontribusi terhadap pemahaman tentang batas kemampuan sistem *Neuro-Symboli
    Penelitian ini memberikan bukti empiris tentang sejauh mana integrasi penalaran neural (LLM) dengan penalaran simbolik (*rule engine*) mampu mendekati — dan di mana gagal mendekati — proses kognitif sintesis literatur yang dilakukan peneliti manusia. Temuan ini berkontribusi pada diskusi yang lebih luas tentang batas kemampuan kecerdasan buatan dalam tugas-tugas yang membutuhkan penalaran tingkat tinggi.
 
 b. **Operasionalisasi konsep *synthesis gap* dalam konteks komputasional.**
-   Dengan mendefinisikan tiga indikator *synthesis gap* yang terukur (fragmentasi, inkonsistensi, dan ketidaklengkapan kolektif) berdasarkan kerangka Cooper [1998] dan Booth et al. [2012], penelitian ini menyediakan definisi operasional yang dapat digunakan oleh penelitian selanjutnya dalam domain *automated literature analysis*.
+   Dengan mendefinisikan empat indikator *synthesis gap* yang terukur (fragmentasi, inkonsistensi, ketidaklengkapan kolektif, dan ketiadaan dukungan bukti) berdasarkan kerangka Cooper [1998] dan Booth et al. [2012], penelitian ini menyediakan definisi operasional yang dapat digunakan oleh penelitian selanjutnya dalam domain *automated literature analysis*.
 
 c. **Kerangka evaluasi untuk sistem deteksi *research gap*.**
    Metodologi evaluasi yang dikembangkan — yang mencakup validasi pakar, perbandingan *baseline*, dan analisis batasan epistemologis — dapat diadopsi sebagai kerangka standar untuk mengevaluasi sistem serupa di masa mendatang.

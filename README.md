@@ -81,6 +81,7 @@ wizard-research/
 - Python 3.9+
 - Node.js 18+
 - [Ollama](https://ollama.ai) with `llama3.2:latest` (or any compatible model)
+- Optional: [copilotd](https://github.com/devnolife/copilot-sdk-go) — when `COPILOTD_URL` is set (with `LLM_ENGINE=copilot`), all text generation runs on GitHub Copilot (`COPILOTD_MODEL`, default `claude-opus-4.8-fast`); Ollama then only serves as fallback (`COPILOT_STRICT=0`) or for embeddings
 
 ### Installation
 
@@ -143,30 +144,40 @@ make frontend
 
 ---
 
-## Scanned PDFs (OCR fallback)
+## Document OCR (ocrd service)
 
-Digital PDFs are parsed with `pypdf`. For **scanned / image-only PDFs** (where
-`pypdf` returns little or no text), the pipeline can fall back to
-[Baidu Unlimited-OCR](https://github.com/baidu/Unlimited-OCR), run as a separate
-GPU microservice in `ocr_service/`.
+PDFs are read **ocrd-first**: every ingested PDF is sent to
+[ocrd](../ocr-service/) — a standalone GPU OCR service (VLM-based, built on
+Baidu Unlimited-OCR) installed at `~/ocr-service` and managed as a systemd
+user service on port `8792`.
+
+- **Digital PDFs** (with a text layer) are answered from the text layer in
+  milliseconds without touching the GPU (`extraction_method="ocrd_text_layer"`).
+- **Scanned / image-only PDFs** go through GPU OCR and come back as structured
+  Markdown (`extraction_method="ocr"` / `ocr_used=true`).
+- If the service is down or fails, ingestion **falls back to `pypdf`**
+  (`extraction_method="pypdf"`) and never breaks.
 
 ```bash
-# 1. One-time setup (isolated venv + model download, ~6.7 GB)
-bash ocr_service/setup.sh
+# Service management (systemd user service, auto-starts on boot)
+systemctl --user status ocrd
+journalctl --user -u ocrd -f
 
-# 2. Start the OCR server (GPU 1, port 10000 by default)
-bash ocr_service/run_server.sh
+# Health / readiness (model takes ~2 min to load after start)
+curl -s http://127.0.0.1:8792/health
 
-# 3. Enable the fallback, then restart the backend
-echo "OCR_ENABLED=true" >> .env   # already templated in .env
+# Probe from the backend side
+python backend/scripts/runtime_doctor.py --check-ocr
 ```
 
-When enabled, any ingested PDF with fewer than `OCR_MIN_CHARS_PER_PAGE` chars/page
-on average is rasterized and parsed by the OCR service; those chunks are tagged
-with `extraction_method="ocr"` / `ocr_used=true`. The backend degrades gracefully
-— if the service is down or OCR fails, ingestion keeps the `pypdf` result and
-never breaks. See [`ocr_service/README.md`](ocr_service/README.md) for details and
-all `OCR_*` env vars.
+Configuration lives under the `OCR_*` env vars (see `.env`): `OCR_ENABLED`,
+`OCR_SERVICE_URL` (default `http://127.0.0.1:8792`), `OCR_API_KEY`,
+`OCR_IMAGE_MODE` (`gundam`/`base`), `OCR_DPI` (0 = server default),
+`OCR_TIMEOUT`, and `OCR_PREFER_TEXT_LAYER`.
+
+> **Note:** the legacy `ocr_service/` folder (raw SGLang setup on port 10000)
+> is **deprecated** — ocrd manages its own GPU runtime. The folder is kept
+> only until you decide to delete it.
 
 ---
 
@@ -375,6 +386,67 @@ See [backend/experiments/expert_eval/README.md](backend/experiments/expert_eval/
 
 ---
 
+## Gap Discovery Pipeline (PDF → chunks → gaps → novelty)
+
+An upgraded, reproducible pipeline that turns a folder of journal PDFs into
+verified research-gap candidates. It fixes 10 measurable extraction/chunking
+defects, mines research gaps with an LLM (grounded to verbatim quotes), and
+verifies each gap's novelty against recent literature.
+
+Shared core: `backend/app/core/pipeline/` (extraction, cleaning, metadata,
+token-aware chunking) and `backend/app/core/gap_mining/` (candidates, LLM
+extraction, verbatim verification, novelty). The same core powers the FastAPI
+ingestion path, so uploaded PDFs get the new schema automatically.
+
+```bash
+cd backend
+
+# TAHAP 1 — extract + clean + section + token-chunk 35 PDFs → new-schema JSONL
+python -m scripts.run_pipeline --input ../data/raw/analysis_jobs/<jobid> \
+    --out ../data/processed/chunks_<jobid>.jsonl
+# legacy baseline for before/after comparison:
+python -m scripts.run_pipeline --input <dir> --out ../data/processed/chunks_old.jsonl --legacy
+
+# Audit all 10 defects + bagian-E validation gate (exit 1 on failure with --gate)
+python -m experiments.audit_chunks ../data/processed/chunks_<jobid>.jsonl \
+    --baseline ../data/processed/chunks_old.jsonl --gate
+
+# TAHAP 2 — mine research gaps (L1 section/phrase candidates → L2 Copilot LLM,
+# every gap_statement verified verbatim against its source chunk)
+python -m scripts.mine_gaps --chunks ../data/processed/chunks_<jobid>.jsonl \
+    --out ../data/processed/gaps_<jobid>.jsonl
+# verify 100% verbatim grounding + count gaps the old regex-only approach missed
+python -m experiments.verify_gaps --gaps ../data/processed/gaps_<jobid>.jsonl \
+    --chunks ../data/processed/chunks_<jobid>.jsonl
+
+# Benchmark extraction quality against the Mendeley Research-Gap dataset
+# (semantic similarity + optional LLM-as-judge 1–5 rubric)
+python -m experiments.gap_benchmark_mendeley \
+    --dataset ../data/benchmarks/mendeley_gaps.csv --sample 25 --judge
+
+# TAHAP 3 — novelty check each gap vs recent (≥2024) papers (OpenAlex, cached)
+python -m scripts.check_novelty --gaps ../data/processed/gaps_<jobid>.jsonl \
+    --out ../data/processed/gaps_<jobid>_novelty.jsonl
+
+# Final single report: chunking before/after + open gaps per topic + title ideas
+python -m experiments.final_report \
+    --chunks-new ../data/processed/chunks_<jobid>.jsonl \
+    --chunks-old ../data/processed/chunks_old.jsonl \
+    --gaps ../data/processed/gaps_<jobid>_novelty.jsonl \
+    --out ../data/processed/final_report.md
+```
+
+Optional **GROBID** (higher-quality title/authors/year/DOI + IMRaD sections):
+`docker compose --profile grobid up -d grobid`, then set
+`GROBID_URL=http://localhost:8070` in `backend/.env`. Without it the pipeline
+falls back to pymupdf + regex-DOI + CrossRef/OpenAlex, so no server is required.
+
+New per-chunk JSONL schema adds: `doi`, `paper_title`, `authors`, `year`,
+`language`, `section_raw`, `section_normalized`, `is_reference`, `page_start`,
+`token_count`, `chunk_id`, and `extraction_quality`.
+
+---
+
 ## Docker
 
 Docker setup is currently a template, not the primary supported path; for
@@ -423,7 +495,7 @@ ELSEVIER_INSTTOKEN=your_token    # optional, for off-campus full-text
 |-------|------------|
 | **Backend** | Python, FastAPI, LangGraph, ChromaDB |
 | **Frontend** | React 19, Vite 5, TailwindCSS 3.4 (shadcn/ui style) |
-| **LLM** | Ollama (llama3.2 default; gpt-oss for model comparison) |
+| **LLM** | GitHub Copilot via copilotd (`claude-opus-4.8-fast` default) with Ollama (llama3.2 / gpt-oss) as local engine or fallback |
 | **Embeddings** | Multilingual Sentence-Transformers (paraphrase-multilingual-MiniLM-L12-v2) bi-encoder + cross-encoder reranker (ms-marco-MiniLM) |
 | **Vector DB** | ChromaDB |
 | **APIs** | arXiv, Semantic Scholar, CORE, PubMed, CrossRef, Europe PMC, ScienceDirect |

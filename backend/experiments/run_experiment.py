@@ -263,14 +263,12 @@ def init_components(model_name=None, mode="full", fresh_db=False, use_nli=False,
         ocr_enabled=config.ocr.enabled,
         ocr_options={
             "service_url": config.ocr.service_url,
+            "api_key": config.ocr.api_key,
             "image_mode": config.ocr.image_mode,
             "dpi": config.ocr.dpi,
-            "concurrency": config.ocr.concurrency,
             "timeout": config.ocr.timeout,
-            "ngram_size": config.ocr.ngram_size,
-            "ngram_window": config.ocr.ngram_window,
+            "prefer_text_layer": config.ocr.prefer_text_layer,
         },
-        ocr_min_chars_per_page=config.ocr.min_chars_per_page,
     )
 
     # Ablation: only no-rule-engine / linear-baseline remove the symbolic

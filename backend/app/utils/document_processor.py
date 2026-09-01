@@ -18,6 +18,10 @@ except ImportError:
 
 from loguru import logger
 
+# Diagnostic threshold: below this avg chars/page a pypdf-extracted PDF is
+# probably a scan that needed OCR.
+_SCANNED_PDF_CHARS_PER_PAGE = 50
+
 
 @dataclass
 class DocumentChunk:
@@ -59,7 +63,6 @@ class DocumentProcessor:
         chunk_strategy: str = "sections",
         ocr_enabled: bool = False,
         ocr_options: Optional[Dict[str, Any]] = None,
-        ocr_min_chars_per_page: int = 50,
     ):
         """
         Initialize document processor
@@ -72,11 +75,13 @@ class DocumentProcessor:
                 (legacy sliding-window). Section-aware chunking tags each chunk
                 with its source section (Introduction, Methods, Limitations, …),
                 enabling section-targeted retrieval and better weakness grounding.
-            ocr_enabled: Enable the Unlimited-OCR fallback for scanned PDFs.
-            ocr_options: Keyword args forwarded to ``UnlimitedOCRClient`` (e.g.
-                service_url, image_mode, dpi, concurrency, timeout, ngram_*).
-            ocr_min_chars_per_page: If the avg extracted chars/page falls below
-                this, the PDF is treated as scanned and OCR is attempted.
+            ocr_enabled: Route PDFs through the ocrd OCR service first (with
+                ``prefer_text_layer``, digital PDFs are answered from their
+                text layer in milliseconds; scans go through GPU OCR).
+                ``pypdf`` remains the fallback when the service is down.
+            ocr_options: Keyword args forwarded to ``OcrdClient`` (e.g.
+                service_url, api_key, image_mode, dpi, timeout,
+                prefer_text_layer).
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
@@ -85,7 +90,6 @@ class DocumentProcessor:
 
         self.ocr_enabled = ocr_enabled
         self.ocr_options = ocr_options or {}
-        self.ocr_min_chars_per_page = ocr_min_chars_per_page
         self._ocr_client = None  # lazily constructed
 
         logger.info(
@@ -101,8 +105,8 @@ class DocumentProcessor:
             return None
         if self._ocr_client is None:
             try:
-                from .ocr_client import UnlimitedOCRClient
-                self._ocr_client = UnlimitedOCRClient(**self.ocr_options)
+                from .ocr_client import OcrdClient
+                self._ocr_client = OcrdClient(**self.ocr_options)
             except Exception as e:
                 logger.warning(f"Could not initialize OCR client, disabling OCR: {e}")
                 self.ocr_enabled = False
@@ -126,7 +130,7 @@ class DocumentProcessor:
         """
         logger.info(f"Processing PDF: {pdf_path}")
         
-        # Extract text from PDF (with OCR fallback for scanned documents)
+        # Extract text from PDF (ocrd-first, pypdf fallback)
         text, extraction_method = self._extract_text_from_pdf(pdf_path)
         
         # Generate document ID from file path
@@ -174,14 +178,30 @@ class DocumentProcessor:
         )
     
     def _extract_text_from_pdf(self, pdf_path: str) -> Tuple[str, str]:
-        """Extract text from a PDF file.
+        """Extract text from a PDF file (ocrd-first).
 
-        Returns a ``(text, method)`` tuple where ``method`` is ``"pypdf"`` or
-        ``"ocr"``. When the native ``pypdf`` extraction yields too little text
-        (scanned / image-only PDFs) and OCR is enabled and the service is
-        reachable, the document is parsed via the Unlimited-OCR service instead.
-        OCR is always best-effort: any failure keeps the ``pypdf`` result.
+        Returns a ``(text, method)`` tuple where ``method`` is one of:
+
+        - ``"ocrd_text_layer"``: ocrd answered from the PDF's own text layer
+          (no GPU involved, milliseconds).
+        - ``"ocr"``: ocrd ran GPU OCR on the rasterized pages.
+        - ``"pypdf"``: local fallback when OCR is disabled or the ocrd
+          service is unreachable/failed.
+
+        When OCR is enabled the whole PDF is sent to ocrd first — the service
+        decides whether OCR is actually needed (``prefer_text_layer``). Any
+        ocrd failure silently falls back to ``pypdf``.
         """
+        if self.ocr_enabled:
+            result = self._try_ocr(pdf_path)
+            if result is not None:
+                method = "ocrd_text_layer" if result.from_text_layer else "ocr"
+                return result.text, method
+            logger.info(
+                f"ocrd unavailable or failed for {Path(pdf_path).name}; "
+                "falling back to pypdf extraction"
+            )
+
         try:
             reader = PdfReader(pdf_path)
             num_pages = len(reader.pages)
@@ -201,45 +221,36 @@ class DocumentProcessor:
             logger.error(f"Failed to read PDF {pdf_path}: {e}")
             raise
 
-        if self._should_use_ocr(full_text, num_pages):
-            ocr_text = self._try_ocr(pdf_path)
-            if ocr_text and len(ocr_text.strip()) > len(full_text.strip()):
-                logger.info(
-                    f"OCR fallback used for {Path(pdf_path).name}: "
-                    f"{len(ocr_text)} chars (pypdf had {len(full_text)})"
-                )
-                return ocr_text, "ocr"
+        # Diagnostic only: a very low text density usually means a scanned
+        # PDF that really needed OCR.
+        avg_chars = len(full_text.strip()) / max(num_pages, 1)
+        if avg_chars < _SCANNED_PDF_CHARS_PER_PAGE:
+            logger.warning(
+                f"{Path(pdf_path).name}: low text density ({avg_chars:.0f} "
+                f"chars/page < {_SCANNED_PDF_CHARS_PER_PAGE}) — likely a "
+                "scanned PDF; text quality may be poor without OCR"
+            )
 
         return full_text, "pypdf"
 
-    def _should_use_ocr(self, text: str, num_pages: int) -> bool:
-        """Heuristic: treat as scanned when avg chars/page is below threshold."""
-        if not self.ocr_enabled:
-            return False
-        pages = max(num_pages, 1)
-        avg_chars = len(text.strip()) / pages
-        if avg_chars >= self.ocr_min_chars_per_page:
-            return False
-        logger.info(
-            f"Low text density ({avg_chars:.0f} chars/page < "
-            f"{self.ocr_min_chars_per_page}); considering OCR fallback"
-        )
-        return True
+    def _try_ocr(self, pdf_path: str):
+        """Send the document to ocrd, swallowing all errors.
 
-    def _try_ocr(self, pdf_path: str) -> Optional[str]:
-        """Run the OCR fallback, swallowing all errors (returns None on failure)."""
+        Returns an ``OcrdResult`` or ``None`` on any failure (service down,
+        model not ready, HTTP error, empty output).
+        """
         client = self.ocr_client
         if client is None:
             return None
         try:
             if not client.is_available():
                 logger.warning(
-                    "OCR enabled but service is not reachable; skipping OCR fallback"
+                    "OCR enabled but the ocrd service is not ready; skipping OCR"
                 )
                 return None
-            return client.ocr_pdf(pdf_path)
+            return client.read_document(pdf_path)
         except Exception as e:
-            logger.warning(f"OCR fallback failed for {Path(pdf_path).name}: {e}")
+            logger.warning(f"OCR failed for {Path(pdf_path).name}: {e}")
             return None
     
     def _extract_metadata(self, text: str) -> Dict[str, Any]:

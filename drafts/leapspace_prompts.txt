@@ -1,0 +1,35 @@
+PROMPT LEAPSPACE DEEP RESEARCH — proyek deteksi indikator synthesis gap
+Batas LeapSpace: 500 karakter per prompt. Jalankan SATU prompt per sesi.
+Metode yang sudah ada di sistem: topic_clustering, citation_isolation,
+nli/contradiction, aspect_coverage, methodology_coverage.
+Catatan: P6-P9 memperkuat 3 indikator lama (aman, tidak ubah klaim BAB III
+3.6.2). Kalau P5 memunculkan indikator KE-4, proposal wajib direvisi dulu.
+
+========================================================================
+
+PROMPT 1 — Peta domain (486 kar) [SELESAI 28/08/2026 → leapspace/Automated_research_gap_identification...docx]
+Deep research on automated research gap identification from scientific literature using Large Language Models: state-of-the-art methods, literature-based discovery, how they differ from simple 'future work' mining, reported accuracy, hallucination issues, and open challenges. Context: I build an LLM + neuro-symbolic system (rule engine + knowledge graph) detecting synthesis gaps: incompleteness, fragmentation, inconsistency. Name specific papers, methods, datasets, and limitations.
+
+PROMPT 2 — Neuro-simbolik / kebaruan (478 kar) [SELESAI 28/08/2026 → leapspace/Neuro-symbolic_approaches...docx]
+How are neuro-symbolic approaches (symbolic rule engines, knowledge graphs, logic verification) used to validate Large Language Model outputs and reduce hallucination? Cover forward-chaining rules over extracted facts, KG consistency checking, confidence calibration, and hybrid LLM+symbolic pipelines for scientific text. Compare architectures and gains vs LLM-only, and identify where this is NOT yet applied, especially literature review automation and research gap analysis.
+
+PROMPT 3 — Taksonomi gap (371 kar) [SELESAI 28/08/2026 → leapspace/Taxonomies_of_research_gaps...docx]
+What taxonomies classify research gaps in literature reviews (Miles 2017 seven-gap taxonomy, Robinson 2011, Muller-Bloch & Kranz 2015)? Define evidence, methodological, theoretical, and contradictory-evidence gaps. Have any computational or AI/LLM-based systems operationalized these taxonomies automatically? Which gap types are hardest to detect automatically, and why?
+
+PROMPT 4 — Evaluasi & benchmark (378 kar) [SELESAI 28/08/2026 → hasil ditempel di chat]
+How is the quality of automatically identified research gaps evaluated? Cover expert-agreement studies, precision/recall against human-annotated gaps, benchmarks for literature review automation and systematic review screening, and truthfulness evaluation of LLM-generated scientific claims. Which metrics and validation protocols are considered rigorous enough for peer review?
+
+PROMPT 5 — Metode deteksi gap terbaru, umum (422 kar) [BELUM — jalankan pertama]
+What are the newest computational methods (2023-2026) for detecting research gaps across a corpus of papers, beyond topic clustering, citation isolation, pairwise NLI contradiction, and aspect-coverage checking? For each method give the algorithm, required inputs, thresholds or scoring formula, reported performance, and failure modes. Prioritize methods reproducible on full-text PDFs with an LLM plus a knowledge graph.
+
+PROMPT 6 — Upgrade indikator Fragmentasi (392 kar) [BELUM]
+What are the best current methods to detect fragmented or disconnected literature: literature-based discovery ABC models, knowledge-graph link prediction, community detection, bibliographic coupling, and bridge-ranking metrics? Give concrete scoring formulas, how candidate bridges are ranked and filtered, how false bridges are avoided, and reported evaluation results on scientific corpora.
+
+PROMPT 7 — Upgrade indikator Inkonsistensi (384 kar) [BELUM]
+Beyond pairwise NLI entailment, how do current systems detect and verify contradictory findings across scientific papers? Cover claim normalization, PICO or variable alignment before comparison, effect-size heterogeneity, stance detection, and how systems distinguish genuine contradiction from methodological heterogeneity. Give thresholds, verification steps, and reported accuracy.
+
+PROMPT 8 — Upgrade indikator Ketidaklengkapan (375 kar) [BELUM]
+How is missing or insufficient evidence detected computationally across a corpus? Cover evidence gap maps, PICO or aspect coverage matrices, evidence-absence detection, saturation and novelty metrics, and omission detection in LLM synthesis. Give the exact construction of coverage matrices, how significance of an uncovered aspect is judged, and reported evaluation results.
+
+PROMPT 9 — Kalibrasi keyakinan & provenance (355 kar) [BELUM]
+How do hybrid LLM plus symbolic systems calibrate and justify confidence for generated scientific claims? Cover evidence-span attribution, provenance chains, abstention and gating rules, verifier models, and calibration metrics such as ECE, Brier score, and selective risk. Give concrete formulas and reported improvements over uncalibrated LLM baselines.

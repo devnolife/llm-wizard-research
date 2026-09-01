@@ -1,48 +1,35 @@
 """
-Client for the Unlimited-OCR SGLang service.
+Client for the ocrd document OCR service.
 
-The OCR model runs as a *separate* GPU service (see ``ocr_service/``) exposing
-an OpenAI-compatible API. This client only depends on ``requests`` and
-``pymupdf`` (lazy-imported), so it never pulls SGLang/torch into the backend
-environment.
+ocrd (installed at ``~/ocr-service``) is a standalone HTTP service wrapping
+the Unlimited-OCR VLM. Unlike the previous
+raw-SGLang integration, all heavy lifting happens server-side: PDF rendering,
+per-page concurrency, text-layer detection, and output cleanup. This client
+is therefore a thin ``multipart/form-data`` wrapper around ``POST /v1/ocr``.
 
-It is used as a **fallback** inside the document pipeline: when ``pypdf`` fails
-to extract meaningful text (i.e. scanned / image-only PDFs), the pages are
-rasterized and sent to the OCR service, which returns structured Markdown.
+It is used **first** in the document pipeline: PDFs are sent to ocrd with
+``prefer_text_layer=true`` so digital PDFs are answered in milliseconds from
+their text layer while scanned PDFs go through GPU OCR. ``pypdf`` remains the
+fallback when the service is unreachable.
 
 Design goals:
-- Never raise to the caller. Any failure (service down, timeout, missing deps)
-  returns ``None`` so the pipeline can gracefully keep the ``pypdf`` result.
-- Cheap availability checks with short-lived caching.
+- Never raise to the caller. Any failure (service down, timeout, HTTP error)
+  returns ``None`` so the pipeline can gracefully fall back to ``pypdf``.
+- Cheap availability checks (``/health`` + ``model_ready``) with short-lived
+  caching.
 """
 
 from __future__ import annotations
 
-import base64
-import json
+import mimetypes
 import os
-import re
-import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 from loguru import logger
-
-# Unlimited-OCR emits layout-grounding spans of the form
-#   <|det|>category [x1, y1, x2, y2]<|/det|>actual recognized text
-# For RAG ingestion we strip the grounding spans and keep the text.
-_DET_SPAN_RE = re.compile(r"<\|det\|>.*?<\|/det\|>", re.DOTALL)
-_SPECIAL_TOKEN_RE = re.compile(r"<\|[^|>]*\|>")
-
-# Default location of the serialized no-repeat-ngram processor string produced
-# by ``ocr_service/gen_ngram_processor.py``. ocr_client.py lives at
-# backend/app/utils/ -> parents[3] is the project root.
-_DEFAULT_NGRAM_FILE = (
-    Path(__file__).resolve().parents[3] / "ocr_service" / "ngram_processor.txt"
-)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -52,51 +39,45 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
-class UnlimitedOCRClient:
-    """Thin client for the Unlimited-OCR SGLang OpenAI-compatible endpoint."""
+@dataclass
+class OcrdResult:
+    """Parsed response of ``POST /v1/ocr``."""
+
+    text: str
+    from_text_layer: bool = False
+    page_count: int = 0
+    duration_ms: int = 0
+    engine: str = ""
+    image_mode: str = ""
+    pages: List[Dict[str, Any]] = field(default_factory=list)
+
+
+class OcrdClient:
+    """Thin HTTP client for the ocrd OCR service (``POST /v1/ocr``)."""
 
     def __init__(
         self,
         service_url: Optional[str] = None,
+        api_key: Optional[str] = None,
         image_mode: Optional[str] = None,
         dpi: Optional[int] = None,
-        concurrency: Optional[int] = None,
         timeout: Optional[int] = None,
-        ngram_size: Optional[int] = None,
-        ngram_window: Optional[int] = None,
-        prompt: Optional[str] = None,
-        ngram_processor_file: Optional[str] = None,
-        strip_layout_tags: Optional[bool] = None,
+        prefer_text_layer: Optional[bool] = None,
     ) -> None:
         self.service_url = (
-            service_url or os.getenv("OCR_SERVICE_URL", "http://127.0.0.1:10000")
+            service_url or os.getenv("OCR_SERVICE_URL", "http://127.0.0.1:8792")
         ).rstrip("/")
+        self.api_key = api_key if api_key is not None else os.getenv("OCR_API_KEY", "")
         self.image_mode = (image_mode or os.getenv("OCR_IMAGE_MODE", "gundam")).strip()
-        self.dpi = int(dpi if dpi is not None else os.getenv("OCR_DPI", 200))
-        self.concurrency = int(
-            concurrency if concurrency is not None else os.getenv("OCR_CONCURRENCY", 4)
+        # dpi=0 defers to the server's own OCRD_PDF_DPI setting.
+        self.dpi = int(dpi if dpi is not None else os.getenv("OCR_DPI", 0))
+        # Generous default: a 150-page thesis takes ~3 minutes; leave headroom.
+        self.timeout = int(timeout if timeout is not None else os.getenv("OCR_TIMEOUT", 1800))
+        self.prefer_text_layer = (
+            prefer_text_layer
+            if prefer_text_layer is not None
+            else _env_bool("OCR_PREFER_TEXT_LAYER", True)
         )
-        self.timeout = int(timeout if timeout is not None else os.getenv("OCR_TIMEOUT", 1200))
-        self.ngram_size = int(
-            ngram_size if ngram_size is not None else os.getenv("OCR_NGRAM_SIZE", 35)
-        )
-        self.ngram_window = int(
-            ngram_window if ngram_window is not None else os.getenv("OCR_NGRAM_WINDOW", 128)
-        )
-        self.prompt = prompt or os.getenv("OCR_PROMPT", "document parsing.")
-        self.served_model_name = os.getenv("OCR_MODEL_NAME", "Unlimited-OCR")
-        self.strip_layout_tags = (
-            strip_layout_tags
-            if strip_layout_tags is not None
-            else _env_bool("OCR_STRIP_LAYOUT_TAGS", True)
-        )
-
-        self._ngram_processor_file = Path(
-            ngram_processor_file
-            or os.getenv("OCR_NGRAM_PROCESSOR_FILE", str(_DEFAULT_NGRAM_FILE))
-        )
-        self._ngram_processor_str: Optional[str] = None
-        self._ngram_loaded = False
 
         # Short-lived availability cache to avoid hammering /health.
         self._available_cache: Optional[bool] = None
@@ -107,25 +88,16 @@ class UnlimitedOCRClient:
         self._session.trust_env = False
 
     # ------------------------------------------------------------------ utils
-    def _load_ngram_processor(self) -> Optional[str]:
-        if self._ngram_loaded:
-            return self._ngram_processor_str
-        self._ngram_loaded = True
-        try:
-            if self._ngram_processor_file.is_file():
-                text = self._ngram_processor_file.read_text(encoding="utf-8").strip()
-                self._ngram_processor_str = text or None
-                if self._ngram_processor_str:
-                    logger.debug(
-                        f"Loaded OCR ngram processor from {self._ngram_processor_file}"
-                    )
-        except Exception as e:  # pragma: no cover - defensive
-            logger.warning(f"Could not read OCR ngram processor file: {e}")
-            self._ngram_processor_str = None
-        return self._ngram_processor_str
+    def _headers(self) -> Dict[str, str]:
+        return {"X-API-Key": self.api_key} if self.api_key else {}
 
     def is_available(self, force: bool = False) -> bool:
-        """Return True if the OCR service answers /health (cached briefly)."""
+        """True when ocrd answers ``/health`` **and** reports ``model_ready``.
+
+        The service responds to ``/health`` as soon as it boots, but the model
+        takes ~2 minutes to load; ``model_ready`` is the flag that matters.
+        The result is cached briefly.
+        """
         now = time.time()
         if (
             not force
@@ -136,156 +108,99 @@ class UnlimitedOCRClient:
 
         ok = False
         try:
-            resp = self._session.get(f"{self.service_url}/health", timeout=5)
-            ok = resp.status_code == 200
-        except requests.RequestException as e:
-            logger.debug(f"OCR service not reachable at {self.service_url}: {e}")
+            resp = self._session.get(
+                f"{self.service_url}/health", headers=self._headers(), timeout=5
+            )
+            if resp.status_code == 200:
+                payload = resp.json()
+                ok = bool(payload.get("ok")) and bool(payload.get("model_ready"))
+                if not ok:
+                    logger.debug(f"ocrd reachable but not ready: {payload}")
+        except (requests.RequestException, ValueError) as e:
+            logger.debug(f"ocrd service not reachable at {self.service_url}: {e}")
             ok = False
 
         self._available_cache = ok
         self._available_checked_at = now
         return ok
 
-    @staticmethod
-    def _encode_image(image_path: str) -> dict:
-        ext = os.path.splitext(image_path)[1].lower()
-        mime = "image/jpeg" if ext in (".jpg", ".jpeg") else f"image/{ext.lstrip('.')}"
-        with open(image_path, "rb") as f:
-            data = base64.b64encode(f.read()).decode("utf-8")
-        return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{data}"}}
-
-    def _build_payload(self, image_path: str) -> dict:
-        payload = {
-            "model": self.served_model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": self.prompt},
-                        self._encode_image(image_path),
-                    ],
-                }
-            ],
-            "temperature": 0,
-            "skip_special_tokens": False,
-            "stream": True,
-            "images_config": {"image_mode": self.image_mode},
-        }
-        ngram = self._load_ngram_processor()
-        if ngram and self.ngram_size > 0 and self.ngram_window > 0:
-            payload["custom_logit_processor"] = ngram
-            payload["custom_params"] = {
-                "ngram_size": self.ngram_size,
-                "window_size": self.ngram_window,
-            }
-        return payload
-
-    def _collect_stream(self, resp: requests.Response) -> str:
-        chunks: List[str] = []
-        for raw_line in resp.iter_lines():
-            if not raw_line:
-                continue
-            line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
-            if not line.startswith("data:"):
-                continue
-            data = line[len("data:"):].strip()
-            if data == "[DONE]":
-                break
-            try:
-                event = json.loads(data)
-                delta = event["choices"][0]["delta"].get("content", "")
-            except (json.JSONDecodeError, KeyError, IndexError):
-                continue
-            if delta:
-                chunks.append(delta)
-        return "".join(chunks)
-
-    def _clean_output(self, text: Optional[str]) -> Optional[str]:
-        """Strip layout-grounding spans / special tokens and tidy whitespace."""
-        if not text:
-            return text
-        if self.strip_layout_tags:
-            text = _DET_SPAN_RE.sub("", text)
-        text = _SPECIAL_TOKEN_RE.sub("", text)
-        text = re.sub(r"[ \t]+\n", "\n", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text.strip()
-
     # --------------------------------------------------------------- requests
-    def ocr_image(self, image_path: str) -> Optional[str]:
-        """OCR a single image file. Returns Markdown text, or None on failure."""
+    def read_document(self, file_path: str) -> Optional[OcrdResult]:
+        """OCR a PDF or image via ``POST /v1/ocr``.
+
+        Returns an :class:`OcrdResult` (Markdown text plus metadata such as
+        ``from_text_layer``), or ``None`` on any failure.
+        """
+        path = Path(file_path)
+        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        data = {
+            "image_mode": self.image_mode,
+            "dpi": str(self.dpi),
+            "prefer_text_layer": "true" if self.prefer_text_layer else "false",
+        }
         try:
-            resp = self._session.post(
-                f"{self.service_url}/v1/chat/completions",
-                headers={"Content-Type": "application/json"},
-                data=json.dumps(self._build_payload(image_path)),
-                timeout=self.timeout,
-                stream=True,
-            )
-            resp.raise_for_status()
-            return self._clean_output(self._collect_stream(resp))
-        except Exception as e:
-            logger.warning(f"OCR request failed for {os.path.basename(image_path)}: {e}")
+            with open(path, "rb") as f:
+                resp = self._session.post(
+                    f"{self.service_url}/v1/ocr",
+                    files={"file": (path.name, f, mime)},
+                    data=data,
+                    headers=self._headers(),
+                    timeout=self.timeout,
+                )
+        except OSError as e:
+            logger.warning(f"Could not read {path.name} for OCR: {e}")
+            return None
+        except requests.RequestException as e:
+            logger.warning(f"ocrd request failed for {path.name}: {e}")
             return None
 
-    def _pdf_to_images(self, pdf_path: str) -> List[str]:
-        import fitz  # PyMuPDF, lazy import
+        if resp.status_code != 200:
+            detail = ""
+            try:
+                detail = resp.json().get("detail", "")
+            except ValueError:
+                detail = resp.text[:200]
+            hints = {
+                401: "check OCR_API_KEY",
+                413: "file exceeds the service's OCRD_MAX_UPLOAD_MB",
+                422: "empty/corrupt file or too many pages (OCRD_MAX_PAGES)",
+                503: "model not ready or runtime down",
+            }
+            hint = hints.get(resp.status_code, "")
+            logger.warning(
+                f"ocrd returned {resp.status_code} for {path.name}: {detail}"
+                + (f" ({hint})" if hint else "")
+            )
+            return None
 
-        doc = fitz.open(pdf_path)
-        tmp_dir = tempfile.mkdtemp(prefix="ocr_pdf_")
-        mat = fitz.Matrix(self.dpi / 72, self.dpi / 72)
-        image_paths: List[str] = []
         try:
-            for i, page in enumerate(doc):
-                out_path = os.path.join(tmp_dir, f"page_{i + 1:04d}.png")
-                page.get_pixmap(matrix=mat).save(out_path)
-                image_paths.append(out_path)
-        finally:
-            doc.close()
-        return image_paths
+            payload = resp.json()
+            text = payload.get("text", "")
+        except ValueError as e:
+            logger.warning(f"ocrd returned invalid JSON for {path.name}: {e}")
+            return None
+
+        if not text or not text.strip():
+            logger.warning(f"ocrd returned empty text for {path.name}")
+            return None
+
+        result = OcrdResult(
+            text=text,
+            from_text_layer=bool(payload.get("from_text_layer", False)),
+            page_count=int(payload.get("page_count", 0)),
+            duration_ms=int(payload.get("duration_ms", 0)),
+            engine=str(payload.get("engine", "")),
+            image_mode=str(payload.get("image_mode", "")),
+            pages=payload.get("pages") or [],
+        )
+        logger.info(
+            f"ocrd processed {path.name}: {len(result.text)} chars, "
+            f"{result.page_count} pages in {result.duration_ms} ms "
+            f"(from_text_layer={result.from_text_layer})"
+        )
+        return result
 
     def ocr_pdf(self, pdf_path: str) -> Optional[str]:
-        """
-        OCR every page of a PDF concurrently and return the pages joined as a
-        single Markdown string (page order preserved). Returns None on failure.
-        """
-        try:
-            image_paths = self._pdf_to_images(pdf_path)
-        except ImportError:
-            logger.warning(
-                "pymupdf (fitz) not installed; cannot rasterize PDF for OCR. "
-                "Install with: pip install pymupdf"
-            )
-            return None
-        except Exception as e:
-            logger.warning(f"Failed to rasterize PDF for OCR ({pdf_path}): {e}")
-            return None
-
-        if not image_paths:
-            return None
-
-        results: List[Optional[str]] = [None] * len(image_paths)
-        try:
-            with ThreadPoolExecutor(max_workers=self.concurrency) as executor:
-                futures = {
-                    executor.submit(self.ocr_image, path): idx
-                    for idx, path in enumerate(image_paths)
-                }
-                for future in as_completed(futures):
-                    idx = futures[future]
-                    results[idx] = future.result()
-        finally:
-            for path in image_paths:
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-
-        pages = [r for r in results if r]
-        if not pages:
-            return None
-
-        joined = "\n\n".join(
-            f"<!-- page {i + 1} -->\n{text}" for i, text in enumerate(results) if text
-        )
-        return joined or None
+        """Convenience wrapper returning only the extracted text."""
+        result = self.read_document(pdf_path)
+        return result.text if result else None

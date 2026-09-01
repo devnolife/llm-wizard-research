@@ -63,7 +63,11 @@ backend/experiments/results/backup_pre_k3/
 
 # ChromaDB
 chroma_db/
+chroma_db.corrupt-*/
+chroma_db.bak-*/
+backend/chroma_db*/
 *.chroma
+*.sqlite3
 
 # Models & Cache (ML weights — NOT backend/app/models which is Pydantic code)
 models/
@@ -128,3 +132,10 @@ static/
 
 # graphify knowledge-graph cache (generated, local only)
 graphify-out/cache/
+
+# flood-geoai-research: dataset mentah, venv, & artefak berat (src/docs/figure tetap dilacak)
+flood-geoai-research/venv/
+flood-geoai-research/data/
+flood-geoai-research/results/*.npz
+flood-geoai-research/results/fusion_model.txt
+!flood-geoai-research/results/*.json

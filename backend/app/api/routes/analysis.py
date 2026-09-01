@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 from typing import List
 from pathlib import Path
+from datetime import datetime
 import asyncio
 import uuid
 import time
@@ -32,18 +33,25 @@ from ..dependencies import (
     get_document_processor,
     get_retriever,
     get_glm_interface,
+    get_vector_store,
     release_analysis_context,
 )
 from ...utils.config_loader import get_config
+from ...core.recommendation.novelty import rank_proposals
+from ...core.pipeline.pipeline import process_pdf_as_document
 from ...utils.job_store import (
+    add_stage_artifact,
     append_conversation_message,
     clear_conversation,
     get_conversation_messages,
+    delete_job,
     get_job,
     get_job_events,
     get_job_graph,
     get_latest_completed_job,
+    get_stage_artifacts,
     is_cancel_requested,
+    list_jobs,
     record_job_event,
     request_cancel,
     retry_job,
@@ -51,6 +59,7 @@ from ...utils.job_store import (
 )
 from ...utils.upload_validation import sanitize_filename, write_validated_pdf_upload
 from ...services.analysis_queue import get_analysis_queue
+from ...services import skill_guidance
 from .analysis_helpers import (
     _build_recommendations_from_gaps,
     _clean_rec_field,
@@ -76,6 +85,10 @@ router = APIRouter()
 
 _CONVERSATION_LOCKS: dict[str, Lock] = {}
 _CONVERSATION_LOCKS_GUARD = Lock()
+
+# Skill AI-Research-SKILLs yang terpakai per job (diisi _traced_generate,
+# dimasukkan ke results.skills_used saat job selesai).
+_JOB_SKILLS: dict[str, set] = {}
 
 def _set_analysis_job(job_id: str, **updates):
     job = dict(get_job(job_id) or {})
@@ -105,6 +118,73 @@ async def retry_analysis(job_id: str):
     return job
 
 
+@router.post("/analysis-jobs/{job_id}/reanalyze")
+async def reanalyze_job(job_id: str):
+    """Re-run any job as a NEW job from its retained input PDFs.
+
+    Unlike ``retry`` (which requeues failed/cancelled jobs in place), this keeps
+    the source job and its results intact — useful to re-run a completed
+    analysis with the currently configured LLM engine and compare outcomes.
+    """
+    source = get_job(job_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Job tidak ditemukan")
+    source_paths = [Path(p) for p in (source.get("payload") or {}).get("pdf_paths") or []]
+    if not source_paths or any(not p.exists() for p in source_paths):
+        raise HTTPException(
+            status_code=409,
+            detail="PDF asli job ini sudah tidak tersedia; unggah ulang untuk menganalisis lagi",
+        )
+
+    config = get_config()
+    new_job_id = str(uuid.uuid4())
+    job_dir = Path(config.data.raw_path) / "analysis_jobs" / new_job_id
+    job_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        input_paths: list[Path] = []
+        files_metadata = []
+        for path in source_paths:
+            target = job_dir / path.name
+            shutil.copyfile(path, target)
+            input_paths.append(target)
+            # Inputs are stored as "{index}_{original-name}"; recover the name.
+            files_metadata.append({"name": path.name.split("_", 1)[-1]})
+    except Exception:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
+
+    _set_analysis_job(
+        new_job_id,
+        status="queued",
+        progress=0,
+        message="Menunggu worker analisis...",
+        results=None,
+        error=None,
+        created_at=time.time(),
+        max_attempts=config.queue.max_attempts,
+        payload={
+            "pdf_paths": [str(path) for path in input_paths],
+            "input_dir": str(job_dir),
+            "files": files_metadata,
+            "reanalyzed_from": job_id,
+        },
+    )
+    record_job_event(
+        new_job_id,
+        "job.created",
+        status="queued",
+        data={"file_count": len(input_paths), "reanalyzed_from": job_id},
+    )
+    get_analysis_queue().notify()
+    return {
+        "success": True,
+        "job_id": new_job_id,
+        "source_job_id": job_id,
+        "files_count": len(input_paths),
+        "message": "Analisis ulang diantrekan. Pantau /api/analysis-status/{job_id}.",
+    }
+
+
 def _get_analysis_job(job_id: str):
     return get_job(job_id)
 
@@ -116,6 +196,42 @@ class JobCancelled(Exception):
 def _ensure_job_active(job_id: str) -> None:
     if is_cancel_requested(job_id):
         raise JobCancelled("Analisis dibatalkan oleh pengguna")
+
+
+def _save_stage_artifact(job_id: str, phase: str, kind: str, label: str = "", payload=None) -> None:
+    """Best-effort persistence — artifact failures must never break the pipeline."""
+    try:
+        add_stage_artifact(job_id, phase, kind, label=label, payload=payload or {})
+    except Exception as exc:
+        logger.debug(f"Stage artifact skipped ({phase}/{kind}): {exc}")
+
+
+def _traced_generate(glm, job_id: str, phase: str, label: str, prompt: str, **kwargs) -> str:
+    """Run ``glm.generate`` and persist the prompt + raw response for the process UI.
+
+    Prompt otomatis diperkaya panduan AI-Research-SKILLs sesuai fase
+    (lihat services/skill_guidance.py) — skill dipakai di semua tahap analisis.
+    """
+    prompt, skills_used = skill_guidance.wrap_prompt(phase, prompt)
+    if skills_used:
+        _JOB_SKILLS.setdefault(job_id, set()).update(skills_used)
+    response = glm.generate(prompt, **kwargs)
+    _save_stage_artifact(
+        job_id,
+        phase,
+        "llm",
+        label=label,
+        payload={
+            "prompt": prompt,
+            "response": response,
+            "model": getattr(glm, "active_model_name", None)
+            or getattr(getattr(glm, "config", None), "model_name", "")
+            or "",
+            "skills_used": skills_used,
+            "params": {k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool))},
+        },
+    )
+    return response
 
 
 def _conversation_lock(conversation_id: str) -> Lock:
@@ -438,9 +554,13 @@ async def analyze_selection(request: MarkedPapersRequest):
             '"summary": "..."}'
         )
 
-        raw = glm.generate(prompt, max_tokens=1000, format="json")
+        raw = glm.generate(
+            skill_guidance.wrap_prompt("selection", prompt)[0],
+            max_tokens=1000, format="json",
+        )
         result = _parse_selection_json(raw if isinstance(raw, str) else str(raw))
         result["suggestions"] = _ground_selection_suggestions(result["suggestions"], papers)
+        result["skills_used"] = skill_guidance.skills_for_phase("selection")
         result["suggestion_note"] = (
             "Hanya arah penelitian yang ditautkan ke minimal dua paper bertanda yang ditampilkan."
         )
@@ -612,6 +732,230 @@ async def get_analysis_status(job_id: str, lang: str = "en"):
     return job
 
 
+@router.get("/analysis-status/{job_id}/events")
+async def get_analysis_events(job_id: str, after_event_id: int = 0):
+    """Riwayat event proses sebuah job (untuk timeline per-tahap).
+
+    Mengembalikan seluruh event tersanitasi yang tercatat untuk job ini,
+    terurut per ``event_id``. Dipakai UI proses untuk fetch awal (refresh-safe)
+    dan meninjau ulang job yang sudah selesai/gagal.
+    """
+    job = _get_analysis_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    events = get_job_events(job_id, after_event_id=after_event_id)
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "progress": job.get("progress"),
+        "message": job.get("message"),
+        "events": events,
+    }
+
+
+@router.get("/analysis-status/{job_id}/artifacts")
+async def get_analysis_artifacts(job_id: str, phase: str | None = None):
+    """Artefak hasil per tahap: hasil ekstraksi, output tiap tahap, dan
+    prompt + jawaban mentah LLM (kind: ``extraction`` / ``result`` / ``llm``).
+
+    Berbeda dari ``/events`` yang metadata-only, endpoint ini memuat konten
+    (dengan cap ukuran) supaya UI proses bisa memperlihatkan hasil nyata.
+    """
+    job = _get_analysis_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    artifacts = get_stage_artifacts(job_id, phase=phase)
+    return {
+        "job_id": job_id,
+        "status": job.get("status"),
+        "artifacts": artifacts,
+    }
+
+
+@router.get("/analysis-status/{job_id}/chunks")
+async def get_analysis_chunks(job_id: str, format: str = "jsonl"):
+    """Hasil tahap PDF→chunk untuk sebuah job, siap diunduh.
+
+    Chunk lengkap tidak ikut disimpan di ``results`` (di sana hanya ada 3
+    sampel per jurnal yang dipangkas 350 karakter), jadi teks utuhnya diambil
+    kembali dari vector store berdasarkan daftar berkas milik job ini.
+
+    ``format``:
+      * ``jsonl`` — satu chunk per baris, untuk diproses program/agen.
+      * ``md``    — dikelompokkan per jurnal, untuk dibaca manusia.
+    """
+    fmt = (format or "jsonl").lower()
+    if fmt not in {"jsonl", "md"}:
+        raise HTTPException(status_code=400, detail="format harus 'jsonl' atau 'md'")
+
+    job = _get_analysis_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    results = job.get("results") or {}
+    papers = results.get("papers_info") or []
+    if not papers:
+        raise HTTPException(
+            status_code=409,
+            detail="Job belum punya daftar jurnal — tunggu sampai analisis selesai.",
+        )
+
+    sources = [p.get("source") for p in papers if p.get("source")]
+    titles = {p.get("source"): p.get("title") for p in papers}
+    years = {p.get("source"): p.get("year") for p in papers}
+
+    vector_store = get_vector_store()
+    docs = vector_store.get_chunks_by_sources(sources)
+    if not docs:
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "Chunk job ini sudah tidak ada di vector store (indeks mungkin "
+                "telah dibersihkan). Jalankan ulang analisis untuk membuatnya lagi."
+            ),
+        )
+
+    exported_at = datetime.now().isoformat(timespec="seconds")
+    stem = f"chunks_{len(papers)}jurnal_{job_id[:8]}"
+
+    if fmt == "jsonl":
+        def _lines():
+            meta = {
+                "record": "meta",
+                "job_id": job_id,
+                "diekspor_pada": exported_at,
+                "jumlah_jurnal": len(papers),
+                "jumlah_chunk": len(docs),
+                "jumlah_chunk_tercatat_job": results.get("total_chunks"),
+                "catatan": (
+                    "Baris berikutnya masing-masing satu chunk. Teks verbatim "
+                    "hasil ekstraksi PDF, belum diringkas LLM."
+                ),
+            }
+            yield json.dumps(meta, ensure_ascii=False) + "\n"
+            for d in docs:
+                m = d.metadata or {}
+                src = m.get("source")
+                authors = m.get("authors")
+                if isinstance(authors, str):
+                    authors = [a.strip() for a in authors.split(",") if a.strip()]
+                yield json.dumps({
+                    "record": "chunk",
+                    "source": src,
+                    "doi": m.get("doi"),
+                    "paper_title": titles.get(src) or m.get("paper_title") or m.get("title"),
+                    "authors": authors or [],
+                    "year": years.get(src) or m.get("year"),
+                    "language": m.get("language"),
+                    "section_raw": m.get("section_raw") or m.get("section"),
+                    "section_normalized": m.get("section_normalized"),
+                    "is_reference": m.get("is_reference"),
+                    "page_start": m.get("page_start"),
+                    "chunk_index": m.get("chunk_index"),
+                    "chunk_id": m.get("chunk_id"),
+                    "token_count": m.get("token_count"),
+                    "chars": len(d.content or ""),
+                    "text": d.content,
+                    "extraction_quality": m.get("extraction_quality"),
+                }, ensure_ascii=False) + "\n"
+
+        return StreamingResponse(
+            _lines(),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": f'attachment; filename="{stem}.jsonl"'},
+        )
+
+    def _md():
+        total_chars = sum(len(d.content or "") for d in docs)
+        yield (
+            f"# Hasil ekstraksi PDF → chunk\n\n"
+            f"- **Job:** `{job_id}`\n"
+            f"- **Diekspor:** {exported_at}\n"
+            f"- **Jurnal:** {len(papers)}\n"
+            f"- **Chunk:** {len(docs)} (tercatat di job: "
+            f"{results.get('total_chunks') or '—'})\n"
+            f"- **Total karakter:** {total_chars:,}\n\n"
+            "Teks di bawah ini verbatim hasil ekstraksi, belum diolah LLM. "
+            "Chunk diurutkan per berkas lalu per `chunk_index`.\n"
+        )
+        current = None
+        for d in docs:
+            m = d.metadata or {}
+            src = m.get("source")
+            if src != current:
+                current = src
+                yield (
+                    f"\n---\n\n## {titles.get(src) or src}\n\n"
+                    f"- Berkas: `{src}`\n"
+                    f"- Tahun: {years.get(src) or '—'}\n"
+                )
+            sec = m.get("section")
+            head = f"\n### chunk {m.get('chunk_index')}"
+            if sec:
+                head += f" — {sec}"
+            yield head + f" ({len(d.content or '')} karakter)\n\n{d.content}\n"
+
+    return StreamingResponse(
+        _md(),
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
+    )
+
+
+@router.get("/analysis-jobs")
+async def list_analysis_jobs(limit: int = 20):
+    """Daftar ringkas job analisis terbaru (untuk dashboard monitor)."""
+    limit = max(1, min(int(limit), 100))
+    jobs = []
+    for job in list_jobs()[:limit]:
+        results = job.get("results") or {}
+        payload = job.get("payload") or {}
+        pdf_paths = payload.get("pdf_paths") or []
+        jobs.append({
+            "job_id": job.get("job_id"),
+            "status": job.get("status"),
+            "progress": job.get("progress"),
+            "message": job.get("message"),
+            "created_at": job.get("created_at"),
+            "completed_at": job.get("completed_at"),
+            "files": [Path(p).name for p in pdf_paths],
+            "files_processed": results.get("files_processed"),
+            "topics_count": len(results.get("topics") or []),
+            "gaps_count": len(results.get("gaps") or []),
+            "recommendations_count": len(results.get("recommendations") or []),
+            "model": (results.get("llm_info") or {}).get("model"),
+        })
+    return {"jobs": jobs, "total": len(jobs)}
+
+
+@router.delete("/analysis-jobs/{job_id}")
+async def delete_analysis_job(job_id: str):
+    """Hapus job beserta event, artefak, chunk vektor, dan file unggahannya."""
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("status") in ("queued", "running", "processing", "started"):
+        raise HTTPException(
+            status_code=409,
+            detail="Job masih berjalan — batalkan dulu sebelum menghapus",
+        )
+
+    delete_job(job_id)
+
+    # Best-effort cleanup of data outside the job store.
+    try:
+        get_vector_store().delete_by_metadata({"analysis_job_id": job_id})
+    except Exception as exc:
+        logger.warning(f"Could not delete vector chunks for job {job_id}: {exc}")
+    try:
+        job_dir = Path(get_config().data.raw_path) / "analysis_jobs" / job_id
+        if job_dir.is_dir():
+            shutil.rmtree(job_dir, ignore_errors=True)
+    except Exception as exc:
+        logger.warning(f"Could not delete upload dir for job {job_id}: {exc}")
+
+    return {"deleted": True, "job_id": job_id}
+
+
 # ── Helper parsers for LLM fallback output ──────────────────────────────────
 
 def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
@@ -634,6 +978,7 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
         _ensure_job_active(job_id)
         _set_analysis_job(job_id, status="running", progress=5, message="Processing PDFs...")
         record_job_event(job_id, "phase.started", phase="ingestion", status="running")
+        _phase_started = time.monotonic()
 
         analysis_context = get_analysis_context(job_id)
         vector_store = analysis_context.vector_store
@@ -657,24 +1002,30 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                 message=f"Processing {source_name}...",
                 progress=5 + (i / len(pdf_paths)) * 15,
             )
+            record_job_event(
+                job_id,
+                "file.started",
+                phase="ingestion",
+                status="running",
+                data={"file": source_name, "index": i + 1, "of": len(pdf_paths)},
+            )
+            _file_started = time.monotonic()
 
-            processed_doc = document_processor.process_pdf(str(pdf_path))
+            processed_doc = process_pdf_as_document(
+                str(pdf_path), source=source_name, job_id=job_id
+            )
             # Each analysis is intentionally scoped to its own source chunks.
             # Re-ingesting an identical filename is preferable to leaking data
             # from an earlier job through the shared corpus.
             already_indexed = False
             for chunk in processed_doc.chunks:
-                metadata = {
-                    "analysis_job_id": job_id,
-                    "source": source_name,
-                    "title": processed_doc.title or source_name,
-                    "chunk_index": chunk.chunk_index,
-                }
-                if processed_doc.metadata.get("year"):
-                    metadata["year"] = int(processed_doc.metadata["year"])
-                section = chunk.metadata.get("section") if chunk.metadata else None
-                if section:
-                    metadata["section"] = section
+                # chunk.metadata already carries the full new schema
+                # (source, section_normalized, is_reference, page_start,
+                # token_count, doi, extraction_quality, chunk_id, ...).
+                metadata = dict(chunk.metadata)
+                metadata["analysis_job_id"] = job_id
+                metadata["source"] = source_name
+                metadata.setdefault("title", processed_doc.title or source_name)
                 vector_store.add_document(chunk.content, metadata)
                 total_chunks += 1
             new_papers += 1
@@ -708,16 +1059,62 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
 
             _add_uploaded_paper_similarity(paper_contents, vector_store)
 
+            record_job_event(
+                job_id,
+                "file.completed",
+                phase="ingestion",
+                status="running",
+                duration_ms=int((time.monotonic() - _file_started) * 1000),
+                data={
+                    "file": source_name,
+                    "index": i + 1,
+                    "of": len(pdf_paths),
+                    "extraction_method": processed_doc.metadata.get("extraction_method", ""),
+                    "ocr_used": bool(processed_doc.metadata.get("ocr_used", False)),
+                    "chars": len(processed_doc.content or ""),
+                    "chunks": len(processed_doc.chunks),
+                },
+            )
+            _save_stage_artifact(
+                job_id,
+                "ingestion",
+                "extraction",
+                label=source_name,
+                payload={
+                    "file": source_name,
+                    "index": i + 1,
+                    "of": len(pdf_paths),
+                    "title": processed_doc.title or source_name,
+                    "year": processed_doc.metadata.get("year"),
+                    "extraction_method": processed_doc.metadata.get("extraction_method", ""),
+                    "ocr_used": bool(processed_doc.metadata.get("ocr_used", False)),
+                    "chars": len(processed_doc.content or ""),
+                    "chunks": len(processed_doc.chunks),
+                    "preview": (processed_doc.content or "")[:4000],
+                    "sample_chunks": [
+                        {
+                            "chunk_index": c.chunk_index,
+                            "section": (c.metadata or {}).get("section"),
+                            "text": c.content[:350],
+                        }
+                        for c in processed_doc.chunks[:3]
+                    ],
+                },
+            )
+
         record_job_event(
             job_id,
             "phase.completed",
             phase="ingestion",
             status="running",
+            duration_ms=int((time.monotonic() - _phase_started) * 1000),
             data={"files_processed": len(paper_contents), "chunks": total_chunks},
         )
 
         _set_analysis_job(job_id, progress=20, message="Extracting topics...")
         _ensure_job_active(job_id)
+        record_job_event(job_id, "phase.started", phase="topics", status="running")
+        _phase_started = time.monotonic()
 
         # ── Step 2: Extract topics from UPLOADED papers only ────
         sample_text = " ".join([p["content"] for p in paper_contents])
@@ -729,18 +1126,31 @@ Konten: {sample_text[:3000]}
 
 Topik:"""
 
-        topics_text = glm.generate(topic_prompt, max_tokens=200)
+        topics_text = _traced_generate(
+            glm, job_id, "topics", "Ekstraksi topik utama", topic_prompt, max_tokens=200
+        )
         topics = [
             line.strip()
             for line in topics_text.strip().split("\n")
             if line.strip() and line.strip()[0].isdigit()
         ]
+        record_job_event(
+            job_id,
+            "phase.completed",
+            phase="topics",
+            status="running",
+            duration_ms=int((time.monotonic() - _phase_started) * 1000),
+            data={"topics": len(topics)},
+        )
+        _save_stage_artifact(job_id, "topics", "result", payload={"topics": topics})
 
         # ── Steps 2b/2c/2d run CONCURRENTLY (they are independent) ──────────
         # 2b: classify papers by basis · 2c: shared keywords/themes ·
         # 2d: per-paper weaknesses. Each is defined as a closure and executed in
         # parallel threads; the ollama client releases the GIL during requests.
         _set_analysis_job(job_id, message="Menganalisis basis, persamaan & kekurangan jurnal...")
+        record_job_event(job_id, "phase.started", phase="paper_analysis", status="running")
+        _phase_started = time.monotonic()
 
         def _compute_groups():
             paper_list = "\n".join(
@@ -756,7 +1166,10 @@ Topik:"""
                 "Kembalikan HANYA JSON array (tanpa teks lain): "
                 '[{"title": "judul jurnal", "basis": "label basis"}]'
             )
-            raw_groups = glm.generate(group_prompt, max_tokens=400).strip()
+            raw_groups = _traced_generate(
+                glm, job_id, "paper_analysis", "Klasifikasi basis paper",
+                group_prompt, max_tokens=400,
+            ).strip()
             return _parse_paper_groups_json(raw_groups)
 
         def _compute_similarity():
@@ -774,7 +1187,10 @@ Topik:"""
                 "Kembalikan HANYA JSON (tanpa teks lain): "
                 '{"common_keywords": [...], "shared_themes": [...], "summary": "..."}'
             )
-            raw_sim = glm.generate(sim_prompt, max_tokens=500, format="json")
+            raw_sim = _traced_generate(
+                glm, job_id, "paper_analysis", "Persamaan antar paper",
+                sim_prompt, max_tokens=500, format="json",
+            )
             parsed_sim = _parse_selection_json(raw_sim if isinstance(raw_sim, str) else str(raw_sim))
             return {
                 "common_keywords": parsed_sim.get("common_keywords", []),
@@ -820,10 +1236,16 @@ Topik:"""
             prompts = [_weak_prompt(p) for p in paper_contents]
             raws = glm.generate_batch(prompts, max_tokens=600, format="json")
             out = []
-            for p, raw_weak in zip(paper_contents, raws):
-                parsed_weak = _parse_weaknesses_json(
-                    raw_weak if isinstance(raw_weak, str) else str(raw_weak)
+            for p, weak_prompt, raw_weak in zip(paper_contents, prompts, raws):
+                raw_weak_text = raw_weak if isinstance(raw_weak, str) else str(raw_weak)
+                _save_stage_artifact(
+                    job_id,
+                    "paper_analysis",
+                    "llm",
+                    label=f"Kekurangan jurnal: {p['title'][:70]}",
+                    payload={"prompt": weak_prompt, "response": raw_weak_text},
                 )
+                parsed_weak = _parse_weaknesses_json(raw_weak_text)
                 # Verify each point against the paper text so the UI's promise
                 # ("disertai dasar dari jurnal — bukan tebakan") actually holds.
                 verified = _verify_paper_weaknesses(
@@ -862,6 +1284,29 @@ Topik:"""
             except Exception as weak_err:
                 logger.warning(f"Paper weakness analysis failed: {weak_err}")
 
+        record_job_event(
+            job_id,
+            "phase.completed",
+            phase="paper_analysis",
+            status="running",
+            duration_ms=int((time.monotonic() - _phase_started) * 1000),
+            data={
+                "groups": len(paper_groups),
+                "weaknesses": len(paper_weaknesses),
+                "common_keywords": len(paper_similarity.get("common_keywords", [])),
+            },
+        )
+        _save_stage_artifact(
+            job_id,
+            "paper_analysis",
+            "result",
+            payload={
+                "groups": paper_groups,
+                "similarity": paper_similarity,
+                "weaknesses": paper_weaknesses,
+            },
+        )
+
         _ensure_job_active(job_id)
 
         # ── Step 3: Run Coordinator (full neuro-symbolic pipeline) ──
@@ -870,6 +1315,8 @@ Topik:"""
             progress=30,
             message="Running neuro-symbolic analysis (Observe \u2192 Think \u2192 Act \u2192 Evaluate)...",
         )
+        record_job_event(job_id, "phase.started", phase="neuro_symbolic", status="running")
+        _phase_started = time.monotonic()
 
         coordinator_result = None
         execution_mode = "llm_fallback"
@@ -924,7 +1371,6 @@ Topik:"""
             )
 
             _ensure_job_active(job_id)
-            record_job_event(job_id, "phase.started", phase="neuro_symbolic", status="running")
 
             logger.info(
                 f"Coordinator finished: mode={execution_mode}, "
@@ -936,15 +1382,40 @@ Topik:"""
                 "phase.completed",
                 phase="neuro_symbolic",
                 status="running",
+                duration_ms=int((time.monotonic() - _phase_started) * 1000),
                 data={
                     "indicators": len(gap_indicators),
                     "facts": fact_table_stats.get("total_facts", 0),
+                    "mode": execution_mode,
+                },
+            )
+            _save_stage_artifact(
+                job_id,
+                "neuro_symbolic",
+                "result",
+                payload={
+                    "mode": execution_mode,
+                    "indicators": gap_indicators,
+                    "sample_facts": sample_facts,
+                    "rule_engine_report": rule_engine_report,
+                    "fact_table_stats": fact_table_stats,
+                    "reasoning_trace": reasoning_trace,
                 },
             )
 
+        except JobCancelled:
+            raise
         except Exception as e:
             logger.warning(f"Coordinator pipeline failed, falling back to LLM: {e}")
             _set_analysis_job(job_id, message="Coordinator unavailable, using LLM fallback...")
+            record_job_event(
+                job_id,
+                "phase.failed",
+                phase="neuro_symbolic",
+                status="running",
+                duration_ms=int((time.monotonic() - _phase_started) * 1000),
+                data={"error_type": type(e).__name__, "fallback": "llm"},
+            )
             reasoning_trace.append({
                 "phase": "coordinator_fallback",
                 "error": str(e),
@@ -953,6 +1424,8 @@ Topik:"""
         # ── Step 4: Generate summary (always via LLM) ──────────
         _set_analysis_job(job_id, progress=75, message="Generating research summary...")
         _ensure_job_active(job_id)
+        record_job_event(job_id, "phase.started", phase="summary", status="running")
+        _phase_started = time.monotonic()
 
         if topics:
             search_results = analysis_context.retriever.retrieve(topics[0], top_k=15)
@@ -967,13 +1440,26 @@ Konteks dari paper:
 {context[:3000]}
 
 Ringkasan:"""
-            summary = glm.generate(summary_prompt, max_tokens=500)
+            summary = _traced_generate(
+                glm, job_id, "summary", "Ringkasan penelitian", summary_prompt, max_tokens=500
+            )
         else:
             summary = "No topics extracted."
+        record_job_event(
+            job_id,
+            "phase.completed",
+            phase="summary",
+            status="running",
+            duration_ms=int((time.monotonic() - _phase_started) * 1000),
+            data={"chars": len(summary or "")},
+        )
+        _save_stage_artifact(job_id, "summary", "result", payload={"summary": summary})
 
         # ── Step 5: Gap detection (use coordinator result or LLM fallback) ──
         _set_analysis_job(job_id, progress=80, message="Finalizing gap analysis...")
         _ensure_job_active(job_id)
+        record_job_event(job_id, "phase.started", phase="gaps", status="running")
+        _phase_started = time.monotonic()
 
         gaps = []
         if gap_indicators:
@@ -984,9 +1470,18 @@ Ringkasan:"""
                     "description": gi.get("description", ""),
                     "type": gi.get("type", gi.get("indicator_type", "FRAGMENTATION")),
                     "confidence": gi.get("confidence", 0.0),
+                    "calibrated_confidence": gi.get("calibrated_confidence"),
+                    "needs_review": bool(gi.get("needs_review", False)),
+                    "abstention_reasons": gi.get("abstention_reasons", []),
+                    "calibration": gi.get("calibration", {}),
+                    "provenance": gi.get("provenance", {}),
                     "rule_engine_verdict": gi.get("rule_engine_verdict", None),
                     "evidence": gi.get("evidence", []),
                     "suggested_directions": gi.get("suggested_directions", []),
+                    "related_papers": [
+                        str(rp).strip() for rp in (gi.get("related_papers") or [])
+                        if str(rp).strip()
+                    ],
                 })
         else:
             # LLM fallback — generate structured gaps then validate via Rule Engine
@@ -1018,7 +1513,10 @@ Kembalikan gap dalam format JSON TEPAT ini (tanpa teks tambahan):
 {{"title": "Judul gap singkat", "description": "2-3 kalimat menjelaskan indikator gap berbasis perbandingan antar-paper", "type": "FRAGMENTATION atau INCONSISTENCY atau INCOMPLETENESS"}}
 
 JSON:"""
-                raw = glm.generate(gap_prompt, max_tokens=300).strip()
+                raw = _traced_generate(
+                    glm, job_id, "gaps", f"Deteksi gap topik: {topic[:70]}",
+                    gap_prompt, max_tokens=300,
+                ).strip()
 
                 # Parse LLM output into structured dict
                 gap_dict = _parse_gap_json(raw)
@@ -1055,6 +1553,7 @@ JSON:"""
                 gap_dict["confidence"] = gap_dict.get("confidence", 0.5)
                 gap_dict["evidence"] = gap_dict.get("evidence", [])
                 gap_dict["suggested_directions"] = gap_dict.get("suggested_directions", [])
+                gap_dict["related_papers"] = gap_dict.get("related_papers", [])
 
                 # Skip REJECT gaps
                 if verdict != "REJECT":
@@ -1065,11 +1564,22 @@ JSON:"""
         # (fragmentasi, inkonsistensi, ketidaklengkapan kolektif), BUKAN kombinasi
         # metode+domain dangkal atau pengulangan "future work". Diposisikan sebagai
         # INDIKATOR usulan (decision-support) yang tetap perlu validasi peneliti.
+        record_job_event(
+            job_id,
+            "phase.completed",
+            phase="gaps",
+            status="running",
+            duration_ms=int((time.monotonic() - _phase_started) * 1000),
+            data={"gaps": len(gaps)},
+        )
+        _save_stage_artifact(job_id, "gaps", "result", payload={"gaps": gaps})
         _set_analysis_job(
             job_id,
             progress=85,
             message="Menyusun usulan penelitian (berbasis indikator synthesis gap)...",
         )
+        record_job_event(job_id, "phase.started", phase="proposal", status="running")
+        _phase_started = time.monotonic()
 
         # Rekomendasi paper relevan dari coordinator disimpan terpisah sebagai rujukan,
         # bukan sebagai "usulan penelitian baru".
@@ -1091,10 +1601,12 @@ JSON:"""
 Gunakan Bahasa Indonesia.
 
 PENTING — kerangka synthesis gap (Cooper, 1998; Booth et al., 2012). Setiap usulan WAJIB
-menjawab salah satu dari 3 indikator berikut:
+menjawab salah satu dari 4 indikator berikut:
 1. FRAGMENTASI — jurnal membahas fenomena sama dari sudut berbeda tetapi tidak terintegrasi.
 2. INKONSISTENSI — temuan antar-jurnal saling bertentangan dan belum direkonsiliasi.
 3. KETIDAKLENGKAPAN KOLEKTIF — aspek kritis fenomena belum tercakup bersama oleh jurnal-jurnal itu.
+4. KETIADAAN DUKUNGAN BUKTI — aspek justru sering diklaim lintas jurnal, tetapi tidak ada
+   bukti primer yang dapat ditelusuri untuk mendukungnya (klaim berulang tanpa pembuktian).
 
 LARANGAN KERAS (usulan seperti ini DITOLAK penguji):
 - JANGAN mengusulkan sekadar "kombinasi Metode A + Domain B" (itu penerapan, bukan sintesis).
@@ -1110,7 +1622,7 @@ Buat 5 usulan. Untuk tiap usulan:
 - "title": judul usulan penelitian yang spesifik.
 - "description": apa yang diteliti, dirumuskan sebagai upaya MENGINTEGRASIKAN / MEREKONSILIASI /
   MELENGKAPI literatur (sesuai indikator gap-nya).
-- "gap_type": salah satu dari FRAGMENTATION / INCONSISTENCY / INCOMPLETENESS.
+- "gap_type": salah satu dari FRAGMENTATION / INCONSISTENCY / INCOMPLETENESS / SUPPORT_GAP.
 - "why": mengapa penting — sebutkan indikator gap mana yang dijawab.
 - "how": metodologi yang disarankan secara ringkas.
 
@@ -1122,7 +1634,10 @@ Kembalikan HANYA JSON array (tanpa teks tambahan):
 
 JSON:"""
         try:
-            raw = glm.generate(rec_prompt, max_tokens=800, format="json").strip()
+            raw = _traced_generate(
+                glm, job_id, "proposal", "Usulan penelitian (berbasis gap)",
+                rec_prompt, max_tokens=800, format="json",
+            ).strip()
             recommendations = _parse_recommendations_json(raw)
         except Exception as rec_err:
             logger.warning(f"Recommendation generation failed: {rec_err}")
@@ -1140,9 +1655,55 @@ JSON:"""
             logger.info("LLM recommendations empty/degenerate — building deterministically from gaps.")
             recommendations = _build_recommendations_from_gaps(gaps)
 
+        # Rank the (already gap-anchored) proposals by semantic novelty against
+        # the corpus. Novelty is a PRIORITY signal, never a gap in itself —
+        # BAB II Subbab 2.2.2 rules out "an untried method-domain combination" as a
+        # synthesis gap, so it may only reorder defensible proposals.
+        if recommendations:
+            try:
+                embedder = getattr(
+                    getattr(analysis_context, "vector_store", None),
+                    "embedding_model",
+                    None,
+                )
+                recommendations = rank_proposals(
+                    recommendations,
+                    [
+                        {
+                            "source": p.get("source", ""),
+                            "title": p.get("title", ""),
+                            "content": str(p.get("content") or "")[:1500],
+                        }
+                        for p in paper_contents
+                    ],
+                    gaps,
+                    embedder=embedder,
+                )
+            except Exception as rank_err:
+                logger.warning(f"Novelty ranking skipped: {rank_err}")
+
         # ── Step 7: Roadmap (always via LLM) ────────────────────
+        record_job_event(
+            job_id,
+            "phase.completed",
+            phase="proposal",
+            status="running",
+            duration_ms=int((time.monotonic() - _phase_started) * 1000),
+            data={"recommendations": len(recommendations)},
+        )
+        _save_stage_artifact(
+            job_id,
+            "proposal",
+            "result",
+            payload={
+                "recommendations": recommendations,
+                "related_paper_refs": related_paper_refs,
+            },
+        )
         _set_analysis_job(job_id, progress=95, message="Creating roadmap...")
         _ensure_job_active(job_id)
+        record_job_event(job_id, "phase.started", phase="roadmap", status="running")
+        _phase_started = time.monotonic()
 
         roadmap_topic = topics[0] if topics else "research"
         roadmap_prompt = f"""Buat peta jalan penelitian terstruktur untuk: {roadmap_topic}
@@ -1156,8 +1717,20 @@ Kembalikan sebagai JSON array fase (tanpa teks tambahan):
 ]
 
 JSON:"""
-        raw_roadmap = glm.generate(roadmap_prompt, max_tokens=500, format="json").strip()
+        raw_roadmap = _traced_generate(
+            glm, job_id, "roadmap", "Peta jalan penelitian",
+            roadmap_prompt, max_tokens=500, format="json",
+        ).strip()
         roadmap = _parse_roadmap_json(raw_roadmap)
+        record_job_event(
+            job_id,
+            "phase.completed",
+            phase="roadmap",
+            status="running",
+            duration_ms=int((time.monotonic() - _phase_started) * 1000),
+            data={"phases": len(roadmap)},
+        )
+        _save_stage_artifact(job_id, "roadmap", "result", payload={"roadmap": roadmap})
 
         # ── Step 8: Proposal intro (1-sentence AI synthesis, decision-support) ──
         proposal_intro = ""
@@ -1175,7 +1748,10 @@ JSON:"""
                     f"gunakan kata seperti 'berpotensi', 'mengindikasikan', atau 'dapat dipertimbangkan', "
                     f"JANGAN menyatakannya sebagai temuan pasti. Tanpa awalan 'Berikut' atau label."
                 )
-                proposal_intro = glm.generate(intro_prompt, max_tokens=120).strip()
+                proposal_intro = _traced_generate(
+                    glm, job_id, "proposal", "Kalimat pembuka usulan",
+                    intro_prompt, max_tokens=120,
+                ).strip()
         except Exception as intro_err:
             logger.warning(f"Proposal intro generation failed: {intro_err}")
 
@@ -1261,7 +1837,12 @@ JSON:"""
                 "rule_engine_report": rule_engine_report,
                 "fact_table_stats": fact_table_stats,
                 "sample_facts": sample_facts,
-                "llm_info": {"model": getattr(getattr(glm, "config", None), "model_name", "") or ""},
+                "llm_info": {
+                    "model": getattr(glm, "active_model_name", None)
+                    or getattr(getattr(glm, "config", None), "model_name", "")
+                    or ""
+                },
+                "skills_used": sorted(_JOB_SKILLS.get(job_id, set())),
                 "reasoning_trace": reasoning_trace,
                 "eval_metrics": eval_metrics,
             },
@@ -1299,6 +1880,7 @@ JSON:"""
     finally:
         # Inputs stay on disk until retention cleanup so a retry can rebuild a
         # clean scoped corpus after a restart.
+        _JOB_SKILLS.pop(job_id, None)
         release_analysis_context(job_id)
 
 

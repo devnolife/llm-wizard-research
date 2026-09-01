@@ -617,15 +617,18 @@ RULE ENGINE EVALUATION:
 
 ## 3.6 Deteksi Indikator Synthesis Gap
 
-### 3.6.1 Tiga Indikator Synthesis Gap
+### 3.6.1 Empat Indikator Synthesis Gap
 
-Merujuk pada kerangka Cooper [1998] dan Booth, Sutton & Papaioannou [2012], sistem mendeteksi tiga indikator utama *synthesis gap*:
+Merujuk pada kerangka Cooper [1998] dan Booth, Sutton & Papaioannou [2012], sistem mendeteksi empat indikator *synthesis gap*:
 
 | # | Indikator | Definisi | Contoh |
 |---|-----------|----------|--------|
 | 1 | **Fragmentasi** | Paper-paper membahas fenomena yang sama dari sudut berbeda tetapi tidak saling mengintegrasikan | 10 studi tentang *dropout* di *online learning*, masing-masing menggunakan teori berbeda, tidak ada yang menyatukan |
 | 2 | **Inkonsistensi** (yang belum direkonsiliasi) | Temuan empiris saling bertentangan dan belum ada yang menyelesaikan | Paper A: *gamification* meningkatkan motivasi. Paper B: *gamification* menurunkan motivasi. Belum ada penjelasan mengapa |
 | 3 | **Ketidaklengkapan** (kolektif) | Aspek-aspek kritis dari fenomena belum dicakup secara bersama oleh literatur yang ada | Banyak studi tentang efektivitas *blended learning*, tetapi tidak ada yang membahas aspek *equity*/aksesibilitas |
+| 4 | **Ketiadaan dukungan bukti** | Klaim justru berulang kali diasersikan lintas paper, tetapi tidak ada bukti primer yang dapat ditelusuri di dalam korpus untuk mendukungnya | Sepuluh paper menyatakan *blockchain* meningkatkan integritas bukti digital, seluruhnya merujuk tinjauan lain; tidak ada yang melaporkan eksperimen atau pengukuran |
+
+Indikator keempat dibedakan secara tegas dari indikator ketiga: ketidaklengkapan menyoroti aspek yang **tidak dibahas**, sedangkan ketiadaan dukungan bukti menyoroti aspek yang **dibahas dan diklaim, tetapi tidak dibuktikan**. Keduanya menuntut tindak lanjut berbeda — studi perintis pada kasus pertama, replikasi atau pengujian primer pada kasus kedua.
 
 Penting untuk ditegaskan bahwa *synthesis gap* **bukan**: (a) kombinasi metode-domain yang belum pernah ada ("belum diterapkan" bukan berarti *gap*), (b) topik yang belum diteliti sama sekali (*knowledge gap*, bukan *synthesis gap*), atau (c) saran *future work* di akhir paper (*explicit gap*) [Muller-Bloch & Kranz, 2015].
 
@@ -633,33 +636,53 @@ Penting untuk ditegaskan bahwa *synthesis gap* **bukan**: (a) kombinasi metode-d
 
 #### Deteksi Fragmentasi
 
-Fragmentasi dideteksi melalui analisis *coverage* dan *clustering* tematik:
+Fragmentasi dideteksi melalui *clustering* tematik yang dilaporkan bersama ukuran kualitas strukturnya, ditambah analisis posisi paper di dalam *Knowledge Graph*:
 
-1. **Topic Clustering:** Paper-paper dikelompokkan berdasarkan kedekatan semantik menggunakan *embedding* SciBERT. Klaster yang terfragmentasi ditandai dengan adanya sub-klaster yang memiliki *overlap* rendah (*silhouette score* < *threshold*).
+1. **Topic Clustering dengan Metrik Kualitas:** Paper-paper dikelompokkan berdasarkan kedekatan semantik *embedding*. Berbeda dengan pengelompokan berbasis kata kunci satu lintasan yang hasilnya bergantung pada urutan masukan, kualitas partisi dilaporkan secara eksplisit melalui *modularity* $Q$ [Newman, 2006] dan *silhouette score*. Literatur dinyatakan terfragmentasi bila $Q \le 0{,}42$ dengan *overlap* antar-klaster di bawah 15%, dan dinyatakan kohesif bila $Q \ge 0{,}75$; rentang di antaranya dilaporkan sebagai tidak konklusif alih-alih dipaksakan menjadi satu label.
 
-2. **Cross-Citation Analysis:** Sistem memeriksa apakah paper-paper dalam klaster yang sama saling merujuk. Fragmentasi ditandai oleh rendahnya tingkat *cross-citation* di antara paper yang membahas topik serupa.
+2. **Entropy-Gated Singleton Rescue:** Paper yang tersisa sebagai klaster tunggal tidak langsung dianggap terisolasi. Sistem menghitung entropi distribusi kemiripan paper tersebut terhadap seluruh sentroid; hanya paper dengan entropi rendah (terkonsentrasi pada satu sentroid) yang direlokasi. Mekanisme ini mencegah topik minoritas yang sah dibuang sebagai derau, sekaligus mencegah paper yang benar-benar terpencil ditarik paksa ke klaster besar.
 
-3. **KG Query — Shared Entities:** *KG Querier* memeriksa apakah paper-paper yang membahas fenomena sama menggunakan entitas (*method*, *concept*) yang sama atau berbeda. Keragaman tinggi tanpa integrasi eksplisit mengindikasikan fragmentasi.
+3. **Link Prediction untuk Kandidat Jembatan:** Alih-alih hanya melaporkan rasio biner "ada/tidak ada jalur" antar-paper di *Knowledge Graph*, sistem memeringkat pasangan entitas lintas-klaster yang paling layak dihubungkan menggunakan skor *common neighbours*, *Jaccard*, *Adamic-Adar*, *resource allocation*, dan *preferential attachment*, dikombinasikan dengan *betweenness centrality* untuk mengenali entitas perantara. Pendekatan ini merupakan operasionalisasi *literature-based discovery* Swanson [1986] dalam bentuk yang dapat diperiksa: keluarannya bukan sekadar skor, melainkan usulan hubungan konkret yang dapat dinilai peneliti.
+
+4. **Penyaringan Jembatan Palsu:** Entitas generik yang terhubung ke hampir semua klaster (rasio kehadiran lintas-klaster di atas 0,6) dikeluarkan dari daftar kandidat. Tanpa penyaringan ini, entitas seperti "*machine learning*" akan selalu muncul sebagai jembatan terbaik dan menghasilkan gap semu.
 
 #### Deteksi Inkonsistensi
 
-Inkonsistensi dideteksi melalui kombinasi *NLI Checker* dan *KG Query*:
+Deteksi inkonsistensi tidak lagi bersandar pada *pairwise* NLI sebagai penentu tunggal. Skor NLI diperlakukan sebagai satu sinyal di antara beberapa sinyal, karena dua kalimat dapat tampak bertentangan semata-mata karena diukur pada populasi, satuan, atau desain studi yang berbeda:
 
-1. **Pairwise NLI:** Setiap pasangan temuan (*finding*) dari paper berbeda dievaluasi menggunakan *NLI Checker* untuk mendeteksi relasi *contradiction*. Pasangan dengan skor kontradiksi > 0,7 ditandai sebagai kandidat.
+1. **Normalisasi Klaim:** Setiap temuan didekomposisi menjadi proposisi terbanding berisi subjek, relasi, objek, arah efek (naik/turun/tidak berpengaruh), polaritas (afirmasi/negasi), satuan, dan nilai kuantitatif bila tersedia, disertai konteks PICO (*population, intervention, comparison, outcome*). Negasi ditangani secara eksplisit sehingga "tidak meningkatkan" tidak diperlakukan sebagai klaim "meningkatkan" — persoalan yang justru sering salah dinilai oleh NLI mentah.
 
-2. **Reconciliation Search:** Untuk setiap kandidat kontradiksi, *RAG Retriever* digunakan untuk mencari apakah kontradiksi tersebut sudah direkonsiliasi dalam literatur. Jika tidak ditemukan rekonsiliasi, kontradiksi dilabeli sebagai "*unresolved inconsistency*."
+2. **Gerbang Keselarasan Variabel:** Dua klaim hanya dibandingkan bila konteks studinya cukup selaras, diukur dengan skor keselarasan minimum 0,65. Klaim yang tidak lolos gerbang ini tidak dinyatakan konsisten maupun bertentangan, melainkan dilabeli **beda konteks** — sebuah kategori yang sebelumnya tidak tersedia dan menjadi sumber utama kesalahan positif.
 
-3. **Rule Validation (K1, K3):** *Rule Engine* memverifikasi bahwa kontradiksi yang terdeteksi bersifat genuine (bukan artefak *parsing* atau perbedaan konteks).
+3. **Adjudikasi Empat Kelas:** Pasangan klaim yang lolos gerbang diadjudikasi menjadi salah satu dari: (a) **kontradiksi** — arah efek berlawanan pada konteks selaras; (b) **heterogenitas** — perbedaan besaran yang wajar dijelaskan variasi antar-studi; (c) **beda konteks**; atau (d) **bukan klaim terbanding**. Penilaian heterogenitas menggunakan uji Cochran's $Q$ pada $\alpha = 0{,}10$ dan statistik $I^2$ dengan pita interpretasi 25%/50%/75% [Higgins & Thompson, 2002], serta $\tau^2$ untuk ragam antar-studi. Hanya kelas (a) yang dilaporkan sebagai indikator inkonsistensi; kelas (b) dan (c) tetap disimpan sebagai catatan tersaring agar keputusan sistem dapat ditelusuri.
+
+4. **Reconciliation Search dan Rule Validation (K1, K3):** Untuk kandidat kontradiksi yang tersisa, *RAG Retriever* mencari apakah pertentangan tersebut telah direkonsiliasi dalam literatur; bila tidak ditemukan, kontradiksi dilabeli *unresolved inconsistency*. *Rule Engine* kemudian memverifikasi bahwa kontradiksi bersifat *genuine* dan bukan artefak *parsing*.
 
 #### Deteksi Ketidaklengkapan
 
-Ketidaklengkapan dideteksi melalui analisis *coverage gap*:
+Ketidaklengkapan dideteksi melalui pemetaan cakupan yang bersifat semantik, bukan pencocokan teks persis:
 
 1. **Aspect Extraction:** Sistem mengekstrak aspek-aspek yang dibahas setiap paper menggunakan *Paper Analyzer*.
 
-2. **Coverage Matrix:** Matriks *paper* × *aspek* dibangun untuk mengidentifikasi aspek-aspek yang tidak dicakup atau kurang dicakup oleh literatur yang ada.
+2. **Pencocokan Aspek Semantik:** Aspek yang diharapkan dicocokkan dengan aspek yang benar-benar dibahas menggunakan kemiripan *embedding* dengan ambang 0,62 (atau kemiripan leksikal dengan ambang 0,55 bila *embedding* tidak tersedia). Pencocokan sama-persis yang digunakan sebelumnya menyebabkan sinonim seperti "*reproducibility*" dan "*reproducible experiments*" dihitung sebagai aspek yang hilang, sehingga menghasilkan gap semu.
 
-3. **Significance Assessment:** *Self-Critic tool* mengevaluasi apakah aspek yang tidak tercakup bersifat signifikan (*critical gap*) atau marginal.
+3. **Evidence Gap Map:** Selain matriks *paper* × *aspek*, sistem membangun matriks intervensi × luaran mengikuti praktik *evidence gap map* [Snilstveit dkk., 2016]. Matriks ini membedakan **sel kosong** (tidak ada satu pun studi) dari **sel tipis** (paling banyak dua studi) — perbedaan yang penting karena keduanya menyiratkan tingkat ketidakpastian yang berbeda.
+
+4. **Significance Assessment:** *Self-Critic tool* mengevaluasi apakah aspek yang tidak tercakup bersifat signifikan (*critical gap*) atau marginal.
+
+#### Deteksi Ketiadaan Dukungan Bukti
+
+Indikator keempat memperlakukan **kegagalan penelusuran (*retrieval failure*) sebagai temuan**, bukan semata-mata sebagai kegagalan sistem pencarian. Logikanya: bila sebuah klaim diasersikan berulang kali di dalam korpus namun tidak ada satu pun paragraf bukti primer yang dapat ditemukan untuk mendukungnya, maka yang terungkap adalah properti literatur itu sendiri.
+
+1. **Indeks Bukti Primer:** Korpus diindeks pada tingkat kalimat, tetapi hanya kalimat yang menunjukkan pelaporan bukti primer yang disimpan (misalnya penyebutan eksperimen, dataset, jumlah partisipan, pengukuran, atau ablasi). Tanpa penyaringan ini, klaim retoris di bagian pendahuluan sebuah paper akan "mendukung" klaim retoris paper lain — persis kegagalan yang hendak dideteksi indikator ini.
+
+2. **Penelusuran *Leave-One-Out*:** Untuk setiap klaim ternormalisasi, sistem mencari dukungan pada seluruh korpus **kecuali paper asal klaim tersebut**, karena sebuah paper tidak dapat menjadi bukti bagi dirinya sendiri. Skor dukungan adalah kemiripan tertinggi yang diperoleh: klaim dinyatakan **tidak didukung** bila skor di bawah 0,45, **didukung lemah** pada rentang 0,45–0,62, dan **didukung** pada 0,62 ke atas.
+
+3. **Deteksi *Citation Echo*:** Klaim yang diulang oleh dua paper atau lebih dengan kemiripan parafrasa tinggi, tetapi tidak memperoleh bukti primer baru, ditandai sebagai *citation echo*. Pengulangan diperlakukan sebagai penguat indikasi gap, bukan sebagai penguat bukti.
+
+4. **Penanda Klaim Berpagar dan Sumber Sekunder:** Klaim berpagar (*hedged*, misalnya "*may improve*") yang tidak menyertakan angka terukur, serta klaim yang berasal dari paper tinjauan/survei, diberi bobot keparahan tambahan karena keduanya menandakan asersi tanpa komitmen empiris.
+
+5. **Agregasi Tingkat Korpus:** Indikator hanya dilaporkan bila proporsi klaim tak-terdukung mencapai sekurang-kurangnya 30% dari klaim yang diperiksa. Satu kalimat tanpa dukungan adalah derau; sepertiga klaim korpus tanpa dukungan adalah properti literatur.
 
 ### 3.6.3 Contoh Agentic Workflow Trace
 
@@ -734,6 +757,36 @@ Evaluasi sistem menggunakan 7 metrik yang dirancang untuk mengukur tidak hanya a
 | 6 | **Rule Engine Rejection Rate (RERR)** | Persentase output LLM yang ditolak *Rule Engine* | RERR = jumlah *rejected* / total output |
 | 7 | **Rule Engine Precision (REP)** | Dari yang ditolak, berapa persen yang memang pantas ditolak | Pakar me-*review* item yang di-*reject* |
 
+#### Keterkaitan dengan Metrik Klasik (Precision, Recall, F1)
+
+Ketujuh metrik di atas bersifat spesifik-domain, namun tetap dapat diturunkan ke metrik klasik yang dijanjikan pada Bab I agar hasil penelitian dapat dibandingkan dengan literatur otomatisasi tinjauan pustaka:
+
+| Metrik klasik | Turunan dalam penelitian ini |
+|---------------|------------------------------|
+| **Precision** | Identik dengan **EAR** — proporsi indikator yang dilabeli pakar sebagai *genuine gap* dari seluruh indikator yang dihasilkan sistem (Precision = 1 − FDR) |
+| **Recall** | Proporsi *gap* pada *gold standard* pakar (lihat Subbab 3.7.3) yang berhasil ditemukan kembali oleh sistem |
+| **F1-score** | Rata-rata harmonik Precision dan Recall, dilaporkan per indikator (fragmentasi, inkonsistensi, ketidaklengkapan, ketiadaan dukungan bukti) dan secara agregat |
+
+Pelaporan tetap mengutamakan *recall* terlebih dahulu sesuai praktik baku evaluasi otomatisasi tinjauan literatur, karena indikator yang terlewat (*omission*) berdampak lebih serius terhadap kualitas sintesis dibandingkan indikator berlebih yang masih dapat disaring pakar [Feng et al., 2022].
+
+#### Metrik Kalibrasi dan Abstensi Selektif
+
+Nilai keyakinan yang dilaporkan sistem tidak diperlakukan sebagai probabilitas apa adanya. Sebuah sistem dapat memiliki *precision* tinggi namun tetap menyesatkan bila keyakinan 90% ternyata hanya benar pada 60% kasus. Karena itu evaluasi menambahkan tiga metrik kalibrasi:
+
+| Metrik | Rumus | Yang diukur |
+|--------|-------|-------------|
+| **Expected Calibration Error (ECE)** | $\mathrm{ECE} = \sum_{m} \frac{\lvert B_m \rvert}{N} \lvert \mathrm{acc}(B_m) - \mathrm{conf}(B_m) \rvert$ dengan 10 *bin* | Selisih rata-rata antara keyakinan dan akurasi aktual |
+| **Brier score** | $\mathrm{BS} = \frac{1}{N}\sum_i \sum_k (p_{ik} - y_{ik})^2$ | Ketepatan probabilistik menyeluruh |
+| **Area Under Risk–Coverage (AURC)** | $C = E[g(x)]$; $R_{\mathrm{sel}} = E[l(f(x),y)\,g(x)] / E[g(x)]$ | Mutu keputusan menahan klaim: risiko pada tiap tingkat cakupan |
+
+Kalibrasi dilakukan secara *post-hoc* menggunakan *temperature scaling* dengan *fallback* konformal, yang merupakan pilihan realistis ketika label pakar masih sedikit — tepat seperti kondisi penelitian ini. Faktor suhu hanya diterapkan bila tersedia sekurang-kurangnya empat label pakar; di bawah ambang tersebut sistem secara sengaja mempertahankan pemetaan identitas dan menyatakannya secara terbuka pada antarmuka, agar keyakinan tidak diskalakan berdasarkan bukti yang terlalu tipis.
+
+Sistem juga menerapkan **abstensi selektif**: indikator dengan keyakinan terkalibrasi di bawah 0,45 atau di bawah ambang konformal (dengan $\alpha = 0{,}10$, setara target cakupan 90%) tidak disajikan sebagai temuan, melainkan ditandai memerlukan telaah manusia. Keluaran *Rule Engine* difusikan sebagai bukti tentang klaim — PASS menguatkan, FLAG mendiskon, dan REJECT membatalkan — bukan sebagai pendapat kedua yang dirata-ratakan.
+
+#### Rantai Provenans
+
+Setiap indikator wajib menyertakan rantai provenans minimum: **klaim → jurnal terkutip → kutipan terambil → hasil validasi**. Indikator yang salah satu mata rantainya terputus otomatis ditandai memerlukan telaah manusia, sekalipun nilai keyakinannya tinggi. Prinsipnya, gap yang tidak dapat ditelusuri kembali ke kutipan bukanlah temuan yang dapat dipertahankan dalam forum ilmiah.
+
 ### 3.7.2 Hipotesis Penelitian
 
 #### Hipotesis Dasar (H1–H3):
@@ -762,6 +815,14 @@ Pendekatan *ground truth* dalam penelitian ini melampaui sekadar pencocokan *pre
 | **Already Addressed** | Indikator menunjukkan *gap* yang sudah dijawab oleh literatur yang ada | Dihitung sebagai *false positive* (tipe 3) |
 
 Kategorisasi *false positive* ke dalam tiga tipe (trivial, illogical, already addressed) memungkinkan analisis yang lebih mendalam tentang **jenis** kesalahan yang dibuat sistem, bukan sekadar frekuensi kesalahan [Robinson et al., 2011].
+
+#### Protokol Reliabilitas Antar-Penilai
+
+Untuk menjamin bahwa label pakar bukan penilaian subjektif tunggal, penilaian dilakukan oleh **minimal dua pakar secara independen** menggunakan rubrik prespesifikasi di atas, tanpa mengetahui konfigurasi sistem mana yang menghasilkan tiap indikator (*blinded*). Kesepakatan antar-penilai diukur dengan **Cohen's kappa** (target κ ≥ 0,6, kategori *substantial agreement*); ketidaksepakatan diselesaikan melalui diskusi konsensus atau penilai ketiga. Protokol ini mengikuti praktik baku studi reliabilitas pada *literature review* berbantuan mesin [Hanegraaf et al., 2024].
+
+#### Pengukuran Recall terhadap Gold Standard Pakar
+
+Metrik EAR dan FDR hanya mengukur sisi presisi (apakah output sistem *genuine*), belum menjawab apakah sistem **melewatkan** *gap* yang seharusnya ditemukan. Karena itu, pada subset korpus, pakar terlebih dahulu mengidentifikasi *synthesis gap* secara manual **sebelum** melihat output sistem; himpunan ini menjadi *gold standard* untuk menghitung **recall** sistem. Standar evaluasi otomasi tinjauan literatur menempatkan *recall/sensitivity* sebagai metrik utama yang wajib dilaporkan sebelum presisi [Feng et al., 2022].
 
 ### 3.7.4 Desain Eksperimental
 
@@ -866,7 +927,6 @@ Posisi sistem sebagai **alat bantu** (*decision support*) — bukan pengganti pe
 ---
 
 ### Daftar Referensi yang Dirujuk dalam BAB III
-
 1. Beltagy, I., Lo, K., & Cohan, A. (2019). SciBERT: A Pretrained Language Model for Scientific Text. *EMNLP 2019*.
 2. Bender, E. M., & Koller, A. (2020). Climbing towards NLU: On Meaning, Form, and Understanding in the Age of Data. *ACL 2020*.
 3. Booth, A., Sutton, A., & Papaioannou, D. (2012). *Systematic Approaches to a Successful Literature Review*. Sage.
@@ -874,15 +934,23 @@ Posisi sistem sebagai **alat bantu** (*decision support*) — bukan pengganti pe
 5. Bowman, S., et al. (2015). A Large Annotated Corpus for Learning Natural Language Inference. *EMNLP 2015*.
 6. Buchanan, B. G., & Shortliffe, E. H. (1984). *Rule-Based Expert Systems*. Addison-Wesley.
 7. Cooper, H. (1998). *Synthesizing Research: A Guide for Literature Reviews* (3rd ed.). Sage Publications.
-8. Garcez, A., et al. (2019). Neural-Symbolic Computing: An Effective Methodology for Principled Integration of Machine Learning and Reasoning. *Journal of Applied Logics*.
-9. Giarratano, J. C., & Riley, G. D. (2005). *Expert Systems: Principles and Programming* (4th ed.). Thomson.
-10. Hevner, A. R., et al. (2004). Design Science in Information Systems Research. *MIS Quarterly*, 28(1), 75-105.
-11. Ji, S., et al. (2021). A Survey on Knowledge Graphs: Representation, Acquisition, and Applications. *IEEE TNNLS*.
-12. LangChain. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. *Documentation*.
-13. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv:2002.06177*.
-14. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage.
-15. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *ICIS 2015 Proceedings*.
-16. Neumann, M., et al. (2019). ScispaCy: Fast and Robust Models for Biomedical Natural Language Processing. *BioNLP 2019*.
-17. Pare, G., et al. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183-199.
-18. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*.
-19. Williams, A., et al. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.
+8. Feng, Y., et al. (2022). Automated Medical Literature Screening Using Artificial Intelligence: A Systematic Review and Meta-Analysis. *Journal of the American Medical Informatics Association*, 29(8), 1425-1432. https://doi.org/10.1093/jamia/ocac066
+9. Garcez, A., et al. (2019). Neural-Symbolic Computing: An Effective Methodology for Principled Integration of Machine Learning and Reasoning. *Journal of Applied Logics*.
+10. Giarratano, J. C., & Riley, G. D. (2005). *Expert Systems: Principles and Programming* (4th ed.). Thomson.
+11. Guo, C., Pleiss, G., Sun, Y., & Weinberger, K. Q. (2017). On Calibration of Modern Neural Networks. *ICML 2017*.
+12. Hanegraaf, P., et al. (2024). Inter-Reviewer Reliability of Human Literature Reviewing and Implications for the Introduction of Machine-Assisted Systematic Reviews: A Mixed-Methods Review. *BMJ Open*, 14(3). https://doi.org/10.1136/bmjopen-2023-076912
+13. Hevner, A. R., et al. (2004). Design Science in Information Systems Research. *MIS Quarterly*, 28(1), 75-105.
+14. Higgins, J. P. T., & Thompson, S. G. (2002). Quantifying Heterogeneity in a Meta-Analysis. *Statistics in Medicine*, 21(11), 1539-1558. https://doi.org/10.1002/sim.1186
+15. Ji, S., et al. (2021). A Survey on Knowledge Graphs: Representation, Acquisition, and Applications. *IEEE TNNLS*.
+16. LangChain. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. *Documentation*.
+17. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv:2002.06177*.
+18. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage.
+19. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *ICIS 2015 Proceedings*.
+20. Neumann, M., et al. (2019). ScispaCy: Fast and Robust Models for Biomedical Natural Language Processing. *BioNLP 2019*.
+21. Newman, M. E. J. (2006). Modularity and Community Structure in Networks. *Proceedings of the National Academy of Sciences*, 103(23), 8577-8582. https://doi.org/10.1073/pnas.0601602103
+22. Pare, G., et al. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183-199.
+23. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*.
+24. Snilstveit, B., Vojtkova, M., Bhavsar, A., Stevenson, J., & Gaarder, M. (2016). Evidence & Gap Maps: A Tool for Promoting Evidence Informed Policy and Strategic Research Agendas. *Journal of Clinical Epidemiology*, 79, 120-129. https://doi.org/10.1016/j.jclinepi.2016.05.015
+25. Swanson, D. R. (1986). Fish Oil, Raynaud's Syndrome, and Undiscovered Public Knowledge. *Perspectives in Biology and Medicine*, 30(1), 7-18. https://doi.org/10.1353/pbm.1986.0087
+26. Vovk, V., Gammerman, A., & Shafer, G. (2005). *Algorithmic Learning in a Random World*. Springer.
+27. Williams, A., et al. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.

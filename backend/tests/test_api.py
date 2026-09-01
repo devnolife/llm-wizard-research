@@ -115,6 +115,256 @@ def test_job_status_and_cancel_contract(client):
     assert cancel.json()["status"] == "cancelled"
 
 
+@pytest.fixture
+def reanalyze_env(tmp_path, monkeypatch):
+    """Isolated config + queue for the reanalyze endpoint."""
+    from types import SimpleNamespace
+
+    config = SimpleNamespace(
+        data=SimpleNamespace(raw_path=str(tmp_path / "raw")),
+        queue=SimpleNamespace(max_attempts=1),
+    )
+    queue = Mock()
+    monkeypatch.setattr(analysis, "get_config", lambda: config)
+    monkeypatch.setattr(analysis, "get_analysis_queue", lambda: queue)
+    return tmp_path, queue
+
+
+@pytest.mark.api
+def test_reanalyze_creates_new_job_from_retained_pdfs(client, reanalyze_env):
+    tmp_path, queue = reanalyze_env
+    source_dir = tmp_path / "source-job"
+    source_dir.mkdir()
+    pdf = source_dir / "00_paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    job_store.save_job(
+        "done-job",
+        {
+            "status": "completed",
+            "progress": 100,
+            "message": "Analysis complete!",
+            "payload": {"pdf_paths": [str(pdf)], "files": [{"name": "paper.pdf"}]},
+        },
+    )
+
+    response = client.post("/api/analysis-jobs/done-job/reanalyze")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["source_job_id"] == "done-job"
+    assert body["files_count"] == 1
+    new_job = job_store.get_job(body["job_id"])
+    assert new_job["status"] == "queued"
+    assert new_job["payload"]["reanalyzed_from"] == "done-job"
+    copied = [p for p in map(str, new_job["payload"]["pdf_paths"])]
+    assert len(copied) == 1 and copied[0] != str(pdf)
+    from pathlib import Path as _Path
+
+    assert _Path(copied[0]).read_bytes() == b"%PDF-1.4 test"
+    # Source job stays untouched for comparison.
+    assert job_store.get_job("done-job")["status"] == "completed"
+    queue.notify.assert_called_once()
+
+
+@pytest.mark.api
+def test_reanalyze_unknown_job_is_404(client, reanalyze_env):
+    response = client.post("/api/analysis-jobs/missing-job/reanalyze")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.api
+def test_reanalyze_without_retained_pdfs_is_409(client, reanalyze_env):
+    job_store.save_job(
+        "gone-job",
+        {
+            "status": "completed",
+            "progress": 100,
+            "message": "Analysis complete!",
+            "payload": {"pdf_paths": ["/nonexistent/input.pdf"]},
+        },
+    )
+
+    response = client.post("/api/analysis-jobs/gone-job/reanalyze")
+
+    assert response.status_code == 409
+
+
+@pytest.mark.api
+def test_analysis_jobs_list_returns_recent_summaries(client):
+    job_store.save_job(
+        "list-job",
+        {
+            "status": "completed",
+            "progress": 100,
+            "message": "Analysis complete!",
+            "payload": {"pdf_paths": ["/tmp/paper_satu.pdf"]},
+            "results": {
+                "files_processed": 1,
+                "topics": ["t1", "t2"],
+                "gaps": [{"title": "g"}],
+                "recommendations": [{"title": "r"}],
+                "llm_info": {"model": "llama3.2"},
+            },
+        },
+    )
+
+    response = client.get("/api/analysis-jobs", params={"limit": 5})
+
+    assert response.status_code == 200
+    body = response.json()
+    entry = next(j for j in body["jobs"] if j["job_id"] == "list-job")
+    assert entry["status"] == "completed"
+    assert entry["files"] == ["paper_satu.pdf"]
+    assert entry["topics_count"] == 2
+    assert entry["gaps_count"] == 1
+    assert entry["recommendations_count"] == 1
+    assert entry["model"] == "llama3.2"
+    assert "results" not in entry
+
+
+@pytest.mark.api
+def test_delete_analysis_job_removes_job_events_and_artifacts(client):
+    job_store.save_job(
+        "delete-job",
+        {"status": "completed", "progress": 100, "message": "done"},
+    )
+    job_store.record_job_event("delete-job", "job.created", status="queued")
+    job_store.add_stage_artifact("delete-job", "topics", "result", label="Topik")
+
+    response = client.delete("/api/analysis-jobs/delete-job")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True, "job_id": "delete-job"}
+    assert job_store.get_job("delete-job") is None
+    assert job_store.get_job_events("delete-job") == []
+    assert job_store.get_stage_artifacts("delete-job") == []
+    assert client.get("/api/analysis-status/delete-job").status_code == 404
+
+
+@pytest.mark.api
+def test_delete_analysis_job_missing_returns_404(client):
+    response = client.delete("/api/analysis-jobs/tidak-ada")
+    assert response.status_code == 404
+
+
+@pytest.mark.api
+def test_delete_analysis_job_refuses_active_job(client):
+    job_store.save_job(
+        "delete-running",
+        {"status": "running", "progress": 40, "message": "Processing..."},
+    )
+
+    response = client.delete("/api/analysis-jobs/delete-running")
+
+    assert response.status_code == 409
+    assert job_store.get_job("delete-running") is not None
+
+
+@pytest.mark.api
+def test_job_events_endpoint_returns_ordered_sanitized_history(client):
+    job_store.save_job(
+        "events-job",
+        {"status": "running", "progress": 42, "message": "Processing PDFs..."},
+    )
+    job_store.record_job_event("events-job", "job.created", status="queued", data={"file_count": 2})
+    job_store.record_job_event(
+        "events-job",
+        "file.completed",
+        phase="ingestion",
+        status="running",
+        duration_ms=1500,
+        data={"file": "paper.pdf", "extraction_method": "ocrd_text_layer", "chunks": ["a", "b", "c"]},
+    )
+    job_store.record_job_event("events-job", "phase.started", phase="topics", status="running")
+
+    response = client.get("/api/analysis-status/events-job/events")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"] == "events-job"
+    assert body["status"] == "running"
+    assert body["progress"] == 42
+    events = body["events"]
+    assert [event["type"] for event in events] == ["job.created", "file.completed", "phase.started"]
+    assert [event["id"] for event in events] == sorted(event["id"] for event in events)
+    file_event = events[1]
+    assert file_event["phase"] == "ingestion"
+    assert file_event["duration_ms"] == 1500
+    assert file_event["data"]["extraction_method"] == "ocrd_text_layer"
+    # Telemetry sanitizer collapses lists to their length (metadata-only contract).
+    assert file_event["data"]["chunks"] == 3
+
+    tail = client.get(
+        "/api/analysis-status/events-job/events",
+        params={"after_event_id": events[0]["id"]},
+    )
+    assert [event["type"] for event in tail.json()["events"]] == ["file.completed", "phase.started"]
+
+
+@pytest.mark.api
+def test_job_events_endpoint_unknown_job_is_404(client):
+    response = client.get("/api/analysis-status/unknown-job/events")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Job not found"
+
+
+@pytest.mark.api
+def test_job_artifacts_endpoint_returns_stage_content(client):
+    job_store.save_job("artifact-job", {"status": "running", "progress": 30})
+    job_store.add_stage_artifact(
+        "artifact-job", "ingestion", "extraction", label="paper.pdf",
+        payload={"preview": "Teks hasil ekstraksi dokumen", "extraction_method": "ocrd_text_layer"},
+    )
+    job_store.add_stage_artifact(
+        "artifact-job", "topics", "llm", label="Ekstraksi topik utama",
+        payload={"prompt": "Analisis konten berikut...", "response": "1. Topik A\n2. Topik B"},
+    )
+
+    response = client.get("/api/analysis-status/artifact-job/artifacts")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"] == "artifact-job"
+    artifacts = body["artifacts"]
+    assert [a["kind"] for a in artifacts] == ["extraction", "llm"]
+    assert artifacts[0]["payload"]["preview"] == "Teks hasil ekstraksi dokumen"
+    assert artifacts[1]["payload"]["prompt"].startswith("Analisis konten")
+    assert artifacts[1]["payload"]["response"].startswith("1. Topik A")
+
+    filtered = client.get(
+        "/api/analysis-status/artifact-job/artifacts", params={"phase": "topics"}
+    )
+    assert [a["phase"] for a in filtered.json()["artifacts"]] == ["topics"]
+
+
+@pytest.mark.api
+def test_job_artifacts_endpoint_unknown_job_is_404(client):
+    response = client.get("/api/analysis-status/unknown-job/artifacts")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.api
+def test_system_stats_endpoint_reports_cpu_ram_gpu_shape(client):
+    response = client.get("/api/system-stats")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert 0 <= body["cpu"]["percent"] <= 100
+    assert body["cpu"]["cores"] > 0
+    assert len(body["cpu"]["load_avg"]) == 3
+    assert body["memory"]["total_mb"] > 0
+    assert 0 <= body["memory"]["percent"] <= 100
+    assert body["disk"]["total_gb"] > 0
+    assert isinstance(body["gpus"], list)
+    for gpu in body["gpus"]:
+        assert {"index", "name", "memory_used_mb", "memory_total_mb",
+                "utilization_percent", "processes"} <= set(gpu)
+
+
 @pytest.mark.api
 def test_delete_missing_document_remains_404(client, monkeypatch):
     vector_store = Mock()

@@ -333,3 +333,58 @@ class TestEpistemologicalBoundary:
         indicators = ga.analyze_gaps("test topic", divergent_papers, depth="quick")
         confidences = [i.confidence for i in indicators]
         assert confidences == sorted(confidences, reverse=True)
+
+
+# ===================================================================
+# Paper references in indicators (traceability for readers)
+# ===================================================================
+
+class TestPaperReferences:
+    def test_paper_ref_prefers_source_then_title(self):
+        from app.core.gap_detection.analyzer import _paper_ref
+
+        assert _paper_ref({"title": "Judul A", "source": "a.pdf"}) == "a.pdf"
+        assert _paper_ref({"title": "Judul A"}) == "Judul A"
+        assert _paper_ref({"title": "Unknown", "metadata": {"title": "Judul Meta"}}) == "Judul Meta"
+        assert _paper_ref({"doc_id": "d1"}) == "d1"
+        assert _paper_ref({"title": "  spasi \n ganda  "}) == "spasi ganda"
+        assert _paper_ref({}) == ""
+
+    def test_paper_refs_dedupes_and_drops_empty(self):
+        from app.core.gap_detection.analyzer import _paper_refs
+
+        papers = [
+            {"title": "Judul A"},
+            {"title": "Judul A"},
+            {},
+            {"source": "b.pdf"},
+        ]
+        assert _paper_refs(papers) == ["Judul A", "b.pdf"]
+
+    def test_fragmentation_related_papers_use_sources_for_rag_passages(self):
+        """Passages from rag_tool carry title/source but no doc_id — indicators
+        must still name the journals instead of emitting empty strings."""
+        papers = [
+            {"title": "Jurnal Eksperimen", "source": "01_exp.pdf",
+             "content": "We run a randomized experiment with statistical tests.",
+             "metadata": {"keywords": ["experiment", "statistics"]}},
+            {"title": "Jurnal Kualitatif", "source": "02_case.pdf",
+             "content": "A qualitative case study based on interviews.",
+             "metadata": {"keywords": ["case study", "interviews"]}},
+            {"title": "Unknown", "source": "03_dl.pdf",
+             "content": "Deep learning simulation of network traffic.",
+             "metadata": {"keywords": ["deep learning", "simulation"]}},
+        ]
+        ga = GapAnalyzer()
+        indicators = ga.analyze_gaps("test topic", papers, depth="quick")
+
+        assert indicators
+        for ind in indicators:
+            refs = ind.related_papers
+            assert refs, f"{ind.detection_method} has no related_papers"
+            assert all(r.strip() for r in refs), f"empty ref in {refs}"
+        frag = [i for i in indicators if i.indicator_type == IndicatorType.FRAGMENTATION]
+        assert frag
+        joined = " ".join(frag[0].related_papers)
+        assert "01_exp.pdf" in joined
+        assert "03_dl.pdf" in joined

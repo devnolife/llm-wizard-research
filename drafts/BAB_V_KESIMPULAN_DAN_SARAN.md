@@ -18,15 +18,21 @@ Relation Classifier dengan mekanisme 3 lapis berhasil diimplementasikan: (1) pen
 
 Framework evaluasi dengan 8 metrik kuantitatif (M1–M8) berhasil diterapkan. Rule Engine dengan 3 kategori aturan (Kelayakan, Kausalitas, Konsistensi) menyediakan validasi otomatis berlapis. Pada korpus benchmark, seluruh 14 indikator melewati validasi Rule Engine (100% PASS), sementara validasi adversarial membuktikan kemampuan diskriminatif lapisan simbolis: 6 dari 6 klaim adversarial diberi verdict sesuai harapan (akurasi 100%), termasuk penolakan klaim yang tidak layak dan pelolosan klaim kontrol. Evaluasi pakar (*Expert Acceptance Rate*) direncanakan pada fase evaluasi penuh untuk mengukur akurasi aktual.
 
+Framework tersebut kemudian diperluas dengan empat metrik kalibrasi dan penelusuran (M9–M12) yang diuji pada korpus aplikatif 35 jurnal: seluruh indikator yang lolos memiliki rantai provenans utuh (100%), abstensi selektif tidak lagi menyala untuk setiap keluaran (0% setelah perbaikan, dari sebelumnya 100%), dan usulan yang tidak berjangkar pada indikator terdeteksi otomatis turun prioritas. Metrik kalibrasi numerik (ECE, Brier, AURC) sengaja **tidak** dilaporkan karena label pakar belum terkumpul — status yang ditampilkan apa adanya kepada pengguna alih-alih disajikan sebagai kalibrasi yang sudah tervalidasi.
+
 ### 5.1.2 Kontribusi Utama
 
-Penelitian ini memberikan tiga kontribusi utama:
+Penelitian ini memberikan lima kontribusi utama:
 
 1. **Rule-Based Validation Layer**: Lapisan validasi simbolis dengan 9 aturan dalam 3 kategori (Kelayakan F1-F3, Kausalitas C1-C3, Konsistensi K1-K3) yang beroperasi independen dari LLM. Lapisan ini memastikan bahwa indikator gap memenuhi kriteria logis minimum sebelum disajikan kepada pengguna.
 
 2. **Fact Table berbasis SPO (Subject-Predicate-Object)**: Representasi pengetahuan terstruktur dengan 8 tipe entitas dan 14 tipe predikat yang memungkinkan *grounding* klaim pada fakta terverifikasi, bukan hanya pada output stokastik LLM.
 
 3. **Klaim Epistemologis yang Terkalibrasi**: Sistem secara eksplisit membatasi output sebagai "indikator gap" (*gap indicators*) yang memerlukan validasi manusia, bukan "kesenjangan riset" definitif. Pendekatan ini mengatasi masalah *over-claiming* yang umum pada sistem berbasis LLM.
+
+4. **Indikator Ketiadaan Dukungan Bukti**: Indikator keempat yang mendeteksi klaim yang justru berulang lintas jurnal namun tidak memiliki bukti primer yang dapat ditelusuri, melalui uji kegagalan *retrieval* secara *leave-one-out*. Indikator ini berbeda dari ketidaklengkapan: aspeknya **dibahas dan diklaim**, tetapi tidak terbuktikan — sebuah bentuk gap yang tidak tertangkap oleh ketiga indikator sebelumnya.
+
+5. **Rantai Provenans dan Abstensi Selektif**: Setiap indikator wajib memiliki rantai klaim → jurnal terkutip → kutipan verbatim → hasil validasi yang utuh; indikator dengan rantai terputus atau keyakinan di bawah ambang otomatis ditandai untuk peninjauan manusia. Pengujian pada korpus nyata membuktikan mekanisme ini bersifat diskriminatif (0 dari 2 indikator ditandai) dan bukan sekadar penanda seragam.
 
 ---
 
@@ -36,13 +42,15 @@ Penelitian ini memberikan tiga kontribusi utama:
 
 1. **Optimasi Fact Extraction**: Modul ekstraksi fakta perlu ditingkatkan dengan *prompt engineering* yang lebih terstruktur dan mekanisme *retry* untuk mengatasi kegagalan parsing JSON. Penggunaan model LLM yang lebih besar (7B-13B parameter) diharapkan meningkatkan kualitas ekstraksi.
 
-2. **Evaluasi oleh Pakar**: Diperlukan evaluasi kualitatif oleh pakar domain untuk mengukur *Expert Acceptance Rate* dan *Logical Coherence Score*. Direkomendasikan melibatkan 3-5 pakar dari berbagai bidang ilmu.
+2. **Evaluasi oleh Pakar**: Diperlukan evaluasi kualitatif oleh pakar domain untuk mengukur *Expert Acceptance Rate* dan *Logical Coherence Score*. Direkomendasikan melibatkan 3-5 pakar dari berbagai bidang ilmu. Label pakar ini sekaligus menjadi prasyarat pengaktifan kalibrator *temperature scaling*, yang saat ini masih beroperasi sebagai pemetaan identitas sehingga ECE, Brier, dan AURC belum dapat dilaporkan.
 
 3. **Skala Dataset**: Eksperimen perlu diperluas ke 50-100 paper dari berbagai domain untuk menguji robustness dan generalizability sistem. Variasi domain penting untuk memastikan Rule Engine tidak bias pada satu bidang.
 
 4. **Kalibrasi Rule Engine**: Threshold aturan perlu dikalibrasi berdasarkan hasil evaluasi pakar. Tingkat PASS 100% pada eksperimen awal mungkin menunjukkan threshold yang terlalu longgar.
 
 5. **Mode Perbandingan**: Studi ablasi *with-vs-without* telah dilakukan untuk NLI (H9, terkonfirmasi signifikan) dan Rule Engine (H7, tidak signifikan pada jumlah indikator — kontribusinya bersifat kualitatif). Penambahan jumlah run (≥10 per mode) disarankan untuk meningkatkan power uji H6/H7.
+
+6. **Uji Regresi Berbasis Bentuk Data Produksi**: Tiga cacat implementasi pada lapisan provenans hanya terungkap saat pipeline dijalankan pada dokumen nyata (Subbab 4.3.8) karena uji sintetis memakai frasa pendek dan struktur data yang selalu ideal. Pengembangan lanjutan disarankan menambahkan uji yang meniru bentuk data produksi secara spesifik, bukan sekadar bentuk yang valid.
 
 ### 5.2.2 Keterbatasan yang Perlu Diatasi
 

@@ -90,6 +90,7 @@ class GapDetectorAgent:
                 "FRAGMENTATION": 0,
                 "INCONSISTENCY": 0,
                 "INCOMPLETENESS": 0,
+                "SUPPORT_GAP": 0,
             },
             "rule_engine_stats": {
                 "passed": 0,
@@ -172,7 +173,8 @@ class GapDetectorAgent:
             f"Detected {result['total_indicators']} gap indicators: "
             f"F={result['indicators_by_type']['FRAGMENTATION']}, "
             f"I={result['indicators_by_type']['INCONSISTENCY']}, "
-            f"C={result['indicators_by_type']['INCOMPLETENESS']}"
+            f"C={result['indicators_by_type']['INCOMPLETENESS']}, "
+            f"S={result['indicators_by_type'].get('SUPPORT_GAP', 0)}"
         )
         
         return result
@@ -269,6 +271,11 @@ class GapDetectorAgent:
             parts.append(
                 f"  - {by_type['INCOMPLETENESS']} incompleteness indicator(s): "
                 f"Critical aspects not collectively covered"
+            )
+        if by_type.get("SUPPORT_GAP", 0) > 0:
+            parts.append(
+                f"  - {by_type['SUPPORT_GAP']} evidence-support indicator(s): "
+                f"Claims asserted across papers without retrievable primary evidence"
             )
         
         parts.append("\n⚠️ All indicators require human validation.")

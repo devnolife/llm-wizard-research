@@ -53,6 +53,18 @@ def client():
     async def thing():
         return {"ok": True}
 
+    @app.get("/api/system-stats")
+    async def system_stats():
+        return {"ok": True}
+
+    @app.get("/api/analysis-status/{job_id}/events")
+    async def job_events(job_id: str):
+        return {"ok": True}
+
+    @app.post("/api/analysis-status/{job_id}/cancel")
+    async def job_cancel(job_id: str):
+        return {"ok": True}
+
     return TestClient(app)
 
 
@@ -68,3 +80,13 @@ class TestRateLimitMiddleware:
     def test_health_exempt(self, client):
         for _ in range(10):
             assert client.get("/health").status_code == 200
+
+    def test_monitoring_gets_exempt(self, client):
+        for _ in range(10):
+            assert client.get("/api/system-stats").status_code == 200
+            assert client.get("/api/analysis-status/abc/events").status_code == 200
+
+    def test_post_under_exempt_prefix_still_limited(self, client):
+        assert client.post("/api/analysis-status/abc/cancel").status_code == 200
+        assert client.post("/api/analysis-status/abc/cancel").status_code == 200
+        assert client.post("/api/analysis-status/abc/cancel").status_code == 429

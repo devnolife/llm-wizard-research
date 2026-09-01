@@ -51,17 +51,34 @@ Definisi ini perlu dibedakan secara tegas dari konsepsi-konsepsi lain tentang ga
 - Temuan empiris yang saling bertentangan tanpa rekonsiliasi — studi-studi menghasilkan kesimpulan yang berlawanan dan belum ada upaya untuk menjelaskan mengapa.
 - Banyak studi primer tetapi belum ada kerangka yang menyatukan — pengetahuan tentang fenomena tersedia secara terfragmentasi tetapi belum diintegrasikan menjadi pemahaman koheren.
 
-### 2.2.3 Tiga Indikator Synthesis Gap
+### 2.2.3 Empat Indikator Synthesis Gap
 
-Berdasarkan kerangka konseptual di atas, penelitian ini mengoperasionalkan synthesis gap melalui tiga indikator yang dapat dideteksi secara komputasional:
+Berdasarkan kerangka konseptual di atas, penelitian ini mengoperasionalkan synthesis gap melalui empat indikator yang dapat dideteksi secara komputasional:
 
 | No. | Indikator | Penjelasan | Contoh |
 |-----|-----------|------------|--------|
 | 1 | **Fragmentasi** | Paper-paper membahas fenomena yang sama dari sudut pandang berbeda tetapi tidak saling mengintegrasikan temuan | Terdapat 10 studi tentang *dropout* dalam *online learning*, masing-masing menggunakan teori yang berbeda (motivasi, desain instruksional, faktor sosial), namun tidak ada yang menyatukan temuan-temuan ini ke dalam kerangka komprehensif |
 | 2 | **Inkonsistensi yang belum direkonsiliasi** | Temuan empiris saling bertentangan dan belum ada yang menjelaskan mengapa perbedaan tersebut terjadi | Paper A melaporkan bahwa *gamification* meningkatkan motivasi belajar, sementara Paper B melaporkan bahwa *gamification* justru menurunkan motivasi. Belum ada studi yang menyelidiki variabel moderator yang menjelaskan perbedaan ini |
 | 3 | **Ketidaklengkapan kolektif** | Aspek-aspek kritis dari fenomena belum dicakup secara bersama-sama oleh literatur yang ada | Banyak studi tentang efektivitas *blended learning*, tetapi sebagian besar berfokus pada aspek kognitif, sementara aspek *equity* dan aksesibilitas hampir tidak dibahas |
+| 4 | **Ketiadaan dukungan bukti** | Suatu klaim justru berulang kali diasersikan lintas paper, tetapi tidak ada bukti primer yang dapat ditelusuri di dalam korpus untuk mendukungnya | Sepuluh paper menyatakan bahwa *blockchain* meningkatkan integritas bukti digital, namun seluruhnya merujuk pada tinjauan lain; tidak satu pun melaporkan eksperimen, dataset, atau pengukuran yang membuktikannya |
 
-Ketiga indikator ini menjadi basis operasional bagi sistem yang dikembangkan dalam penelitian ini. Sistem tidak mengklaim menemukan synthesis gap secara final, melainkan mendeteksi indikator-indikator tersebut sebagai bahan pertimbangan bagi peneliti manusia.
+Indikator keempat perlu dibedakan secara tegas dari indikator ketiga. Ketidaklengkapan
+kolektif menyoroti aspek yang **tidak pernah dibahas** oleh literatur; ketiadaan dukungan
+bukti menyoroti aspek yang **dibahas dan diklaim secara luas, tetapi tidak dibuktikan**.
+Perbedaan ini bukan sekadar gradasi: keduanya menuntut tindak lanjut penelitian yang
+berbeda — yang pertama menuntut studi perintis pada aspek yang terabaikan, sedangkan yang
+kedua menuntut replikasi atau pengujian primer atas klaim yang selama ini hanya beredar
+melalui pengulangan sitasi (*citation echo*).
+
+Indikator keempat tetap konsisten dengan batasan pada Subbab 2.2.2. Sistem tidak
+memperlakukan "kombinasi metode-domain yang belum pernah dicoba" sebagai gap; yang
+dideteksi adalah kegagalan korpus menyediakan bukti primer bagi klaim yang korpus itu
+sendiri asersikan. Dengan demikian indikator ini tetap merupakan properti dari sintesis
+lintas-jurnal, bukan properti dari kebaruan sebuah ide.
+
+Keempat indikator ini menjadi basis operasional bagi sistem yang dikembangkan dalam
+penelitian ini. Sistem tidak mengklaim menemukan synthesis gap secara final, melainkan
+mendeteksi indikator-indikator tersebut sebagai bahan pertimbangan bagi peneliti manusia.
 
 ---
 
@@ -151,6 +168,10 @@ Penelitian ini mengadopsi pendekatan neuro-symbolic dengan arsitektur berikut:
 - **Komponen Simbolik (Rule Engine + Knowledge Graph):** bertanggung jawab atas validasi logis, pengecekan konsistensi, dan penegakan constraint. Komponen ini beroperasi di atas representasi terstruktur (SPO triples dalam Knowledge Graph) dan menerapkan aturan-aturan formal untuk memfilter, memvalidasi, atau menolak output dari komponen neural.
 
 Integrasi ini memungkinkan sistem untuk memanfaatkan kekuatan LLM dalam memahami teks sekaligus memitigasi kelemahannya dalam penalaran logis, menghasilkan arsitektur yang lebih robust dibandingkan pipeline LLM-only atau RAG-only.
+
+### 2.5.4 Posisi terhadap Literatur Neuro-Simbolik Terkini
+
+Survei terkini menunjukkan bahwa penerapan neuro-simbolik yang paling matang berada pada verifikasi fakta berbasis *knowledge graph* — pola umum berupa klaim → triple → pengambilan bukti → pemeriksaan konsistensi via kueri graf atau NLI — serta *pipeline* *retrieve-then-reason* dan *generate-then-verify* yang secara konsisten mengungguli *baseline* LLM-only pada konsistensi faktual dan keterlacakan [DeLong et al., 2025; Pham et al., 2025]. Sebaliknya, otomatisasi *literature review* masih didominasi pendekatan RAG murni tanpa lapisan verifikasi simbolik [Han et al., 2024], dan belum ditemukan sistem neuro-simbolik *end-to-end* yang tervalidasi untuk penemuan *research gap* dari korpus ilmiah. Penelitian ini mengisi celah tersebut: pola *generate-then-verify* yang telah terbukti pada domain *fact-checking* dioperasionalkan untuk domain baru — validasi kandidat *synthesis gap* dari PDF jurnal melalui *rule engine* dan pemeriksaan konsistensi *knowledge graph*.
 
 ---
 
@@ -295,7 +316,9 @@ Beberapa penelitian terdahulu telah mengeksplorasi penggunaan teknik NLP dan AI 
 | 3 | Research Rabbit | Citation network analysis | ❌ Tidak — berfokus pada eksplorasi literatur | ❌ Tidak ada | Graph traversal | ⚠️ Citation graph saja |
 | 4 | Automated Systematic Review [Marshall & Wallace, 2019] | ML classifier + text mining | ⚠️ Parsial — screening relevansi, bukan sintesis | ❌ Tidak ada | Pipeline klasifikasi | ❌ Tidak |
 | 5 | GPT-based Gap Detection [berbagai, 2023-2024] | Prompting LLM langsung | ⚠️ Parsial — output bergantung pada prompt, rentan halusinasi | ❌ Tidak ada | Single-pass LLM | ❌ Tidak |
-| 6 | **Penelitian ini** | **Neuro-Symbolic Agentic System** | **✅ Tiga indikator: fragmentasi, inkonsistensi, ketidaklengkapan** | **✅ Rule Engine + Fact Base** | **Agentic (multi-step)** | **✅ SPO triples** |
+| 6 | Literature-Based Discovery / ARROWSMITH [Swanson, 1986; Smalheiser & Swanson, 1998] | Model ABC — menemukan jembatan tersembunyi antar literatur terpisah | ⚠️ Parsial — hanya sinyal fragmentasi antar-literatur, tanpa taksonomi indikator | ❌ Tidak ada | Co-occurrence + penyaringan manual | ⚠️ Co-occurrence istilah, bukan fakta SPO |
+| 7 | Topic-Modeling Gap Detection [Abd-alrazaq et al., 2024] | BERTopic — deteksi gap dari kelangkaan topik (studi kasus COVID-19) | ⚠️ Parsial — gap level topik, bukan sintesis klaim lintas paper | ❌ Tidak ada | Pipeline topic modeling | ❌ Tidak |
+| 8 | **Penelitian ini** | **Neuro-Symbolic Agentic System** | **✅ Tiga indikator: fragmentasi, inkonsistensi, ketidaklengkapan** | **✅ Rule Engine + Fact Base** | **Agentic (multi-step)** | **✅ SPO triples** |
 
 ### 2.10.2 Kebaruan Penelitian Ini
 
@@ -309,32 +332,39 @@ Berdasarkan tinjauan pustaka yang telah dipaparkan, kebaruan (*novelty*) penelit
 
 Kebaruan penelitian ini bukan pada RAG atau LLM itu sendiri — keduanya merupakan teknologi yang sudah *established* — melainkan pada **integrasi penalaran simbolik (rule engine + fact table) dengan penalaran neural (LLM agent)** untuk domain spesifik **synthesis gap detection**. Pendekatan Neuro-Symbolic Agentic ini merespons kritik bahwa sistem berbasis LLM tidak mampu membedakan asosiasi semantik dari hubungan logis [Marcus & Davis, 2020; Bender & Koller, 2020], dengan menyediakan lapisan validasi formal di atas output probabilistik LLM.
 
+Tinjauan literatur mutakhir memperkuat posisi ini dari dua arah. Pertama, hingga saat ini belum tersedia *benchmark* baku untuk *automated research-gap identification* dengan label eksplisit per indikator (ketidaklengkapan, fragmentasi, inkonsistensi); penelitian yang paling dekat baru mendeteksi *gap* pada level topik melalui *topic modeling* [Abd-alrazaq et al., 2024], bukan pada level sintesis klaim lintas paper. Kedua, arah arsitektur yang paling kredibel dalam literatur bukan "LLM mendeteksi *gap* secara langsung", melainkan LLM sebagai pengusul kandidat yang outputnya diuji modul simbolik — pemeriksaan *provenance*, struktur jembatan antar-literatur, dan aturan kontradiksi — pola yang persis dioperasionalkan penelitian ini. Ketiadaan *gold standard* langsung tersebut sekaligus menjadi alasan metodologis mengapa evaluasi pada Bab III bertumpu pada protokol penilaian pakar dengan reliabilitas antar-penilai, bukan pada *benchmark* publik.
+
 ---
 
 ## Daftar Pustaka BAB II
-
-1. Ammar, W., et al. (2018). Construction of the Literature Graph in Semantic Scholar. *NAACL 2018*.
-2. Bender, E. M., & Koller, A. (2020). Climbing towards NLU: On Meaning, Form, and Understanding in the Age of Data. *ACL 2020*.
-3. Booth, A., Sutton, A., & Papaioannou, D. (2012). *Systematic Approaches to a Successful Literature Review*. Sage Publications.
-4. Bosselut, A., et al. (2019). COMET: Commonsense Transformers for Automatic Knowledge Graph Construction. *ACL 2019*.
-5. Bowman, S., et al. (2015). A Large Annotated Corpus for Learning Natural Language Inference. *EMNLP 2015*.
-6. Buchanan, B. G., & Shortliffe, E. H. (1984). *Rule-Based Expert Systems: The MYCIN Experiments of the Stanford Heuristic Programming Project*. Addison-Wesley.
-7. Chase, H. (2022). LangChain. https://github.com/langchain-ai/langchain.
-8. Cooper, H. (1998). *Synthesizing Research: A Guide for Literature Reviews* (3rd ed.). Sage Publications.
-9. Garcez, A., et al. (2019). Neural-Symbolic Computing: An Effective Methodology for Principled Integration of Machine Learning and Reasoning. *Journal of Applied Logics*, 6(4), 611–631.
-10. Giarratano, J. C., & Riley, G. D. (2005). *Expert Systems: Principles and Programming* (4th ed.). Thomson Course Technology.
-11. Ji, S., et al. (2021). A Survey on Knowledge Graphs: Representation, Acquisition, and Applications. *IEEE Transactions on Neural Networks and Learning Systems*, 33(2), 494–514.
-12. LangChain Team. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. https://github.com/langchain-ai/langgraph.
-13. Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. *NeurIPS 2020*.
-14. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv preprint arXiv:2002.06177*.
-15. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage Books.
-16. Marshall, I. J., & Wallace, B. C. (2019). Toward Systematic Review Automation: A Practical Guide to Using Machine Learning Tools in Research Synthesis. *Systematic Reviews*, 8(1), 163.
-17. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *Proceedings of the 36th International Conference on Information Systems (ICIS 2015)*.
-18. OpenAI. (2023). GPT-4 Technical Report. *arXiv preprint arXiv:2303.08774*.
-19. Pare, G., Trudel, M. C., Jaana, M., & Kitsiou, S. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183–199.
-20. Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. *EMNLP 2019*.
-21. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*, 64(12), 1325–1330.
-22. Touvron, H., et al. (2023). LLaMA: Open and Efficient Foundation Language Models. *arXiv preprint arXiv:2302.13971*.
-23. Vaswani, A., et al. (2017). Attention Is All You Need. *NeurIPS 2017*.
-24. Williams, A., Nangia, N., & Bowman, S. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.
-25. Yao, S., et al. (2023). ReAct: Synergizing Reasoning and Acting in Language Models. *ICLR 2023*.
+1. Abd-alrazaq, A., et al. (2024). Machine Learning–Based Approach for Identifying Research Gaps: COVID-19 as a Case Study. *JMIR*. https://doi.org/10.2196/49411
+2. Ammar, W., et al. (2018). Construction of the Literature Graph in Semantic Scholar. *NAACL 2018*.
+3. Bender, E. M., & Koller, A. (2020). Climbing towards NLU: On Meaning, Form, and Understanding in the Age of Data. *ACL 2020*.
+4. Booth, A., Sutton, A., & Papaioannou, D. (2012). *Systematic Approaches to a Successful Literature Review*. Sage Publications.
+5. Bosselut, A., et al. (2019). COMET: Commonsense Transformers for Automatic Knowledge Graph Construction. *ACL 2019*.
+6. Bowman, S., et al. (2015). A Large Annotated Corpus for Learning Natural Language Inference. *EMNLP 2015*.
+7. Buchanan, B. G., & Shortliffe, E. H. (1984). *Rule-Based Expert Systems: The MYCIN Experiments of the Stanford Heuristic Programming Project*. Addison-Wesley.
+8. Chase, H. (2022). LangChain. https://github.com/langchain-ai/langchain.
+9. Cooper, H. (1998). *Synthesizing Research: A Guide for Literature Reviews* (3rd ed.). Sage Publications.
+10. DeLong, L. N., Mir, R. F., & Fleuriot, J. D. (2025). Neurosymbolic AI for Reasoning over Knowledge Graphs: A Survey. *IEEE Transactions on Neural Networks and Learning Systems*. https://doi.org/10.1109/TNNLS.2024.3420218
+11. Garcez, A., et al. (2019). Neural-Symbolic Computing: An Effective Methodology for Principled Integration of Machine Learning and Reasoning. *Journal of Applied Logics*, 6(4), 611–631.
+12. Giarratano, J. C., & Riley, G. D. (2005). *Expert Systems: Principles and Programming* (4th ed.). Thomson Course Technology.
+13. Han, B., et al. (2024). Automating Systematic Literature Reviews with Retrieval-Augmented Generation: A Comprehensive Overview. *Applied Sciences*, 14(19), 9103. https://doi.org/10.3390/app14199103
+14. Ji, S., et al. (2021). A Survey on Knowledge Graphs: Representation, Acquisition, and Applications. *IEEE Transactions on Neural Networks and Learning Systems*, 33(2), 494–514.
+15. LangChain Team. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. https://github.com/langchain-ai/langgraph.
+16. Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. *NeurIPS 2020*.
+17. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv preprint arXiv:2002.06177*.
+18. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage Books.
+19. Marshall, I. J., & Wallace, B. C. (2019). Toward Systematic Review Automation: A Practical Guide to Using Machine Learning Tools in Research Synthesis. *Systematic Reviews*, 8(1), 163.
+20. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *Proceedings of the 36th International Conference on Information Systems (ICIS 2015)*.
+21. OpenAI. (2023). GPT-4 Technical Report. *arXiv preprint arXiv:2303.08774*.
+22. Pare, G., Trudel, M. C., Jaana, M., & Kitsiou, S. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183–199.
+23. Pham, H., et al. (2025). ClaimPKG: Enhancing Claim Verification via Pseudo-Subgraph Generation with Lightweight Specialized LLM. *NAACL 2025*. https://doi.org/10.18653/v1/2025.naacl-short.68
+24. Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. *EMNLP 2019*.
+25. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*, 64(12), 1325–1330.
+26. Smalheiser, N. R., & Swanson, D. R. (1998). Using ARROWSMITH: A Computer-Assisted Approach to Formulating and Assessing Scientific Hypotheses. *Computer Methods and Programs in Biomedicine*, 57(3), 149–153.
+27. Swanson, D. R. (1986). Undiscovered Public Knowledge. *Library Quarterly*, 56(2), 103–118.
+28. Touvron, H., et al. (2023). LLaMA: Open and Efficient Foundation Language Models. *arXiv preprint arXiv:2302.13971*.
+29. Vaswani, A., et al. (2017). Attention Is All You Need. *NeurIPS 2017*.
+30. Williams, A., Nangia, N., & Bowman, S. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.
+31. Yao, S., et al. (2023). ReAct: Synergizing Reasoning and Acting in Language Models. *ICLR 2023*.

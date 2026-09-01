@@ -441,6 +441,10 @@ def _build_recommendations_from_gaps(gaps: list) -> list:
             "verb": "Melengkapi",
             "why": "Menjawab indikator ketidaklengkapan kolektif: ada aspek penting yang belum dicakup bersama oleh jurnal-jurnal yang dianalisis.",
         },
+        "SUPPORT_GAP": {
+            "verb": "Membuktikan",
+            "why": "Menjawab indikator ketiadaan dukungan bukti: klaim ini berulang lintas jurnal tetapi tidak ada bukti primer yang dapat ditelusuri untuk mendukungnya.",
+        },
     }
     recs = []
     for idx, g in enumerate(gaps[:5]):
