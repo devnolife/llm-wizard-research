@@ -55,8 +55,12 @@ def generate(
     model: str = "",
     tier: str = "",
     timeout: float = 90.0,
+    temperature: Optional[float] = None,
 ) -> Optional[Tuple[str, str]]:
     """Satu giliran generate via copilotd.
+
+    ``temperature`` diteruskan hanya bila diisi; pemanggil yang butuh hasil
+    reproducible (ekstraksi terstruktur) memakai 0.
 
     Returns:
         (text, model_id) — atau None bila copilotd tidak dikonfigurasi,
@@ -71,6 +75,8 @@ def generate(
         "json_mode": json_mode,
         "timeout_sec": timeout,
     }
+    if temperature is not None:
+        payload["temperature"] = temperature
     chosen = model or _default_model()
     if chosen:
         payload["model"] = chosen

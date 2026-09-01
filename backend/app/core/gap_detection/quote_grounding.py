@@ -24,6 +24,11 @@ def fuzzy_contains(needle: str, haystack: str) -> float:
     """
     Best similarity (0-1) of `needle` against any same-length window of
     `haystack`. Cheap anti-hallucination check for verbatim-ish quotes.
+
+    Scanned in two passes: a coarse sweep locates the most promising region,
+    then a fine sweep re-scores around it. A single coarse sweep can land every
+    window half a quote out of phase and report ~0.75 for text that is actually
+    present, which silently discards grounded quotes.
     """
     needle = normalize_text(needle)
     haystack = normalize_text(haystack)
@@ -32,11 +37,21 @@ def fuzzy_contains(needle: str, haystack: str) -> float:
     if needle in haystack:
         return 1.0
     nlen = len(needle)
+    span = max(1, len(haystack) - nlen + 1)
+    coarse_step = max(1, nlen // 2)
     best = 0.0
-    step = max(1, nlen // 2)
-    for start in range(0, max(1, len(haystack) - nlen + 1), step):
-        window = haystack[start:start + nlen]
-        ratio = SequenceMatcher(None, needle, window).ratio()
+    best_start = 0
+    for start in range(0, span, coarse_step):
+        ratio = SequenceMatcher(None, needle, haystack[start:start + nlen]).ratio()
+        if ratio > best:
+            best = ratio
+            best_start = start
+            if best >= 0.97:
+                return best
+    fine_step = max(1, coarse_step // 8)
+    for start in range(max(0, best_start - coarse_step),
+                       min(span, best_start + coarse_step + 1), fine_step):
+        ratio = SequenceMatcher(None, needle, haystack[start:start + nlen]).ratio()
         if ratio > best:
             best = ratio
             if best >= 0.97:

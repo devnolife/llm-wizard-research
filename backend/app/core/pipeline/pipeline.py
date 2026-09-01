@@ -23,6 +23,7 @@ from .dedup import deduplicate_chunks
 from .layout import LineInfo, body_font_size, extract_layout_lines, has_font_variation
 from .metadata_resolver import resolve_metadata
 from .schema import PaperMeta, PipelineChunk
+from .section_normalizer import normalize_section
 from .text_cleaning import (
     assess_quality,
     clean_pages,
@@ -70,6 +71,39 @@ _KEYWORD_HEADER = re.compile(
 )
 _LEADING_NUM = re.compile(r"^\s*((\d{1,2}(\.\d{1,2})*)|([IVXLCivxlc]{1,6}))[\.\)]?\s+")
 
+# Identifier/front-matter lines that are visually header-shaped (bold, short)
+# but are never section headers.
+_FALSE_HEADER_RE = re.compile(
+    r"orcid|^\s*(e-?mail|doi|issn|isbn|https?:|www\.)|@|\b\d{4}-\d{4}\b",
+    re.IGNORECASE,
+)
+_ALPHA_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+
+
+def _is_false_header(text: str) -> bool:
+    """Reject author/affiliation/identifier lines that pass the header shape test.
+
+    Font-aware detection flags these because they are bold or set in a larger
+    face than the body (ORCID lines, author blocks with superscript markers,
+    stray glyphs). Each one used to open a spurious section, which is the main
+    source of sub-150-token fragment chunks.
+    """
+    t = (text or "").strip()
+    if len(_ALPHA_RE.findall(t)) < 3:
+        return True
+    if _FALSE_HEADER_RE.search(t):
+        return True
+    if t[0] in ",;&*":
+        return True
+    # A lowercase start means a wrapped prose/author line, except for the short
+    # lowercase headers some journals use ("abstract", "article info").
+    if t[0].islower() and len(t.split()) > 3:
+        return True
+    # Author block: name glued to a superscript affiliation marker.
+    if re.search(r"[^\W\d_]\d", t, re.UNICODE) and re.search(r"[,&*\u2020\u2021]", t):
+        return True
+    return False
+
 
 def _is_header_line(line: str) -> bool:
     """Strict header test — avoids matching wrapped prose as a section header.
@@ -82,6 +116,8 @@ def _is_header_line(line: str) -> bool:
     """
     line = line.strip()
     if not line or len(line) > 60:
+        return False
+    if _is_false_header(line):
         return False
     if line[-1] in ".,;":  # headers don't end like sentences
         return False
@@ -314,6 +350,8 @@ def _layout_is_header(text: str, size: float, bold: bool, body_size: float) -> b
         return False
     if text[-1] in ".,;":
         return False
+    if _is_false_header(text):
+        return False
     if re.search(r"\.\s+\S", text):  # internal sentence -> prose, not a header
         return False
     if size >= body_size + 1.0:
@@ -369,6 +407,7 @@ def _sections_from_layout(
 def _postprocess_sections(
     sections: List[Tuple[Optional[str], str, Optional[int]]],
     min_section_chars: int = 120,
+    min_other_chars: int = 600,
 ) -> List[Tuple[Optional[str], str, Optional[int]]]:
     """Heal mid-sentence splits and merge tiny sections.
 
@@ -377,6 +416,12 @@ def _postprocess_sections(
       preserving the dropped header word.
     * Very short sections (stray captions, one-line noise) are folded into the
       previous section so they do not become fragment chunks.
+
+    Non-canonical sections (subsection/caption headers that normalize to
+    ``other``) are held to the much larger ``min_other_chars`` budget — roughly
+    150 tokens — because on their own they yield context-poor fragment chunks.
+    Recognised sections keep the small floor so a genuinely brief abstract or
+    conclusion survives with its own label.
     """
     healed: List[Tuple[Optional[str], str, Optional[int]]] = []
     for head, body, page in sections:
@@ -388,15 +433,14 @@ def _postprocess_sections(
 
     merged: List[Tuple[Optional[str], str, Optional[int]]] = []
     for head, body, page in healed:
-        if merged and len(body) < min_section_chars:
+        floor = min_section_chars if normalize_section(head) != "other" else min_other_chars
+        if merged and len(body) < floor:
             ph, pb, pp = merged[-1]
             merged[-1] = (ph, (pb + "\n\n" + body).strip(), pp)
         else:
             merged.append((head, body, page))
     return merged
 
-
-from .section_normalizer import normalize_section
 
 # Main-body sections whose label propagates to their (non-canonical) subsections.
 _PROPAGATING_SECTIONS = {

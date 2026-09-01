@@ -17,38 +17,49 @@ _SECTION_PATTERNS = [
     ("references", [
         r"\breferences?\b", r"\bbibliography\b", r"\bdaftar pustaka\b",
         r"\bworks cited\b", r"\bcited literature\b", r"\bliteratur\b",
+        r"список\s+використаних\s+джерел", r"список\s+літератури",
+        r"\bлітература\b", r"\bбібліографія\b",
     ]),
-    ("abstract", [r"\babstract\b", r"\babstrak\b", r"\bringkasan\b", r"\bintisari\b"]),
+    ("abstract", [
+        r"\babstract\b", r"\babstrak\b", r"\bringkasan\b", r"\bintisari\b",
+        r"\bанотація\b", r"\bрезюме\b",
+    ]),
     ("related_work", [
         r"\brelated works?\b", r"\bliterature review\b", r"\brelated studies\b",
         r"\bprior work\b", r"\bstate[- ]of[- ]the[- ]art\b", r"\bbackground\b",
         r"\btinjauan pustaka\b", r"\blandasan teori\b", r"\bkajian pustaka\b",
         r"\bpenelitian terkait\b", r"\bteori\b",
+        r"аналіз\s+(останніх\s+)?(досліджень|публікацій)", r"огляд\s+літератури",
     ]),
     ("discussion", [
         r"\bresults?\s+and\s+discussion\b", r"\bhasil\s+dan\s+pembahasan\b",
         r"\bdiscussion\b", r"\bpembahasan\b", r"\banalysis\b", r"\banalisis\b",
+        r"виклад\s+основного\s+матеріалу", r"\bобговорення\b",
     ]),
     ("conclusion", [
         r"\bconclusions?\b", r"\bconcluding remarks\b", r"\bkesimpulan\b",
         r"\bpenutup\b", r"\bfuture works?\b", r"\bfuture research\b",
         r"\blimitations?\b", r"\bketerbatasan\b", r"\bsaran\b",
         r"\bthreats to validity\b",
+        r"\bвисновк", r"\bвисновок\b", r"перспективи\s+подальших",
     ]),
     ("methods", [
         r"\bmaterials? and methods?\b", r"\bmethodolog", r"\bmethods?\b",
         r"\bmetodolog", r"\bmetode\b", r"\bproposed (method|approach|model|system)\b",
         r"\bexperimental setup\b", r"\bresearch method", r"\bsystem design\b",
         r"\bproposed\b", r"\bapproach\b", r"\balgorithm\b",
+        r"\bметодолог", r"\bметоди(ка)?\b", r"матеріали\s+та\s+методи",
     ]),
     ("results", [
         r"\bresults?\b", r"\bhasil\b", r"\bfindings\b", r"\bevaluation\b",
         r"\bexperiments?\b", r"\bexperimental results?\b", r"\beksperimen\b",
         r"\bevaluasi\b", r"\bpengujian\b",
+        r"\bрезультат",
     ]),
     ("introduction", [
         r"\bintroduction\b", r"\bpendahuluan\b", r"\blatar belakang\b",
         r"\boverview\b", r"\bpengantar\b",
+        r"\bвступ\b", r"постановка\s+проблеми", r"мета\s+статт",
     ]),
 ]
 
