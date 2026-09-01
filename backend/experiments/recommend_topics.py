@@ -112,6 +112,8 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--top", type=int, default=15, help="Jumlah proposal teratas ditampilkan.")
     ap.add_argument("--per-topic", type=int, default=3)
+    ap.add_argument("--top-titles", type=int, default=8,
+                    help="Jumlah judul siap-pakai yang dirumuskan LLM.")
     ap.add_argument("--no-embedder", action="store_true",
                     help="Pakai similarity leksikal (bukan embedding multilingual).")
     ap.add_argument("--no-llm", action="store_true", help="Tanpa narasi LLM.")
@@ -202,13 +204,34 @@ def main(argv=None):
         lines.append("")
 
     if not args.no_llm and copilot_client.is_configured():
-        lines += ["## Judul siap-pakai (narasi LLM dari 5 proposal teratas)", ""]
-        top5 = ranked[:5]
-        bullet = "\n".join(f"- ({p['topic']}) {p['title']}" for p in top5)
+        # Judul dirumuskan dari tema lintas-jurnal dulu (bukti terkuat), baru
+        # dilengkapi proposal teratas bila tema lintas-jurnal belum cukup.
+        seeds = [
+            {"text": t.label, "topic": ", ".join(t.topics),
+             "basis": f"{t.journal_support} jurnal, {len(t.members)} gap"}
+            for t in cross[:args.top_titles]
+        ]
+        for p in ranked:
+            if len(seeds) >= args.top_titles:
+                break
+            seeds.append({"text": p.get("title"), "topic": p.get("topic"),
+                          "basis": f"1 jurnal ({p.get('source', '')[:34]})"})
+        lines += [
+            f"## Judul siap-pakai ({len(seeds)} teratas)",
+            "",
+            "> Judul dirumuskan LLM dari tema lintas-jurnal; peringkat tetap dari "
+            "rumus project, LLM tidak menilai.",
+            "",
+        ]
+        bullet = "\n".join(
+            f"- [{s['basis']}] (topik: {s['topic']}) {s['text']}" for s in seeds
+        )
         res = copilot_client.generate(
             "Ubah tiap poin berikut menjadi 1 judul penelitian Bahasa Indonesia yang "
-            "spesifik dan layak skripsi/tesis (pertahankan urutan, beri penomoran):\n\n" + bullet,
+            "spesifik dan layak skripsi/tesis. Pertahankan urutan, beri penomoran, "
+            "dan jangan menambah poin baru.\n\n" + bullet,
             system="Anda pakar metodologi penelitian forensik digital.",
+            temperature=0,
         )
         lines += [res[0] if res else "(tidak tersedia)", ""]
 
