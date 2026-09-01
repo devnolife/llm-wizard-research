@@ -139,3 +139,6 @@ flood-geoai-research/data/
 flood-geoai-research/results/*.npz
 flood-geoai-research/results/fusion_model.txt
 !flood-geoai-research/results/*.json
+
+# Direktori sementara milik tes (dibuat & dihapus setup/teardown)
+backend/tests/.scratch_*/

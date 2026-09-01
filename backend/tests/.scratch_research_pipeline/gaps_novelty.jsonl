@@ -1,3 +1,0 @@
-{"record": "meta", "job_id": "x"}
-{"source": "a.pdf", "gap_statement": "Protokol pengujian alat forensik belum ada.", "gap_paraphrase": "Belum ada protokol pengujian alat forensik.", "gap_type": "stated_limitation", "topic": "tools", "grounding_score": 1.0, "novelty_status": "open"}
-{"source": "b.pdf", "gap_statement": "Sudah dibahas penelitian lain.", "gap_type": "stated_limitation", "topic": "legal", "grounding_score": 1.0, "novelty_status": "addressed"}
