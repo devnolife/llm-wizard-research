@@ -25,6 +25,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # pick up CROSSREF_EMAIL / GROBID_URL etc. for the CLI process
 
+from app.core.pipeline.corpus_relevance import build_probe, check_corpus_relevance
 from app.core.pipeline.io import write_chunks_jsonl, write_jsonl
 from app.core.pipeline.pipeline import process_pdf
 
@@ -32,6 +33,39 @@ from app.core.pipeline.pipeline import process_pdf
 def _source_name(pdf_path: Path) -> str:
     """Inputs are stored as ``{index}_{original-name}`` in job dirs."""
     return pdf_path.name.split("_", 1)[-1] if "_" in pdf_path.name else pdf_path.name
+
+
+def _load_embedder():
+    try:
+        from sentence_transformers import SentenceTransformer
+        return SentenceTransformer(
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", device="cpu"
+        )
+    except Exception:
+        return None
+
+
+def _report_relevance(results):
+    """Warn about journals that do not belong to the same research area."""
+    probes = {
+        r.meta.source: build_probe(
+            r.meta.paper_title,
+            [{"text": c.text, "is_reference": c.is_reference,
+              "chunk_index": c.chunk_index} for c in r.chunks],
+        )
+        for r in results
+    }
+    reports = check_corpus_relevance(probes, embedder=_load_embedder())
+    flagged = [rep for rep in reports if rep.flagged]
+    if not flagged:
+        logger.info(f"Corpus coherence OK: {len(reports)} journals, none flagged")
+        return
+    logger.warning(
+        f"{len(flagged)}/{len(reports)} journal(s) look unrelated to this batch "
+        f"(review manually — this is a warning, not a rejection):"
+    )
+    for rep in flagged:
+        logger.warning(f"   {rep.score:.3f}  {rep.source}  (terdekat: {rep.nearest})")
 
 
 def _run_new(pdfs, out_path: str, job_id: str):
@@ -49,6 +83,8 @@ def _run_new(pdfs, out_path: str, job_id: str):
         f"Wrote {summary['chunk']} chunks from {summary['jurnal']} journals "
         f"to {summary['path']} in {time.time() - t0:.1f}s"
     )
+    if len(results) > 1:
+        _report_relevance(results)
     return summary
 
 
