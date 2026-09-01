@@ -34,6 +34,7 @@ load_dotenv()
 
 from app.core.pipeline.io import read_jsonl
 from app.core.recommendation.novelty import rank_proposals
+from app.core.recommendation.themes import build_themes
 from app.services import copilot_client
 
 
@@ -162,6 +163,30 @@ def main(argv=None):
         lines.append(f"   - sumber: _{p.get('source')}_ ({p.get('year')}) · literatur 2024+: {cite}")
         if nov.get("notes"):
             lines.append(f"   - catatan: {nov['notes'][0]}")
+        lines.append("")
+
+    themes = build_themes(ranked, embedder=embedder)
+    cross = [t for t in themes if t.journal_support >= 2]
+    singletons = sum(1 for t in themes if len(t.members) == 1)
+    lines += [
+        "## Tema Lintas-Jurnal",
+        "",
+        "> Gap dikelompokkan jadi tema, lalu diurutkan berdasarkan **jumlah jurnal "
+        "berbeda** yang mendukungnya (tie-break: skor prioritas rumus project), agar "
+        "satu paper yang banyak menyatakan limitation tidak mendominasi rekomendasi.",
+        "",
+        f"{len(themes)} tema dari {len(ranked)} proposal; {len(cross)} tema didukung "
+        f"≥2 jurnal; {singletons} tema hanya beranggota 1 gap "
+        f"({singletons / len(themes) * 100:.0f}% — indikasi literatur terfragmentasi).",
+        "",
+    ]
+    for i, t in enumerate(cross, 1):
+        lines.append(
+            f"{i}. **[{t.journal_support} jurnal · {len(t.members)} gap · "
+            f"prio {t.priority:.3f}]** {t.label}"
+        )
+        lines.append(f"   - topik: {', '.join(t.topics)}")
+        lines.append(f"   - jurnal: {'; '.join(j.replace('.pdf', '') for j in t.journals)}")
         lines.append("")
 
     by_topic: Dict[str, List[Dict]] = defaultdict(list)
