@@ -13,7 +13,7 @@ from loguru import logger
 import os
 import shutil
 
-from .api.routes import health, documents, papers, analysis, graph, skills
+from .api.routes import health, documents, papers, analysis, graph, skills, research
 from .telemetry.recorder import telemetry_middleware
 from .utils.config_loader import get_config, get_effective_config_summary
 
@@ -118,6 +118,7 @@ app.include_router(papers.router, prefix="/api/papers", tags=["Papers"])
 app.include_router(analysis.router, prefix="/api", tags=["Analysis"])
 app.include_router(graph.router, prefix="/api", tags=["Knowledge Graph"])
 app.include_router(skills.router, prefix="/api/skills", tags=["Skills"])
+app.include_router(research.router, prefix="/api/research", tags=["Research Pipeline"])
 
 
 if __name__ == "__main__":
