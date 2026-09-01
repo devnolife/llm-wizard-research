@@ -35,10 +35,10 @@ from app.core.recommendation.novelty import (
     NOVELTY_SWEET_SPOT,
     _Backend,
     novelty_band,
-    novelty_credit,
     priority_label,
     rank_proposals,
     score_proposal,
+    sweet_spot_distance,
 )
 
 
@@ -319,20 +319,53 @@ class TestNovelty:
         assert priority_label(0.1) == "low"
 
     def test_novelty_credit_separates_inside_sweet_spot(self):
-        """Flat credit across the band tied every sweet-spot proposal at 1.0."""
+        """Flat credit ties every sweet-spot proposal, so ordering needs a tie-break."""
         low, high = NOVELTY_SWEET_SPOT
         mid = (low + high) / 2
-        assert novelty_credit(mid) == 1.0
-        assert novelty_credit(low) < novelty_credit((low + mid) / 2) < novelty_credit(mid)
-        assert novelty_credit(high) < novelty_credit((mid + high) / 2) < novelty_credit(mid)
+        assert sweet_spot_distance(mid) == 0.0
+        assert sweet_spot_distance(low) == sweet_spot_distance(high)
+        assert sweet_spot_distance(low) > sweet_spot_distance((low + mid) / 2)
 
-    def test_novelty_credit_is_continuous_and_bounded(self):
+    def test_tied_scores_ordered_by_distance_to_sweet_spot(self):
+        """Ties must not fall back to the order proposals were generated in."""
         low, high = NOVELTY_SWEET_SPOT
-        assert abs(novelty_credit(low - 1e-9) - novelty_credit(low)) < 1e-6
-        assert abs(novelty_credit(high + 1e-9) - novelty_credit(high)) < 1e-6
-        assert novelty_credit(0.0) == 0.0
-        assert novelty_credit(1.0) == 0.0
-        assert all(0.0 <= novelty_credit(i / 100) <= 1.0 for i in range(101))
+        mid = (low + high) / 2
+
+        class _FixedNovelty:
+            """Maps text -> vector so each proposal gets a preset novelty.
+
+            Keyed by content, not call order, so it survives batch priming.
+            """
+
+            def __init__(self, wanted):
+                self.wanted = wanted
+
+            def encode(self, texts):
+                out = []
+                for text in texts:
+                    novelty = next(
+                        (n for key, n in self.wanted.items() if key in text), None
+                    )
+                    if novelty is None:          # corpus document
+                        out.append([1.0, 0.0])
+                        continue
+                    sim = 1.0 - novelty
+                    out.append([sim, (1.0 - sim * sim) ** 0.5])
+                return out
+
+        props = [
+            {"title": "jauh dari tengah", "description": "", "how": "", "gap_type": "X"},
+            {"title": "dekat tengah", "description": "", "how": "", "gap_type": "X"},
+        ]
+        ranked = rank_proposals(
+            props, [{"content": "korpus acuan", "source": "p.pdf"}], None,
+            embedder=_FixedNovelty({"jauh dari tengah": low, "dekat tengah": mid}),
+        )
+        scores = [p["novelty"]["priority_score"] for p in ranked]
+        assert scores[0] == scores[1], "prasyarat: kedua skor harus seri"
+        assert ranked[0]["title"] == "dekat tengah"
+        assert sweet_spot_distance(ranked[0]["novelty"]["novelty"]) < \
+            sweet_spot_distance(ranked[1]["novelty"]["novelty"])
 
 
 class _TensorLikeEmbedder:

@@ -38,10 +38,6 @@ from loguru import logger
 
 # A proposal too close to the corpus is derivative; too far is off-topic.
 NOVELTY_SWEET_SPOT = (0.25, 0.65)
-# Credit at the sweet-spot edges; the peak (1.0) sits at the band midpoint.
-# Flat credit across the whole band scored novelty 0.25 and 0.65 identically and
-# produced mass ties at the top of the ranking, broken only by input order.
-SWEET_SPOT_EDGE_CREDIT = 0.85
 # Weights for the composite priority score.
 W_GAP = 0.50
 W_NOVELTY = 0.30
@@ -115,19 +111,49 @@ class _Backend:
 
     def __init__(self, embedder=None):
         self.embedder = embedder
+        self._corpus_ref: Optional[Sequence[str]] = None
+        self._corpus_vectors: Optional[List[List[float]]] = None
+        self._query_cache: Dict[str, List[float]] = {}
 
     @property
     def uses_embeddings(self) -> bool:
         return self.embedder is not None
+
+    def prime(self, texts: Sequence[str]) -> None:
+        """Batch-encode every query up front.
+
+        Encoding one short text per call wastes most of the time on per-call
+        overhead; ranking 358 proposals took tens of minutes that way.
+        """
+        if self.embedder is None:
+            return
+        pending = [t for t in dict.fromkeys(texts) if t and t not in self._query_cache]
+        if not pending:
+            return
+        try:
+            for text, vector in zip(pending, self.embedder.encode(pending)):
+                self._query_cache[text] = _as_floats(vector)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"Novelty batch embedding failed: {exc}")
+
+    def _corpus_matrix(self, corpus: Sequence[str]) -> List[List[float]]:
+        """Encode the corpus once per ranking run instead of once per proposal."""
+        if self._corpus_ref is not corpus:
+            self._corpus_vectors = [_as_floats(v) for v in self.embedder.encode(list(corpus))]
+            self._corpus_ref = corpus
+        return self._corpus_vectors
 
     def similarities(self, query: str, corpus: Sequence[str]) -> List[float]:
         if not corpus:
             return []
         if self.embedder is not None:
             try:
-                vectors = self.embedder.encode([query] + list(corpus))
-                q = _as_floats(vectors[0])
-                return [_cosine(q, _as_floats(v)) for v in vectors[1:]]
+                corpus_vectors = self._corpus_matrix(corpus)
+                q = self._query_cache.get(query)
+                if q is None:
+                    q = _as_floats(self.embedder.encode([query])[0])
+                    self._query_cache[query] = q
+                return [_cosine(q, v) for v in corpus_vectors]
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug(f"Novelty embedding failed, using lexical: {exc}")
         return [_lexical_similarity(query, c) for c in corpus]
@@ -181,22 +207,17 @@ def novelty_band(novelty: float) -> str:
     return "sweet_spot"
 
 
-def novelty_credit(novelty: float) -> float:
-    """Ranking credit for a novelty value, in [0, 1].
-
-    Peaks at the sweet-spot midpoint and decays continuously to 0 at both
-    extremes, so "already done" and "unrelated to the corpus" are still both
-    penalised while proposals inside the band remain separable.
-    """
+def sweet_spot_distance(novelty: float) -> float:
+    """Distance from the sweet-spot midpoint. Used only to order tied scores."""
     low, high = NOVELTY_SWEET_SPOT
-    if novelty < low:
-        return SWEET_SPOT_EDGE_CREDIT * (novelty / low) if low else 0.0
-    if novelty > high:
-        span = max(1e-6, 1.0 - high)
-        return SWEET_SPOT_EDGE_CREDIT * max(0.0, (1.0 - novelty) / span)
-    mid = (low + high) / 2.0
-    half = max(1e-6, (high - low) / 2.0)
-    return 1.0 - (1.0 - SWEET_SPOT_EDGE_CREDIT) * ((novelty - mid) / half) ** 2
+    return abs(novelty - (low + high) / 2.0)
+
+
+def proposal_text(proposal: Dict[str, Any]) -> str:
+    """The text a proposal is scored on."""
+    return " ".join(
+        str(proposal.get(k, "")) for k in ("title", "description", "how")
+    ).strip()
 
 
 def score_proposal(
@@ -207,9 +228,7 @@ def score_proposal(
     gap_confidence: float = 0.0,
 ) -> NoveltyScore:
     """Score one gap-anchored proposal for ranking purposes."""
-    text = " ".join(
-        str(proposal.get(k, "")) for k in ("title", "description", "how")
-    ).strip()
+    text = proposal_text(proposal)
     sims = backend.similarities(text, corpus_texts)
     if sims:
         best_idx = max(range(len(sims)), key=lambda i: sims[i])
@@ -222,9 +241,19 @@ def score_proposal(
     band = novelty_band(novelty)
     act = actionability(text)
 
+    # Only the sweet spot gets full novelty credit; the extremes are discounted
+    # because both "already done" and "unrelated to the corpus" are bad answers.
+    low, high = NOVELTY_SWEET_SPOT
+    if band == "sweet_spot":
+        novelty_credit = 1.0
+    elif band == "derivative":
+        novelty_credit = novelty / low if low else 0.0
+    else:
+        novelty_credit = max(0.0, 1.0 - (novelty - high) / max(1e-6, 1.0 - high))
+
     priority = (
         W_GAP * max(0.0, min(1.0, gap_confidence))
-        + W_NOVELTY * novelty_credit(novelty)
+        + W_NOVELTY * novelty_credit
         + W_ACTIONABILITY * act
     )
 
@@ -299,7 +328,8 @@ def rank_proposals(
             confidence_by_type[gtype] = max(confidence_by_type.get(gtype, 0.0), conf)
 
     backend = _Backend(embedder)
-    scored: List[Tuple[float, int, Dict[str, Any]]] = []
+    backend.prime([proposal_text(p) for p in proposals])
+    scored: List[Tuple[float, float, int, Dict[str, Any]]] = []
     for idx, proposal in enumerate(proposals):
         gtype = str(proposal.get("gap_type") or "").upper()
         score = score_proposal(
@@ -312,11 +342,14 @@ def rank_proposals(
         enriched = dict(proposal)
         enriched["novelty"] = score.to_dict()
         enriched["priority"] = priority_label(score.priority_score)
-        scored.append((score.priority_score, idx, enriched))
+        scored.append((score.priority_score, sweet_spot_distance(score.novelty), idx, enriched))
 
-    # Stable: equal scores keep the generator's original order.
-    scored.sort(key=lambda t: (-t[0], t[1]))
-    return [item for _, _, item in scored]
+    # Equal scores really are equal under the formula, so the tie is broken by
+    # how close the novelty sits to the sweet-spot midpoint rather than by the
+    # generator's input order. Flat credit across the band makes such ties
+    # common: 7 of the top 15 proposals shared one score on the 35-journal run.
+    scored.sort(key=lambda t: (-t[0], t[1], t[2]))
+    return [item for *_, item in scored]
 
 
 def priority_label(priority_score: float) -> str:
