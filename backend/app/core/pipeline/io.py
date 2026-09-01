@@ -7,11 +7,25 @@ the same new-schema records.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from .schema import PipelineChunk
+
+_JOB_INDEX_PREFIX = re.compile(r"^\d+_")
+
+
+def source_name(path: str | Path) -> str:
+    """Nama sumber sebuah PDF: buang prefix ``{indeks}_`` yang ditambah job dir.
+
+    Dipakai bersama CLI dan orchestrator API supaya satu PDF menghasilkan
+    ``source`` yang sama di kedua jalur. Hanya prefix angka yang dibuang, sebab
+    memisah di underscore pertama membuat bert_paper.pdf dan yolo_paper.pdf
+    bertabrakan jadi satu nama.
+    """
+    return _JOB_INDEX_PREFIX.sub("", Path(path).name, count=1)
 
 
 def write_chunks_jsonl(

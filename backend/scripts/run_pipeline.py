@@ -15,7 +15,6 @@ kriteria selesai #1). It shares the core pipeline with the FastAPI ingestion.
 from __future__ import annotations
 
 import argparse
-import re
 import statistics
 import sys
 import time
@@ -28,21 +27,11 @@ from dotenv import load_dotenv
 load_dotenv()  # pick up CROSSREF_EMAIL / GROBID_URL etc. for the CLI process
 
 from app.core.pipeline.corpus_relevance import build_probe, check_corpus_relevance
-from app.core.pipeline.io import write_chunks_jsonl, write_jsonl
+from app.core.pipeline.io import source_name, write_chunks_jsonl, write_jsonl
 from app.core.pipeline.pipeline import process_pdf
 
 
-_JOB_INDEX_PREFIX = re.compile(r"^\d+_")
-
-
-def _source_name(pdf_path: Path) -> str:
-    """Strip the ``{index}_`` prefix job dirs add, and nothing else.
-
-    Splitting on the first underscore unconditionally collapsed bert_paper.pdf,
-    yolo_paper.pdf and gan_paper.pdf into a single source named paper.pdf, so
-    they silently overwrote each other.
-    """
-    return _JOB_INDEX_PREFIX.sub("", pdf_path.name, count=1)
+_source_name = source_name  # nama lama dipertahankan untuk pemanggil yang ada
 
 
 def _load_embedder():
