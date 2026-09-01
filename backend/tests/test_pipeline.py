@@ -25,6 +25,7 @@ from app.core.pipeline.token_chunker import (
     split_sentences,
 )
 from app.core.pipeline.dedup import deduplicate_chunks
+from app.core.pipeline.pipeline import _is_false_header
 from app.core.pipeline.schema import PaperMeta, PipelineChunk
 from app.core.pipeline.metadata_resolver import (
     extract_doi,
@@ -85,6 +86,10 @@ class TestSectionNormalizer:
         ("ABSTRACT", "abstract"),
         ("NATURE &", "other"),
         ("P-ISSN: 2356-4962", "other"),
+        ("Висновки", "conclusion"),
+        ("Вступ", "introduction"),
+        ("Виклад основного матеріалу", "discussion"),
+        ("СПИСОК ВИКОРИСТАНИХ ДЖЕРЕЛ:", "references"),
     ])
     def test_normalize_section(self, raw, expected):
         assert normalize_section(raw) == expected
@@ -97,6 +102,31 @@ class TestSectionNormalizer:
     def test_prose_not_reference(self):
         prose = "Digital forensics is the process of recovering evidence from devices."
         assert not classify_reference("introduction", prose)
+
+
+class TestFalseHeaderRejection:
+    """Front-matter lines look header-shaped and used to open spurious sections."""
+
+    @pytest.mark.parametrize("line", [
+        "ORCID: 0000-0002-2432-5286",
+        "e-mail: someone@example.org",
+        "Sreepriya S1, Dr.Asha T.S2",
+        ", Gianmarco Baldini2and Francesco Leotta1",
+        "F",
+        '"€',
+    ])
+    def test_rejects_front_matter(self, line):
+        assert _is_false_header(line)
+
+    @pytest.mark.parametrize("line", [
+        "abstract",
+        "article info",
+        "CONCLUSION",
+        "Висновки",
+        "3.1 Results and Discussion",
+    ])
+    def test_keeps_real_headers(self, line):
+        assert not _is_false_header(line)
 
 
 class TestTokenChunker:

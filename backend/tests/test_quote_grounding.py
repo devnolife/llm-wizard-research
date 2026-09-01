@@ -44,6 +44,20 @@ class TestFuzzyContains:
         assert fuzzy_contains("", "text") == 0.0
         assert normalize_text("  A  B ") == "a b"
 
+    def test_quote_found_when_out_of_phase_with_coarse_window(self):
+        """A quote sitting between coarse window positions must still ground.
+
+        A single sweep steps by half the quote length, so a quote whose offset
+        falls mid-stride scored ~0.76 here and was discarded as invented.
+        """
+        quote = "residual connections mitigate the degradation problem in very deep network."
+        offset_text = "x" * 17 + PAPERS[0]["content"]
+        assert fuzzy_contains(quote, offset_text) >= QUOTE_MATCH_THRESHOLD
+
+    def test_other_paper_stays_below_threshold(self):
+        quote = "residual connections mitigate the degradation problem"
+        assert fuzzy_contains(quote, PAPERS[1]["content"]) < QUOTE_MATCH_THRESHOLD
+
 
 class TestSplitSentences:
     def test_splits_and_filters_short(self):
