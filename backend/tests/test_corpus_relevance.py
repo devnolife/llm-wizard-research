@@ -74,3 +74,22 @@ class TestCheckCorpusRelevance:
 
     def test_threshold_is_a_warning_level_not_a_gate(self):
         assert 0.0 < RELEVANCE_WARN_THRESHOLD < 1.0
+
+
+class TestSourceName:
+    """The job-dir index prefix must be stripped without eating real filenames."""
+
+    def test_strips_only_numeric_job_index(self):
+        from pathlib import Path
+        from scripts.run_pipeline import _source_name
+
+        assert _source_name(Path("00_A_Process_Model.pdf")) == "A_Process_Model.pdf"
+        assert _source_name(Path("35_Understanding_Tools.pdf")) == "Understanding_Tools.pdf"
+
+    def test_plain_filenames_do_not_collide(self):
+        from pathlib import Path
+        from scripts.run_pipeline import _source_name
+
+        names = {_source_name(Path(n))
+                 for n in ("bert_paper.pdf", "yolo_paper.pdf", "gan_paper.pdf")}
+        assert len(names) == 3

@@ -15,6 +15,7 @@ kriteria selesai #1). It shares the core pipeline with the FastAPI ingestion.
 from __future__ import annotations
 
 import argparse
+import re
 import statistics
 import sys
 import time
@@ -31,9 +32,17 @@ from app.core.pipeline.io import write_chunks_jsonl, write_jsonl
 from app.core.pipeline.pipeline import process_pdf
 
 
+_JOB_INDEX_PREFIX = re.compile(r"^\d+_")
+
+
 def _source_name(pdf_path: Path) -> str:
-    """Inputs are stored as ``{index}_{original-name}`` in job dirs."""
-    return pdf_path.name.split("_", 1)[-1] if "_" in pdf_path.name else pdf_path.name
+    """Strip the ``{index}_`` prefix job dirs add, and nothing else.
+
+    Splitting on the first underscore unconditionally collapsed bert_paper.pdf,
+    yolo_paper.pdf and gan_paper.pdf into a single source named paper.pdf, so
+    they silently overwrote each other.
+    """
+    return _JOB_INDEX_PREFIX.sub("", pdf_path.name, count=1)
 
 
 def _load_embedder():
