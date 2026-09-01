@@ -15,6 +15,7 @@ kriteria selesai #1). It shares the core pipeline with the FastAPI ingestion.
 from __future__ import annotations
 
 import argparse
+import statistics
 import sys
 import time
 from pathlib import Path
@@ -46,7 +47,7 @@ def _load_embedder():
 
 
 def _report_relevance(results):
-    """Warn about journals that do not belong to the same research area."""
+    """Report how well each journal fits the batch, and warn about strays."""
     probes = {
         r.meta.source: build_probe(
             r.meta.paper_title,
@@ -56,16 +57,26 @@ def _report_relevance(results):
         for r in results
     }
     reports = check_corpus_relevance(probes, embedder=_load_embedder())
-    flagged = [rep for rep in reports if rep.flagged]
-    if not flagged:
-        logger.info(f"Corpus coherence OK: {len(reports)} journals, none flagged")
+    scores = [rep.score for rep in reports if rep.score > 0]
+    if not scores:
         return
-    logger.warning(
-        f"{len(flagged)}/{len(reports)} journal(s) look unrelated to this batch "
-        f"(review manually — this is a warning, not a rejection):"
+    logger.info(
+        f"Corpus coherence: {len(reports)} journals, keterkaitan median "
+        f"{statistics.median(scores):.3f} (rentang {min(scores):.3f}-{max(scores):.3f})"
     )
-    for rep in flagged:
-        logger.warning(f"   {rep.score:.3f}  {rep.source}  (terdekat: {rep.nearest})")
+    for rep in reports[:3]:
+        logger.info(
+            f"   paling lemah kaitannya: {rep.score:.3f}  {rep.source} "
+            f"-> mirip: {rep.nearest}"
+        )
+    flagged = [rep for rep in reports if rep.flagged]
+    if flagged:
+        logger.warning(
+            f"{len(flagged)}/{len(reports)} jurnal tampak di luar bidang batch ini "
+            f"(periksa manual — peringatan, bukan penolakan):"
+        )
+        for rep in flagged:
+            logger.warning(f"   {rep.score:.3f}  {rep.source}  (terdekat: {rep.nearest})")
 
 
 def _run_new(pdfs, out_path: str, job_id: str):
