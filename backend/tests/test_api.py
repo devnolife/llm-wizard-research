@@ -115,6 +115,74 @@ def test_job_status_and_cancel_contract(client):
     assert cancel.json()["status"] == "cancelled"
 
 
+@pytest.mark.api
+def test_completed_status_backfills_missing_result_sections(client):
+    """Legacy completed jobs may predate rule_engine_report / fact_table_stats /
+    reasoning_trace; the status endpoint must backfill them, not crash."""
+    job_store.save_job(
+        "legacy-done",
+        {"status": "completed", "progress": 100, "results": {"topics": ["a"]}},
+    )
+
+    response = client.get("/api/analysis-status/legacy-done")
+
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert results["topics"] == ["a"]
+    assert results["rule_engine_report"] == {}
+    assert results["fact_table_stats"] == {}
+    assert results["reasoning_trace"] == []
+    # Backfill is persisted so later reads do not repeat the work.
+    persisted = job_store.get_job("legacy-done")["results"]
+    assert persisted["reasoning_trace"] == []
+
+
+@pytest.mark.api
+def test_completed_status_lang_id_translates_once_and_caches(client, monkeypatch):
+    """The React UI defaults to lang=id, so this path is hit on every polling
+    fallback; it must return translated results and persist them as results_id."""
+    calls = []
+
+    class FakeGLM:
+        def generate(self, prompt, **_):
+            calls.append(prompt)
+            return "terjemahan"
+
+    monkeypatch.setattr(analysis, "get_glm_interface", lambda: FakeGLM())
+    job_store.save_job(
+        "done-id",
+        {
+            "status": "completed",
+            "progress": 100,
+            "results": {
+                "topics": ["topic"],
+                "summary": "summary",
+                "gaps": [{"title": "gap", "description": "desc"}],
+                "recommendations": [{"title": "rec", "why": "because"}],
+                "roadmap": [{"phase": "p1", "items": ["step"]}],
+                "rule_engine_report": {},
+                "fact_table_stats": {},
+                "reasoning_trace": [],
+            },
+        },
+    )
+
+    first = client.get("/api/analysis-status/done-id", params={"lang": "id"})
+    assert first.status_code == 200
+    body = first.json()
+    assert body["results"]["summary"] == "terjemahan"
+    assert body["results"]["gaps"][0]["title"] == "terjemahan"
+    assert body["results"]["roadmap"][0]["items"] == ["terjemahan"]
+    # Untranslated results are still available for lang=en callers.
+    assert client.get("/api/analysis-status/done-id").json()["results"]["summary"] == "summary"
+
+    translated_calls = len(calls)
+    assert translated_calls > 0
+    second = client.get("/api/analysis-status/done-id", params={"lang": "id"})
+    assert second.status_code == 200
+    assert len(calls) == translated_calls, "translation must be cached in results_id"
+
+
 @pytest.fixture
 def reanalyze_env(tmp_path, monkeypatch):
     """Isolated config + queue for the reanalyze endpoint."""

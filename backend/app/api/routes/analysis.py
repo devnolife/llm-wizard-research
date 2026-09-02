@@ -231,6 +231,60 @@ def _conversation_lock(conversation_id: str) -> Lock:
         return _CONVERSATION_LOCKS.setdefault(conversation_id, Lock())
 
 
+# Translating a completed result is dozens of LLM calls; concurrent pollers of
+# the same job must wait for the first translation instead of repeating it.
+_TRANSLATION_LOCKS: dict[str, Lock] = {}
+_TRANSLATION_LOCKS_GUARD = Lock()
+
+
+def _translation_lock(job_id: str) -> Lock:
+    with _TRANSLATION_LOCKS_GUARD:
+        return _TRANSLATION_LOCKS.setdefault(job_id, Lock())
+
+
+def _translate_results(glm, results: dict) -> dict:
+    """Return an Indonesian copy of the user-facing fields of ``results``."""
+    translated_gaps = []
+    for g in results.get("gaps", []):
+        if isinstance(g, dict):
+            tg = dict(g)
+            tg["title"] = translate_to_indonesian(glm, g.get("title", ""))
+            tg["description"] = translate_to_indonesian(glm, g.get("description", ""))
+            translated_gaps.append(tg)
+        else:
+            translated_gaps.append(g)
+
+    translated_recs = []
+    for r in results.get("recommendations", []):
+        if isinstance(r, dict):
+            tr = dict(r)
+            for key in ("title", "description", "why", "how"):
+                if tr.get(key):
+                    tr[key] = translate_to_indonesian(glm, tr[key])
+            translated_recs.append(tr)
+        else:
+            translated_recs.append(r)
+
+    translated_roadmap = []
+    for phase in results.get("roadmap", []):
+        if isinstance(phase, dict):
+            tp = dict(phase)
+            tp["phase"] = translate_to_indonesian(glm, phase.get("phase", ""))
+            tp["items"] = translate_to_indonesian(glm, phase.get("items", []))
+            translated_roadmap.append(tp)
+        else:
+            translated_roadmap.append(phase)
+
+    return {
+        **results,
+        "topics": translate_to_indonesian(glm, results.get("topics", [])),
+        "summary": translate_to_indonesian(glm, results.get("summary", "")),
+        "gaps": translated_gaps,
+        "recommendations": translated_recs,
+        "roadmap": translated_roadmap,
+    }
+
+
 def _add_uploaded_paper_similarity(papers, vector_store) -> None:
     """Attach each paper's mean semantic similarity to the other uploads.
 
@@ -634,93 +688,50 @@ async def upload_and_analyze(
 
 
 @router.get("/analysis-status/{job_id}")
-async def get_analysis_status(job_id: str, lang: str = "en"):
-    """Get the status of an analysis job
-    
+def get_analysis_status(job_id: str, lang: str = "en"):
+    """Get the status of an analysis job.
+
     Args:
         job_id: The job ID
         lang: Language for results (en/id). Default: en
+
+    Deliberately a plain ``def``: the ``lang=id`` path issues dozens of
+    synchronous LLM calls, which would freeze the event loop (and every other
+    request, including SSE streams) if this were a coroutine.
     """
     job = _get_analysis_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    
+
     # Completed jobs already persist their isolated fact-table stats.  Never
     # consult the global singleton here: it can belong to another job.
     if job["status"] == "completed" and job.get("results"):
-        results = job["results"]
+        results = dict(job["results"])
         result_changed = False
-        
-        # Add rule_engine_report if not present
-        if "rule_engine_report" not in results:
-            results["rule_engine_report"] = {}
-            result_changed = True
-        
-        if "fact_table_stats" not in results:
-            results["fact_table_stats"] = {}
-            result_changed = True
-        
-        # Add reasoning_trace placeholder
-        if "reasoning_trace" not in results:
-            results["reasoning_trace"] = []
-            result_changed = True
+        for key, empty in (
+            ("rule_engine_report", {}),
+            ("fact_table_stats", {}),
+            ("reasoning_trace", []),
+        ):
+            if key not in results:
+                results[key] = empty
+                result_changed = True
         if result_changed:
-            job["results"] = results
-            _set_analysis_job(job_id, **job)
-    
+            # Persist only the changed field: ``job`` itself carries ``job_id``,
+            # so splatting it into ``_set_analysis_job(job_id, **job)`` raises
+            # ``TypeError: multiple values for argument 'job_id'``.
+            job = _set_analysis_job(job_id, results=results)
+
     # Translate if requested and job is completed
-    if lang == "id" and job["status"] == "completed" and "results" in job:
-        if "results_id" not in job:
-            glm = get_glm_interface()
-            results = job["results"]
-            
-            # Translate structured fields
-            translated_gaps = []
-            for g in results.get("gaps", []):
-                if isinstance(g, dict):
-                    tg = dict(g)
-                    tg["title"] = translate_to_indonesian(glm, g.get("title", ""))
-                    tg["description"] = translate_to_indonesian(glm, g.get("description", ""))
-                    translated_gaps.append(tg)
-                else:
-                    translated_gaps.append(g)
+    if lang == "id" and job["status"] == "completed" and job.get("results"):
+        if not job.get("results_id"):
+            with _translation_lock(job_id):
+                job = _get_analysis_job(job_id) or job
+                if not job.get("results_id"):
+                    translated = _translate_results(get_glm_interface(), job["results"])
+                    job = _set_analysis_job(job_id, results_id=translated)
+        return {**job, "results": job["results_id"]}
 
-            translated_recs = []
-            for r in results.get("recommendations", []):
-                if isinstance(r, dict):
-                    tr = dict(r)
-                    for key in ("title", "description", "why", "how"):
-                        if tr.get(key):
-                            tr[key] = translate_to_indonesian(glm, tr[key])
-                    translated_recs.append(tr)
-                else:
-                    translated_recs.append(r)
-
-            translated_roadmap = []
-            for phase in results.get("roadmap", []):
-                if isinstance(phase, dict):
-                    tp = dict(phase)
-                    tp["phase"] = translate_to_indonesian(glm, phase.get("phase", ""))
-                    tp["items"] = translate_to_indonesian(glm, phase.get("items", []))
-                    translated_roadmap.append(tp)
-                else:
-                    translated_roadmap.append(phase)
-
-            job["results_id"] = {
-                **results,
-                "topics": translate_to_indonesian(glm, results.get("topics", [])),
-                "summary": translate_to_indonesian(glm, results.get("summary", "")),
-                "gaps": translated_gaps,
-                "recommendations": translated_recs,
-                "roadmap": translated_roadmap,
-            }
-            _set_analysis_job(job_id, **job)
-        
-        return {
-            **job,
-            "results": job["results_id"]
-        }
-    
     return job
 
 
