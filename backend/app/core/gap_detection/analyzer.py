@@ -41,12 +41,11 @@ from .claim_normalization import (
 )
 from .adjudication import (
     NLI_NOISE_FLOOR,
-    AdjudicationResult,
     adjudicate_contradiction,
 )
 from .semantic_match import SemanticMatcher
 from .coverage_map import build_coverage_matrix, mark_important_columns
-from .calibration import Calibrator, build_provenance, load_calibrator
+from .calibration import build_provenance, load_calibrator
 from .support_gap import (
     MAX_REPORTED_CLAIMS,
     analyze_support,
@@ -1576,7 +1575,6 @@ List contradictions (if none found, say "No contradictions detected"):"""
         purely from the LLM's parametric knowledge and may reflect
         pre-training bias rather than a real coverage gap in this corpus.
         """
-        stopwords = _ASPECT_STOPWORDS
         corpus_text = " ".join(
             p.get("content", "").lower() for p in papers
         )

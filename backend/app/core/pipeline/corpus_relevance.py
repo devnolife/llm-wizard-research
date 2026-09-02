@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
 
 # Calibrated on 35 forensics journals vs 23 out-of-domain ML papers added one at
 # a time: 0 of 35 legitimate journals flagged, 21 of 23 intruders caught.

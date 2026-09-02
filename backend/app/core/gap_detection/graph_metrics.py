@@ -238,7 +238,6 @@ def compute_modularity(
 
         Q = (1 / 2m) * SUM_ij [ A_ij - k_i*k_j / 2m ] * delta(c_i, c_j)
     """
-    index = {item: i for i, item in enumerate(items)}
     n = len(items)
     adjacency = [[matrix[i][j] if i != j and matrix[i][j] >= threshold else 0.0
                   for j in range(n)] for i in range(n)]
