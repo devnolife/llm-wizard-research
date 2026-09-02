@@ -15,6 +15,7 @@ satunya cara merekam prompt dan balasan LLM. Arah impor juga tetap benar,
 from __future__ import annotations
 
 import hashlib
+import inspect
 import threading
 import time
 from collections import defaultdict
@@ -37,6 +38,7 @@ from ..core.pipeline.token_chunker import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_OVERLAP_RATIO,
     DEFAULT_TARGET_TOKENS,
+    chunk_document,
 )
 from ..core.recommendation.novelty import rank_proposals
 from ..core.recommendation.themes import build_themes
@@ -458,6 +460,36 @@ def stage_recommendation(
         lines.append(f"{i}. **[{t.journal_support} jurnal · {len(t.members)} gap]** {t.label}")
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
 
+    # Markdown hanya memuat top-N; JSONL menyimpan seluruh proposal agar UI bisa
+    # menelusuri semuanya beserta tema induknya.
+    theme_of = {id(p): t for t in themes for p in t.members}
+    proposals_path = Path(out_path).with_suffix(".jsonl")
+    themes_path = Path(out_path).with_name(f"{Path(out_path).stem}_tema.jsonl")
+    proposal_records = []
+    for i, p in enumerate(ranked, 1):
+        nov = p.get("novelty") or {}
+        theme = theme_of.get(id(p))
+        proposal_records.append({
+            "rank": i,
+            "title": p.get("title"),
+            "description": p.get("description"),
+            "topic": p.get("topic"),
+            "gap_type": p.get("gap_type"),
+            "source": p.get("source"),
+            "year": p.get("year"),
+            "grounding_score": p.get("grounding_score"),
+            "priority_score": nov.get("priority_score"),
+            "novelty": nov.get("novelty"),
+            "band": nov.get("band"),
+            "actionability": nov.get("actionability"),
+            "theme_id": theme.theme_id if theme else None,
+            "theme_label": theme.label if theme else None,
+            "theme_journal_support": theme.journal_support if theme else None,
+            "theme_size": len(theme.members) if theme else None,
+        })
+    write_jsonl(str(proposals_path), proposal_records)
+    write_jsonl(str(themes_path), [t.to_dict() for t in themes])
+
     return StageOutcome(
         params={"rumus": "0.5*gap_confidence + 0.3*novelty + 0.2*actionability",
                 "filter": "novelty_status == open",
@@ -480,7 +512,9 @@ def stage_recommendation(
              "source": p.get("source")}
             for i, p in enumerate(ranked[:SAMPLE_ROWS], 1)
         ],
-        outputs={"rekomendasi_md": str(out_path)},
+        outputs={"rekomendasi_md": str(out_path),
+                 "proposals_jsonl": str(proposals_path),
+                 "themes_jsonl": str(themes_path)},
         notes=["journal_support pada tema besar adalah batas atas, bukan bukti "
                "bahwa N jurnal menyatakan gap yang sama (chaining single-linkage)."],
     )
@@ -537,3 +571,45 @@ def run_research_pipeline(
                message="Pipeline penelitian selesai", completed_at=time.time())
     return {"job_id": job_id, "stages": summary,
             "outputs": {k: str(v) for k, v in paths.items()}}
+
+
+# ── Kode sumber tiap tahap ─────────────────────────────────────────────────
+
+# Fungsi nyata yang dieksekusi tiap tahap, urut dari orkestrator ke komponen
+# inti. Diambil lewat ``inspect`` supaya yang ditampilkan UI selalu kode yang
+# benar-benar berjalan; salinan manual pasti basi begitu implementasinya berubah.
+STAGE_SOURCE_FUNCS: Dict[str, List[Callable]] = {
+    "chunking": [stage_chunking, process_pdf, chunk_document],
+    "gap_mining": [stage_gap_mining, select_candidates,
+                   extract_gaps_from_candidate, verify_gaps],
+    "novelty": [stage_novelty, annotate_gaps],
+    "recommendation": [stage_recommendation, rank_proposals, build_themes],
+}
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def stage_source(stage_key: str) -> List[Dict[str, Any]]:
+    """Kode sumber fungsi-fungsi yang dijalankan satu tahap."""
+    entries: List[Dict[str, Any]] = []
+    for fn in STAGE_SOURCE_FUNCS.get(stage_key, []):
+        try:
+            lines, lineno = inspect.getsourcelines(fn)
+            path = Path(inspect.getsourcefile(fn) or "")
+        except (OSError, TypeError) as exc:
+            logger.warning(f"kode sumber {getattr(fn, '__name__', fn)} tak terbaca: {exc}")
+            continue
+        try:
+            rel = str(path.relative_to(_REPO_ROOT))
+        except ValueError:
+            rel = str(path)
+        entries.append({
+            "name": fn.__name__,
+            "module": fn.__module__,
+            "file": rel,
+            "line_start": lineno,
+            "line_end": lineno + len(lines) - 1,
+            "doc": inspect.getdoc(fn) or "",
+            "source": "".join(lines),
+        })
+    return entries

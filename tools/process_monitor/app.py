@@ -27,6 +27,7 @@ pages = {
         st.Page("page_stage_gaps.py", title="2 · Penambangan Gap", icon="🕳️"),
         st.Page("page_stage_novelty.py", title="3 · Verifikasi Kebaruan", icon="🔭"),
         st.Page("page_stage_recommendation.py", title="4 · Rekomendasi Topik", icon="🎯"),
+        st.Page("page_research_source.py", title="Teks Sumber Jurnal", icon="📖"),
         st.Page("page_research_raw.py", title="Log & Artefak", icon="🧾"),
     ],
     "Pustaka": [
