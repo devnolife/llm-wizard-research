@@ -3,6 +3,8 @@
 import shutil
 from pathlib import Path
 
+import pytest
+
 from app.services.research_pipeline import (
     RESEARCH_STAGES,
     StageOutcome,
@@ -17,14 +19,20 @@ from app.utils import job_store
 SCRATCH = Path(__file__).parent / ".scratch_research_pipeline"
 
 
-def setup_function():
+@pytest.fixture(autouse=True)
+def _isolated_job_store():
+    """Fixture, bukan setup_function: setup_function tidak dipanggil untuk metode
+    di dalam kelas, sehingga tes kelas sempat menulis ke basis data produksi.
+
+    Path harus .sqlite3 — path .json memakai mode legacy dan artefak tetap
+    ditulis lewat _ensure_sqlite() ke basis data bawaan.
+    """
     shutil.rmtree(SCRATCH, ignore_errors=True)
     SCRATCH.mkdir(parents=True, exist_ok=True)
-    job_store.load_jobs(SCRATCH / "analysis_jobs.json")
-
-
-def teardown_function():
+    job_store.load_jobs(SCRATCH / "analysis_jobs.sqlite3")
+    yield
     shutil.rmtree(SCRATCH, ignore_errors=True)
+    job_store.load_jobs()
 
 
 class TestStageDefinitions:

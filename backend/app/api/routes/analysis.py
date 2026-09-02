@@ -915,6 +915,7 @@ async def list_analysis_jobs(limit: int = 20):
             "status": job.get("status"),
             "progress": job.get("progress"),
             "message": job.get("message"),
+            "pipeline": job.get("pipeline") or "legacy",
             "created_at": job.get("created_at"),
             "completed_at": job.get("completed_at"),
             "files": [Path(p).name for p in pdf_paths],

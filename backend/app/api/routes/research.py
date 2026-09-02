@@ -41,6 +41,8 @@ def _run_in_background(job_id: str, pdf_paths: List[Path], out_dir: Path) -> Non
         run_research_pipeline(job_id, pdf_paths, out_dir, embedder=_embedder())
     except Exception as exc:
         logger.error(f"Pipeline penelitian {job_id} gagal: {exc}")
+        update_job(job_id, status="failed", error=str(exc)[:500],
+                   message="Pipeline penelitian gagal")
 
 
 @router.get("/stages")
@@ -80,17 +82,20 @@ async def start_research(files: List[UploadFile] = File(...)):
         logger.error(f"Unggahan pipeline penelitian gagal: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
+    # Status langsung "running", bukan "queued": worker antrean pipeline lama
+    # mengklaim job queued mana pun tanpa melihat field `pipeline`, sehingga job
+    # penelitian sempat dijalankan sebagai analisis 8 tahap lalu gagal berulang.
     save_job(job_id, {
         "job_id": job_id,
-        "status": "queued",
+        "status": "running",
         "progress": 0.0,
-        "message": "Menunggu pipeline penelitian dimulai",
+        "message": "Menyiapkan pipeline penelitian",
         "created_at": time.time(),
         "pipeline": "research",
         "payload": {"pdf_paths": [str(p) for p in pdf_paths],
                     "input_dir": str(job_dir), "output_dir": str(out_dir)},
     })
-    record_job_event(job_id, "job.created", status="queued",
+    record_job_event(job_id, "job.created", status="running",
                      data={"file_count": len(pdf_paths), "pipeline": "research"})
 
     # Thread biasa, bukan antrean analisis lama: worker itu hanya mengenali

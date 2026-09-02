@@ -8,8 +8,11 @@ from fastapi.testclient import TestClient
 from app.api.routes import research
 from app.main import app
 from app.services.research_pipeline import RESEARCH_STAGES
+from app.utils import job_store
 
 client = TestClient(app)
+
+SCRATCH = Path(__file__).parent / ".scratch_research_api"
 
 _MINIMAL_PDF = (
     b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
@@ -17,6 +20,23 @@ _MINIMAL_PDF = (
     b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n"
     b"trailer<</Root 1 0 R>>\n%%EOF\n"
 )
+
+
+def setup_module():
+    """Arahkan job_store ke berkas sementara agar tes tidak mencemari basis data
+    produksi — job uji di sana sempat diklaim worker analisis lalu gagal berulang.
+
+    Harus .sqlite3: path .json memakai mode legacy dan artefak tetap ditulis ke
+    basis data bawaan.
+    """
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    SCRATCH.mkdir(parents=True, exist_ok=True)
+    job_store.load_jobs(SCRATCH / "analysis_jobs.sqlite3")
+
+
+def teardown_module():
+    shutil.rmtree(SCRATCH, ignore_errors=True)
+    job_store.load_jobs()  # kembalikan ke lokasi bawaan
 
 
 class TestStagesEndpoint:
@@ -63,8 +83,13 @@ class TestStartEndpoint:
         from app.utils.job_store import get_job
 
         job = get_job(self._start().json()["job_id"])
-        assert job["status"] == "queued"
         assert job["pipeline"] == "research", "UI membedakan job lama vs penelitian lewat field ini"
+
+    def test_job_starts_running_so_legacy_worker_cannot_claim_it(self):
+        """Worker antrean lama mengklaim job `queued` apa pun tanpa cek pipeline."""
+        from app.utils.job_store import get_job
+
+        assert get_job(self._start().json()["job_id"])["status"] == "running"
 
     def test_background_worker_is_dispatched(self):
         self._start()
