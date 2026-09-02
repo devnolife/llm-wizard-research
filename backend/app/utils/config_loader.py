@@ -262,7 +262,7 @@ class ConfigLoader:
             persist_directory=self._resolve_path(
                 os.getenv("CHROMA_PERSIST_DIRECTORY") or yaml_config.get("vector_db", {}).get("persist_directory", "./chroma_db")
             ),
-            collection_name=os.getenv("CHROMA_COLLECTION_NAME") or yaml_config.get("vector_db", {}).get("collection_name", "research_papers"),
+            collection_name=os.getenv("CHROMA_COLLECTION_NAME") or yaml_config.get("vector_db", {}).get("collection_name", "research_papers_ml"),
             embedding_model=os.getenv("EMBEDDING_MODEL") or yaml_config.get("vector_db", {}).get("embedding_model", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
             distance_metric=yaml_config.get("vector_db", {}).get("distance_metric", "cosine"),
             batch_size=int(os.getenv("VECTOR_DB_BATCH_SIZE", yaml_config.get("vector_db", {}).get("batch_size", 100))),

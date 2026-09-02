@@ -83,10 +83,10 @@ const GraphPage = () => {
 
   // Spread clusters once data loads
   useEffect(() => {
-    if (fgRef.current && data.nodes.length) {
-      fgRef.current.d3Force('charge').strength(-120)
-      setTimeout(() => fgRef.current?.zoomToFit(600, 60), 700)
-    }
+    if (!fgRef.current || !data.nodes.length) return
+    fgRef.current.d3Force('charge').strength(-120)
+    const timer = setTimeout(() => fgRef.current?.zoomToFit(600, 60), 700)
+    return () => clearTimeout(timer)
   }, [data])
 
   const searchLower = search.trim().toLowerCase()

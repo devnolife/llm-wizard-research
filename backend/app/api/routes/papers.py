@@ -3,6 +3,7 @@ External paper API endpoints
 """
 
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -174,7 +175,10 @@ async def fetch_pdf(paper: PaperToDownload):
                    "unduh manual dari halaman publisher dengan akses kampus Anda.",
         )
 
-    tmp_path = Path(tempfile.mkstemp(suffix=".pdf")[1])
+    # mkstemp returns an open descriptor; close it or every download leaks one.
+    fd, tmp_name = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
     timeout = aiohttp.ClientTimeout(total=90)
     try:
         async with aiohttp.ClientSession(headers=_DOWNLOAD_HEADERS, timeout=timeout) as session:

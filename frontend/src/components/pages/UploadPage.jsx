@@ -36,6 +36,9 @@ const UploadPage = () => {
       file => file.type === 'application/pdf'
     )
     setFiles(prev => [...prev, ...selectedFiles])
+    // Browsers skip onChange when the same file is picked twice; clearing the
+    // value lets a user re-add a file they just removed.
+    e.target.value = ''
   }
 
   const removeFile = (index) => {
@@ -144,7 +147,7 @@ const UploadPage = () => {
         <div className="mt-4 space-y-2">
           {files.map((file, index) => (
             <div
-              key={index}
+              key={`${file.name}-${file.size}-${file.lastModified}`}
               className="flex items-center justify-between p-3 rounded-lg border bg-card"
             >
               <div className="flex items-center gap-3 flex-1 min-w-0">
