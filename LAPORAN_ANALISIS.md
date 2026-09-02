@@ -1,6 +1,7 @@
 # Laporan Analisis Menyeluruh — Wizard Research
 
 > Tanggal analisis: 8 Juli 2026 · Baseline commit: `2925682` · Status perbaikan: diterapkan (uncommitted, lihat §8)
+> **Audit ulang 3 September 2026** (baseline `66c5ab1`): lihat §10.
 > Analisis arsitektur, kualitas kode, dan rekomendasi perbaikan.
 > Project: *Neuro-Symbolic Agentic System for Synthesis Gap Detection* (tesis S2 Teknik Informatika UNHAS).
 > Metode: 4 agent eksplorasi paralel (core, API, frontend, eksperimen) + eksekusi suite tes + verifikasi manual temuan kritis.
@@ -198,3 +199,80 @@ Seluruh item "belum dilakukan" di §8 **sudah selesai** dan diverifikasi ulang t
 **Catatan framing tesis (H9, diperbarui 5 Agu 2026):** dengan penambahan 2 run nli (seeds 48–49) desain menjadi n₁=7 vs n₂=5 dan kedua variabel menunjukkan pemisahan sempurna antar kelompok — **H9 terkonfirmasi signifikan pasca-Holm (p=0.0331 < 0.05, δ=1.0)**. Riwayat: pada n=5/5 (1 Agu) p Holm=0.0716, belum signifikan. Detail di `LAPORAN_VERIFIKASI.md` §4.
 
 **Kesimpulan:** semua temuan kritis (K1–K7) dan P1 telah resolved di kode; laporan §3 dan §7 di atas dipertahankan sebagai catatan historis audit.
+
+---
+
+## 10. Addendum — Audit Ulang 3 September 2026
+
+> Baseline: commit `66c5ab1` (*feat: satukan alur penelitian jadi satu halaman berpanduan*).
+> Metode: eksekusi suite tes + lint + build sebagai baseline, 3 agent eksplorasi paralel (API/services, core, frontend + Streamlit) dengan dua putaran masing-masing, lalu **verifikasi manual/reproduksi** untuk setiap temuan yang ditindaklanjuti.
+> Seluruh perubahan di bawah **belum di-commit** — tinjau dengan `git diff`, batalkan per item dengan perintah di §10.4.
+
+### 10.1 Baseline (sebelum perubahan apa pun)
+
+| Pemeriksaan | Hasil |
+|---|---|
+| `pytest tests/` (backend) | **626 pass, 2 skip** (~64 dtk) |
+| `flake8 app` — gerbang CI `.github/workflows/quality.yml` | **exit 1** → CI *Quality Gate* **merah di `main`** (14 temuan F401/F841) |
+| ESLint + `vite build` (frontend) | bersih |
+
+### 10.2 Temuan yang ditindaklanjuti
+
+| # | Tingkat | Temuan | Bukti |
+|---|---|---|---|
+| A1 | **Kritis** | `GET /api/analysis-status/{job_id}` **HTTP 500** — `_set_analysis_job(job_id, **job)` sedangkan `job` memuat kunci `job_id` → `TypeError: multiple values for argument 'job_id'`. Terpicu pada (a) job selesai yang belum punya `rule_engine_report`/`fact_table_stats`/`reasoning_trace`, dan (b) **setiap request `lang=id`** — bahasa bawaan UI React (`AnalysisResults.jsx: useState('id')`). Selain itu terjemahan (puluhan panggilan LLM sinkron) berjalan di dalam `async def` → memblokir event loop dan semua request lain. | Direproduksi langsung sebelum diubah; `analysis.py` (dulu) baris ~669 & ~717 |
+| A2 | **Kritis** | Job pipeline penelitian (`POST /api/research/start`) **melewati antrean durable**: status langsung `running` + `threading.Thread` lepas. Akibat: tak dibatasi worker, **tak bisa dibatalkan**, dan setelah restart `load_jobs()` mengantrekan ulang lalu handler lama 8-tahap menjalankannya (komentar di kode mengakui hal ini pernah terjadi). `/reanalyze` pada job penelitian juga membuat salinan **tanpa** field `pipeline` → dijalankan sebagai analisis lama. | `research.py` (dulu) baris 170–200; `analysis.py` `reanalyze_job` |
+| A3 | **Penting** | **Auto-retry tanpa batas**: `retry_job()` mereset `attempt=0`, sementara `AnalysisJobQueue._execute` mengandalkan `attempt < max_attempts`. Job yang selalu gagal (mis. PDF hilang) di-*requeue* tiap ~1 dtk selamanya. Bug lama, tetapi A2 membuat job penelitian ikut terpapar. | Direproduksi oleh tes `test_automatic_retry_stops_at_max_attempts` (gagal sebelum perbaikan: `assert 0 == 1`) |
+| A4 | **Penting** | `flake8 app` gagal → CI merah (lihat §10.1). Termasuk 8 import helper mati di `analysis.py`, `AdjudicationResult`/`Calibrator` tak terpakai di `analyzer.py`, variabel `stopwords`/`index` tak terpakai. | keluaran flake8 |
+| A5 | **Penting** | `_add_uploaded_paper_similarity()` dipanggil **di dalam** loop ingest per-PDF → seluruh paper di-*embed* ulang pada tiap iterasi (O(n²) encode) dan hasil antara ditimpa. | `analysis.py` `process_auto_analysis`, loop `for i, pdf_path` |
+| A6 | Minor | `papers.py` `fetch_pdf`: `tempfile.mkstemp()` mengembalikan fd yang tidak pernah ditutup → kebocoran fd per unduhan. | `papers.py:177` |
+| A7 | Minor | `config_loader.py` fallback `collection_name="research_papers"` ≠ `config.yaml` (`research_papers_ml`) — tanpa YAML aplikasi diam-diam memakai koleksi lain. | `config_loader.py:266` vs `config.yaml:21` |
+| A8 | Minor | Frontend: `GraphPage.jsx` `setTimeout` tidak di-*clear* saat unmount; `UploadPage.jsx` nilai `<input type=file>` tak direset (memilih ulang file yang sama tidak memicu `onChange`) dan `key={index}` pada daftar file. | `GraphPage.jsx:84–90`, `UploadPage.jsx:34–39,147` |
+
+### 10.3 Perubahan yang diterapkan (uncommitted)
+
+| Item | Perubahan | File |
+|---|---|---|
+| A1 | Simpan hanya field yang berubah (`results=` / `results_id=`); logika terjemahan dipisah ke `_translate_results()`; **lock per job** agar poller paralel tidak menerjemahkan ganda; endpoint menjadi `def` sinkron (FastAPI menjalankannya di threadpool) agar LLM tidak memblokir event loop. **+2 tes regresi**. | `backend/app/api/routes/analysis.py`, `backend/tests/test_api.py` |
+| A2 | `AnalysisJobQueue.register(pipeline, handler)` + `resolve_handler()` — *dispatch* berdasarkan `job["pipeline"]`, handler lama tetap *default*; job tanpa handler → `failed` eksplisit, bukan menggantung. `research_pipeline.run_research_job()` sebagai handler antrean (membaca `payload.pdf_paths`/`output_dir`). **Pembatalan kooperatif**: `ResearchCancelled` dicek antar tahap dan tiap 10 kandidat di ekstraksi gap; event baru `phase.cancelled`; status `cancelled` tidak memicu retry. `/api/research/start` kini `queued` + `max_attempts` + `notify()`. `/reanalyze` mempertahankan `pipeline` dan memberi `output_dir` baru. `main.py` mendaftarkan handler. **Tes**: `test_research_api.py` (disesuaikan), `test_research_pipeline.py` (+6: handler antrean, kegagalan per tahap, PDF hilang, pembatalan), `test_analysis_queue.py` (+3 dispatch), `test_api.py` (+1 reanalyze). | `analysis_queue.py`, `research_pipeline.py`, `routes/research.py`, `routes/analysis.py`, `main.py`, 4 file tes |
+| A2′ | Streamlit mengikuti kontrak baru: `cancel_job()` + tombol ⏹️ di Dashboard dan wizard Analisis Penelitian; wizard menangani status `queued` (pesan “menunggu giliran worker”) dan `cancelled`; timeline mengenali `phase.cancelled`. README tool diperbarui. | `tools/process_monitor/{common,research_common,page_dashboard,page_research_wizard}.py`, `README.md` |
+| A3 | `retry_job(..., reset_attempts=True)` — endpoint `/retry` manual tetap memberi kuota baru (perilaku lama, tes lama tetap lolos); auto-retry antrean memakai `reset_attempts=False` sehingga `max_attempts` benar-benar tercapai. **+1 tes**. | `job_store.py`, `analysis_queue.py`, `test_analysis_queue.py` |
+| A4 | Hapus 14 import/variabel tak terpakai → `flake8 app` **exit 0**. | `analysis.py`, `analyzer.py`, `graph_metrics.py`, `corpus_relevance.py`, `themes.py` |
+| A5 | Panggilan similarity dipindah ke **setelah** loop ingest (dihitung sekali). | `analysis.py` |
+| A6 | `fd, name = mkstemp(); os.close(fd)`. | `papers.py` |
+| A7 | Fallback `collection_name` → `research_papers_ml`. | `config_loader.py` |
+| A8 | `clearTimeout` di cleanup effect; `e.target.value = ''` setelah membaca file; key stabil `name-size-lastModified`. | `GraphPage.jsx`, `UploadPage.jsx` |
+
+**Verifikasi akhir**: `flake8 app` exit 0 · `pytest tests/` **639 pass, 2 skip** (+13 tes) · ESLint bersih · `vite build` sukses.
+
+### 10.4 Cara meninjau & membatalkan per item
+
+Semua perubahan ada di *working tree*. Tinjau dengan `git diff <file>`; batalkan dengan `git checkout -- <file...>`:
+
+| Batalkan | Perintah |
+|---|---|
+| **Semua** | `git checkout -- . && git checkout -- LAPORAN_ANALISIS.md` |
+| Hanya A2 + A2′ (refactor antrean; A1/A3/A4/A5 tetap) | tidak bisa per-file murni karena `analysis.py`/`test_api.py` juga memuat A1/A4/A5 — gunakan `git diff backend/app/api/routes/research.py backend/app/services/research_pipeline.py backend/app/main.py tools/process_monitor/` untuk menilai, lalu `git checkout -- backend/app/api/routes/research.py backend/app/services/research_pipeline.py backend/app/main.py backend/tests/test_research_api.py backend/tests/test_research_pipeline.py tools/process_monitor/` dan hapus `register()`/`resolve_handler()` di `analysis_queue.py` serta blok `pipeline=`/`output_dir` di `reanalyze_job` secara manual |
+| Hanya frontend (A8) | `git checkout -- frontend/src/components/pages/GraphPage.jsx frontend/src/components/pages/UploadPage.jsx` |
+| Hanya A6/A7 | `git checkout -- backend/app/api/routes/papers.py backend/app/utils/config_loader.py` |
+
+Bila diterima: `git add -A && git commit` (disarankan dipecah: *fix(api)* A1, *feat(queue)* A2/A2′/A3, *chore(lint)* A4, *perf* A5, *fix* A6–A8).
+
+### 10.5 Temuan yang **belum** ditindaklanjuti (butuh keputusan Anda)
+
+Terverifikasi dari kode oleh agent (dikutip), tidak diubah karena menyentuh perilaku ilmiah/eksperimen atau di luar cakupan perbaikan aman:
+
+| # | Prioritas | Temuan | Lokasi | Saran |
+|---|---|---|---|---|
+| B1 | **Tinggi** | `FactTable.add_fact()` **tidak mendedup** triple `(subject, predicate, object)`; `extract_from_text()` selalu menjalankan `_extract_pattern_relations()` di atas hasil LLM → fakta ganda menggembungkan hitungan SPO & metrik KG (mempengaruhi angka “Fakta SPO” di BAB IV). | `fact_table.py:234`, `fact_extractor.py:200–236` | Dedup pada insert dengan kunci `(subject_id, predicate, object_id, source_paper)`; **re-run eksperimen** bila diubah |
+| B2 | **Tinggi** | Penanda kausal (“causes”, “leads to”, “reduces”, …) dipetakan ke `APPLIES_TO`; hanya `improves/enhances/increases` → `IMPROVES`. `PredicateType` **tidak punya** predikat CAUSES. Relasi kausal hilang dari KG dan uji konsistensi. | `fact_extractor.py:146,622` | Tambah `CAUSES` (atau pakai `CORRELATES_WITH` sesuai desain *downgrade*), selaraskan dengan revisi.md §6/§9 |
+| B3 | Sedang | Jalur legacy `_run_sequential()` masih hidup sebagai fallback saat LangGraph tak terpasang/gagal — **tidak ada tes** yang menyentuhnya; dua model eksekusi harus dijaga setara. | `coordinator.py:20–23, 641, 699` | Hapus, atau tambah tes paritas + catat di tesis |
+| B4 | Sedang | Cache embedding korpus berbasis **identitas objek** (`self._corpus_ref is not corpus`) di `semantic_match.py`, `recommendation/novelty.py`, `gap_mining/novelty.py` → list baru dengan isi sama di-*embed* ulang. | ketiga file | Kunci cache = hash tuple teks |
+| B5 | Sedang | `CrossEncoderReranker`/`NLIModel`/`VectorStore` memuat model per-*instance* (tanpa cache modul) — aman di DI singleton, tapi CLI/eksperimen yang membuat beberapa instance memuat bobot berulang. | `reranker.py:26–47`, `nli_model.py:31–56`, `vector_store.py:92` | `lru_cache` per `(model_name, device)` |
+| B6 | Sedang | `POST /api/papers/fetch-pdf` & `/download-and-analyze` mengunduh **URL sembarang** (SSRF). Dampak kecil karena single-user localhost, tapi layak dibatasi. | `papers.py:43–50,155–257` | Tolak host privat/loopback; atau hanya URL hasil resolusi Unpaywall/API |
+| B7 | Sedang | Pembatalan di pipeline lama bisa **hilang** bila datang di antara `_ensure_job_active` terakhir dan penulisan `status="completed"`; job `cancelled` menyimpan `progress` terakhir (tampak “macet 95%”). | `analysis.py` ~1804–1874 | Cek ulang cancel tepat sebelum `completed`; set `progress` saat cancel |
+| B8 | Rendah | `/api/kg/graph` (analysis.py) vs `/api/graph` (graph.py) — dua endpoint KG dengan bentuk respons berbeda. `/api/sources/status` dan `/health` tidak dipakai UI mana pun. | routes | Satukan / dokumentasikan sebagai API-only |
+| B9 | Rendah | `POST /api/models/switch` mengubah `config.model_name` singleton tanpa lock saat job berjalan. | `health.py:70–79`, `llm_service.py:239–242` | Lock, atau model per-request |
+| B10 | Rendah | `documents.py` menerima `BackgroundTasks` tapi tidak memakainya; `useAnalysisJob` fallback SSE→polling pada `onerror` pertama tanpa retry; `port_forward_3030.py` port hardcoded; helper unggah terduplikasi di `common.py`/`research_common.py`. | masing-masing | Rapikan bila ada waktu |
+
+**Catatan proses**: audit ini mulai mengubah kode sebelum menyajikan temuan — seharusnya temuan dan rencana disajikan dulu untuk disetujui. Bagian §10.4 disusun agar setiap item dapat dinilai dan dibatalkan secara terpisah.
