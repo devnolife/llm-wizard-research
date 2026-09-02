@@ -544,8 +544,16 @@ def request_cancel(job_id: str) -> JobRecord | None:
     )
 
 
-def retry_job(job_id: str, delay_seconds: float = 0) -> JobRecord | None:
-    """Requeue a terminal job when its persistent input payload is available."""
+def retry_job(
+    job_id: str, delay_seconds: float = 0, *, reset_attempts: bool = True
+) -> JobRecord | None:
+    """Requeue a terminal job when its persistent input payload is available.
+
+    ``reset_attempts=True`` (manual retry from the UI) grants a fresh attempt
+    budget.  The queue's automatic retry passes ``False`` so ``attempt`` keeps
+    accumulating and ``max_attempts`` can actually be reached; otherwise an
+    always-failing job would be requeued forever.
+    """
     job = get_job(job_id)
     if job is None or job.get("status") not in {"failed", "cancelled", "interrupted"}:
         return None
@@ -558,7 +566,7 @@ def retry_job(job_id: str, delay_seconds: float = 0) -> JobRecord | None:
         progress=0,
         error=None,
         cancel_requested=False,
-        attempt=0,
+        attempt=0 if reset_attempts else int(job.get("attempt") or 0),
         available_at=time.time() + max(0, delay_seconds),
         message="Analisis dijadwalkan ulang",
         results=None,

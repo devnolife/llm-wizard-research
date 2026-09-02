@@ -86,3 +86,42 @@ def test_job_without_any_handler_fails_clearly_instead_of_hanging(tmp_path):
     job = job_store.get_job("orphan")
     assert job["status"] == "failed"
     assert "tidak dikenal" in job["error"]
+
+
+def test_automatic_retry_stops_at_max_attempts(tmp_path):
+    """A job that keeps failing must be attempted ``max_attempts`` times, then
+    stay failed. The auto-retry used to go through ``retry_job`` which reset
+    ``attempt`` to 0, so ``attempt < max_attempts`` was always true again
+    after the next claim: an always-failing job retried forever, every second.
+    """
+    job_store.load_jobs(tmp_path / "analysis_jobs.sqlite3")
+    job_store.save_job(
+        "always-fails",
+        {"status": "queued", "max_attempts": 2, "payload": {"pdf_paths": ["/tmp/x.pdf"]}},
+    )
+    starts: list[str] = []
+
+    def handler(job_id):
+        starts.append(job_id)
+        raise RuntimeError("boom")
+
+    queue = AnalysisJobQueue(max_workers=1, poll_interval=0.01)
+    queue._handler = handler
+
+    # Attempt 1: claimed by the supervisor, fails, must be requeued *without*
+    # losing the attempt count.
+    assert job_store.claim_next_job()["attempt"] == 1
+    queue._execute("always-fails")
+    job = job_store.get_job("always-fails")
+    assert job["status"] == "queued", "first failure is retried"
+    assert job["attempt"] == 1, "auto-retry must keep the attempt history"
+
+    # Attempt 2 (skip the backoff delay): fails again and must NOT be requeued.
+    job_store.update_job("always-fails", available_at=0)
+    assert job_store.claim_next_job()["attempt"] == 2
+    queue._execute("always-fails")
+    job = job_store.get_job("always-fails")
+    assert job["status"] == "failed"
+    assert job["attempt"] == 2
+    assert starts == ["always-fails", "always-fails"]
+    assert job_store.claim_next_job() is None, "nothing left to claim"

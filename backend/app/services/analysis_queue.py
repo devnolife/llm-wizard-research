@@ -175,7 +175,7 @@ class AnalysisJobQueue:
             )
             if job and status == "failed" and job.get("attempt", 0) < job.get("max_attempts", 2):
                 delay = min(60, 2 ** max(0, int(job.get("attempt", 1)) - 1))
-                retried = job_store.retry_job(job_id, delay_seconds=delay)
+                retried = job_store.retry_job(job_id, delay_seconds=delay, reset_attempts=False)
                 if retried:
                     job_store.record_job_event(
                         job_id,
