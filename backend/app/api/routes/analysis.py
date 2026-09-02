@@ -1061,8 +1061,6 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                 "already_indexed": already_indexed,
             })
 
-            _add_uploaded_paper_similarity(paper_contents, vector_store)
-
             record_job_event(
                 job_id,
                 "file.completed",
@@ -1105,6 +1103,11 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                     ],
                 },
             )
+
+        # Once, after every upload is parsed: the pairwise matrix embeds all
+        # papers, so calling it inside the loop re-encoded the whole set on
+        # each iteration (O(n^2) encodings) for values that were overwritten.
+        _add_uploaded_paper_similarity(paper_contents, vector_store)
 
         record_job_event(
             job_id,
