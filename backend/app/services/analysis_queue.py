@@ -22,7 +22,14 @@ JobHandler = Callable[[str], None]
 
 
 class AnalysisJobQueue:
-    """Claim queued jobs atomically and execute at most ``max_workers`` locally."""
+    """Claim queued jobs atomically and execute at most ``max_workers`` locally.
+
+    Jobs carry an optional ``pipeline`` field.  Handlers registered with
+    :meth:`register` run jobs of that pipeline; anything else falls back to the
+    default handler passed to :meth:`start`.  Without this dispatch a restart
+    would replay a research job through the legacy 8-stage analysis, because
+    ``load_jobs()`` requeues every interrupted job regardless of its pipeline.
+    """
 
     def __init__(self, max_workers: int = 2, poll_interval: float = 0.5):
         self.max_workers = max(1, max_workers)
@@ -34,10 +41,26 @@ class AnalysisJobQueue:
         self._lock = threading.RLock()
         self._futures: set[Future[None]] = set()
         self._handler: JobHandler | None = None
+        self._handlers: dict[str, JobHandler] = {}
 
     @property
     def running(self) -> bool:
         return bool(self._thread and self._thread.is_alive())
+
+    def register(self, pipeline: str, handler: JobHandler) -> None:
+        """Route jobs whose ``pipeline`` field equals ``pipeline`` to ``handler``."""
+        if not pipeline:
+            raise ValueError("pipeline name must be non-empty")
+        with self._lock:
+            self._handlers[pipeline] = handler
+
+    def resolve_handler(self, job: dict | None) -> JobHandler | None:
+        """Handler for one persisted job: registered pipeline first, then default."""
+        pipeline = (job or {}).get("pipeline")
+        with self._lock:
+            if pipeline and pipeline in self._handlers:
+                return self._handlers[pipeline]
+            return self._handler
 
     def start(self, handler: JobHandler) -> None:
         """Recover durable jobs and start the local queue supervisor once."""
@@ -114,8 +137,19 @@ class AnalysisJobQueue:
                 logger.exception(f"Unexpected analysis worker failure: {exc}")
 
     def _execute(self, job_id: str) -> None:
-        handler = self._handler
+        job = job_store.get_job(job_id)
+        handler = self.resolve_handler(job)
         if handler is None:
+            pipeline = (job or {}).get("pipeline") or "legacy"
+            logger.error(f"No handler registered for pipeline '{pipeline}' (job {job_id})")
+            job_store.update_job(
+                job_id,
+                status="failed",
+                error=f"Pipeline '{pipeline}' tidak dikenal oleh worker",
+                message="Pipeline tidak dikenal oleh worker",
+                attempt=int((job or {}).get("max_attempts", 2)),
+            )
+            job_store.record_job_event(job_id, "job.finished", status="failed")
             return
         started_at = time.monotonic()
         try:

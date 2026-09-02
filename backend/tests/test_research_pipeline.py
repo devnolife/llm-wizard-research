@@ -5,12 +5,16 @@ from pathlib import Path
 
 import pytest
 
+from app.services import research_pipeline
 from app.services.research_pipeline import (
     RESEARCH_STAGES,
+    ResearchCancelled,
     StageOutcome,
     _StageRecorder,
     _dedup_gaps,
     _median,
+    run_research_job,
+    run_research_pipeline,
     stage_recommendation,
 )
 from app.core.pipeline.io import source_name, write_jsonl
@@ -94,6 +98,108 @@ class TestStageRecorder:
             pass
         types = [e["type"] for e in job_store.get_job_events("job-fail")]
         assert "phase.failed" in types
+
+    def test_cancellation_is_not_recorded_as_a_failure(self):
+        job_store.save_job("job-cancel", {"status": "running", "progress": 0})
+        try:
+            with _StageRecorder("job-cancel", "gap_mining"):
+                raise ResearchCancelled("stop")
+        except ResearchCancelled:
+            pass
+        types = [e["type"] for e in job_store.get_job_events("job-cancel")]
+        assert "phase.cancelled" in types and "phase.failed" not in types
+
+
+class TestOrchestratorAsQueueHandler:
+    """``run_research_job`` is what the durable queue calls; the stages are
+    stubbed so only status transitions and payload handling are exercised."""
+
+    def _stub_stages(self, monkeypatch, fail_at: str | None = None):
+        calls: list[str] = []
+
+        def make(name):
+            def stage(*_a, **_k):
+                calls.append(name)
+                if name == fail_at:
+                    raise RuntimeError(f"{name} meledak")
+                return StageOutcome(metrics={"ok": 1})
+            return stage
+
+        for name in ("stage_chunking", "stage_gap_mining", "stage_novelty",
+                     "stage_recommendation"):
+            monkeypatch.setattr(research_pipeline, name, make(name))
+        monkeypatch.setattr(research_pipeline, "_shared_embedder", lambda: None)
+        return calls
+
+    def _queued_job(self, job_id: str, pdf: Path) -> None:
+        job_store.save_job(job_id, {
+            "status": "running", "progress": 0, "pipeline": "research",
+            "payload": {"pdf_paths": [str(pdf)], "output_dir": str(SCRATCH / "out")},
+        })
+
+    def test_runs_all_stages_from_payload_and_completes(self, monkeypatch):
+        calls = self._stub_stages(monkeypatch)
+        pdf = SCRATCH / "a.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        self._queued_job("rq-ok", pdf)
+
+        run_research_job("rq-ok")
+
+        job = job_store.get_job("rq-ok")
+        assert job["status"] == "completed" and job["progress"] == 100
+        assert calls == ["stage_chunking", "stage_gap_mining", "stage_novelty",
+                         "stage_recommendation"]
+        assert (SCRATCH / "out").is_dir(), "output_dir dari payload dipakai"
+
+    def test_failure_keeps_the_specific_stage_error(self, monkeypatch):
+        """The generic queue handler would overwrite the error; ours must not
+        re-raise so the message 'novelty: ...' survives for the UI."""
+        self._stub_stages(monkeypatch, fail_at="stage_novelty")
+        pdf = SCRATCH / "b.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        self._queued_job("rq-fail", pdf)
+
+        run_research_job("rq-fail")  # must not raise
+
+        job = job_store.get_job("rq-fail")
+        assert job["status"] == "failed"
+        assert job["error"].startswith("novelty:")
+        types = [e["type"] for e in job_store.get_job_events("rq-fail")]
+        assert "phase.failed" in types
+
+    def test_missing_pdfs_raise_so_queue_marks_job_failed(self, monkeypatch):
+        self._stub_stages(monkeypatch)
+        self._queued_job("rq-nopdf", SCRATCH / "hilang.pdf")
+        with pytest.raises(FileNotFoundError):
+            run_research_job("rq-nopdf")
+
+    def test_cancel_request_stops_before_next_stage(self, monkeypatch):
+        calls = self._stub_stages(monkeypatch)
+        pdf = SCRATCH / "c.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        self._queued_job("rq-cancel", pdf)
+        # Simulate the user pressing cancel while stage 1 runs.
+        original = research_pipeline.stage_chunking
+
+        def chunk_then_cancel(*a, **k):
+            job_store.request_cancel("rq-cancel")
+            return original(*a, **k)
+        monkeypatch.setattr(research_pipeline, "stage_chunking", chunk_then_cancel)
+
+        run_research_job("rq-cancel")
+
+        job = job_store.get_job("rq-cancel")
+        assert job["status"] == "cancelled"
+        assert "gap_mining" in job["message"], "tahap berikutnya tidak boleh dimulai"
+        assert calls == ["stage_chunking"]
+
+    def test_run_pipeline_raises_cancelled_for_direct_callers(self, monkeypatch):
+        self._stub_stages(monkeypatch)
+        job_store.save_job("rq-direct", {"status": "running", "progress": 0})
+        job_store.request_cancel("rq-direct")
+        with pytest.raises(ResearchCancelled):
+            run_research_pipeline("rq-direct", [SCRATCH / "x.pdf"], SCRATCH / "out2")
+        assert job_store.get_job("rq-direct")["status"] == "cancelled"
 
 
 class TestStageRecommendation:

@@ -175,6 +175,25 @@ def delete_job(job_id: str) -> bool:
         return False
 
 
+def cancel_job(job_id: str) -> bool:
+    """Minta pembatalan kooperatif: job antre langsung batal, job berjalan
+    berhenti di batas tahap (atau kandidat) berikutnya."""
+    try:
+        r = requests.post(f"{api_base()}/analysis-status/{job_id}/cancel", timeout=30)
+        r.raise_for_status()
+        return True
+    except requests.RequestException as exc:
+        detail = ""
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            try:
+                detail = f" — {resp.json().get('detail', '')}"
+            except ValueError:
+                pass
+        st.session_state["last_error"] = f"Pembatalan gagal: {exc}{detail}"
+        return False
+
+
 def reanalyze_job(job_id: str) -> str | None:
     """Analisis ulang job sebagai job BARU dari PDF tersimpannya.
 

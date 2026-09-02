@@ -145,6 +145,20 @@ async def reanalyze_job(job_id: str):
         shutil.rmtree(job_dir, ignore_errors=True)
         raise
 
+    # Keep the source job's pipeline so a research job is re-run as research,
+    # not as the legacy 8-stage analysis; its outputs get a fresh directory.
+    new_payload = {
+        "pdf_paths": [str(path) for path in input_paths],
+        "input_dir": str(job_dir),
+        "files": files_metadata,
+        "reanalyzed_from": job_id,
+    }
+    pipeline = source.get("pipeline")
+    if pipeline:
+        new_payload["output_dir"] = str(
+            Path(config.data.processed_path) / pipeline / new_job_id
+        )
+
     _set_analysis_job(
         new_job_id,
         status="queued",
@@ -154,12 +168,8 @@ async def reanalyze_job(job_id: str):
         error=None,
         created_at=time.time(),
         max_attempts=config.queue.max_attempts,
-        payload={
-            "pdf_paths": [str(path) for path in input_paths],
-            "input_dir": str(job_dir),
-            "files": files_metadata,
-            "reanalyzed_from": job_id,
-        },
+        pipeline=pipeline,
+        payload=new_payload,
     )
     record_job_event(
         new_job_id,

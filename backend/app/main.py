@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
 
     # Pre-load critical components
     from .api.dependencies import get_document_processor, get_vector_store
+    from .services import research_pipeline
     from .services.analysis_queue import get_analysis_queue
     from .utils import job_store
     try:
@@ -56,6 +57,9 @@ async def lifespan(app: FastAPI):
             logger.warning("OCR is enabled but the configured service is unavailable")
 
     queue = get_analysis_queue()
+    # Jobs are dispatched by their ``pipeline`` field; the legacy 8-stage
+    # analysis is the default for jobs that predate the field.
+    queue.register(research_pipeline.PIPELINE_NAME, research_pipeline.run_research_job)
     queue.start(analysis.process_auto_analysis)
 
     yield

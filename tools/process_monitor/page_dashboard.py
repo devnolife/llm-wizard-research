@@ -4,6 +4,7 @@ import streamlit as st
 
 from common import (
     JOB_STATUS_BADGES,
+    cancel_job,
     delete_job,
     fetch_jobs,
     fmt_datetime,
@@ -83,8 +84,17 @@ else:
                     st.session_state["job_id"] = job["job_id"]
                     st.switch_page("page_analysis.py")
                 if status in ("queued", "running"):
-                    act_m.button("🔁", key=f"norerun_{job['job_id']}", width="stretch",
-                                 disabled=True, help="Job masih berjalan")
+                    with act_m.popover("⏹️", width="stretch",
+                                       help="Batalkan job ini (berhenti di batas tahap berikutnya)"):
+                        st.markdown(
+                            "Batalkan analisis ini? Job antre berhenti seketika; job yang "
+                            "berjalan berhenti setelah tahap saat ini selesai. PDF dan hasil "
+                            "tahap yang sudah rampung tetap tersimpan."
+                        )
+                        if st.button("✅ Ya, batalkan", key=f"cancel_{job['job_id']}", type="primary"):
+                            if cancel_job(job["job_id"]):
+                                st.toast(f"Pembatalan {job['job_id'][:8]}… diminta", icon="⏹️")
+                            st.rerun()
                     act_r.button("🗑️", key=f"nodel_{job['job_id']}", width="stretch",
                                  disabled=True, help="Batalkan dulu job yang sedang berjalan")
                 else:

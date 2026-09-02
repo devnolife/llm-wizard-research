@@ -5,7 +5,6 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.api.routes import research
 from app.main import app
 from app.services.research_pipeline import RESEARCH_STAGES
 from app.utils import job_store
@@ -50,16 +49,23 @@ class TestStagesEndpoint:
 
 
 class TestStartEndpoint:
-    """The pipeline itself is stubbed; only the job hand-off is under test."""
+    """The pipeline itself never runs here; only the durable hand-off is tested."""
 
     def setup_method(self):
-        self._real = research._run_in_background
-        self.calls: list = []
-        research._run_in_background = lambda *a, **k: self.calls.append(a)
+        from app.api.routes import research as research_routes
+        from app.services import analysis_queue
+
+        self.notified: list = []
+        queue = analysis_queue.AnalysisJobQueue(max_workers=1)
+        queue.notify = lambda: self.notified.append(True)  # type: ignore[method-assign]
+        self._orig = research_routes.get_analysis_queue
+        research_routes.get_analysis_queue = lambda: queue
         self._dirs: list[Path] = []
 
     def teardown_method(self):
-        research._run_in_background = self._real
+        from app.api.routes import research as research_routes
+
+        research_routes.get_analysis_queue = self._orig
         for d in self._dirs:
             shutil.rmtree(d, ignore_errors=True)
 
@@ -83,17 +89,22 @@ class TestStartEndpoint:
         from app.utils.job_store import get_job
 
         job = get_job(self._start().json()["job_id"])
-        assert job["pipeline"] == "research", "UI membedakan job lama vs penelitian lewat field ini"
+        assert job["pipeline"] == "research", "antrean & UI memilih handler lewat field ini"
 
-    def test_job_starts_running_so_legacy_worker_cannot_claim_it(self):
-        """Worker antrean lama mengklaim job `queued` apa pun tanpa cek pipeline."""
+    def test_job_is_queued_for_the_durable_worker(self):
+        """Dulu status langsung `running` di thread lepas: job menggantung bila
+        server restart dan tak bisa dibatalkan. Kini ia diantrekan dan worker
+        memilih handler dari field pipeline."""
         from app.utils.job_store import get_job
 
-        assert get_job(self._start().json()["job_id"])["status"] == "running"
+        job = get_job(self._start().json()["job_id"])
+        assert job["status"] == "queued"
+        assert job["payload"]["pdf_paths"] and job["payload"]["output_dir"]
+        assert job["max_attempts"] >= 1
 
-    def test_background_worker_is_dispatched(self):
+    def test_queue_is_woken_after_enqueue(self):
         self._start()
-        assert len(self.calls) == 1, "pipeline harus dijalankan di latar belakang"
+        assert self.notified == [True]
 
     def test_rejects_request_without_files(self):
         assert client.post("/api/research/start").status_code == 422

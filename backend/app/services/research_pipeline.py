@@ -42,8 +42,19 @@ from ..core.pipeline.token_chunker import (
 )
 from ..core.recommendation.novelty import rank_proposals
 from ..core.recommendation.themes import build_themes
-from ..utils.job_store import add_stage_artifact, record_job_event, update_job
+from ..utils.config_loader import get_config
+from ..utils.job_store import (
+    add_stage_artifact,
+    get_job,
+    is_cancel_requested,
+    record_job_event,
+    update_job,
+)
 from . import copilot_client
+
+# Nama pipeline di field ``job["pipeline"]``; antrean memakainya untuk memilih
+# handler (lihat ``AnalysisJobQueue.register``).
+PIPELINE_NAME = "research"
 
 # Urutan tahap penelitian; dipakai UI untuk menggambar timeline.
 RESEARCH_STAGES = [
@@ -95,6 +106,15 @@ def _median(values: Sequence[int]) -> int:
     return ordered[len(ordered) // 2] if ordered else 0
 
 
+class ResearchCancelled(Exception):
+    """Dilempar di antara tahap/kandidat setelah pengguna meminta pembatalan."""
+
+
+def _ensure_active(job_id: str) -> None:
+    if is_cancel_requested(job_id):
+        raise ResearchCancelled("Pipeline penelitian dibatalkan oleh pengguna")
+
+
 class _StageRecorder:
     """Menulis event mulai/selesai plus artefak hasil satu tahap."""
 
@@ -109,7 +129,12 @@ class _StageRecorder:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
-        if exc is not None:
+        if isinstance(exc, ResearchCancelled):
+            record_job_event(
+                self.job_id, "phase.cancelled", phase=self.phase, status="cancelled",
+                duration_ms=self._elapsed_ms(),
+            )
+        elif exc is not None:
             record_job_event(
                 self.job_id, "phase.failed", phase=self.phase, status="failed",
                 duration_ms=self._elapsed_ms(), data={"error": str(exc)[:500]},
@@ -285,15 +310,23 @@ def stage_gap_mining(
     done = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(_work, c) for c in candidates]
-        for fut in as_completed(futures):
-            done += 1
-            try:
-                raw_gaps.extend(fut.result())
-            except Exception as exc:
-                logger.warning(f"kandidat gagal: {exc}")
-            if done % 10 == 0 or done == len(candidates):
-                _progress(job_id, 30 + 30 * done / max(1, len(candidates)),
-                          f"Ekstraksi gap {done}/{len(candidates)} kandidat")
+        try:
+            for fut in as_completed(futures):
+                done += 1
+                try:
+                    raw_gaps.extend(fut.result())
+                except Exception as exc:
+                    logger.warning(f"kandidat gagal: {exc}")
+                if done % 10 == 0 or done == len(candidates):
+                    _ensure_active(job_id)
+                    _progress(job_id, 30 + 30 * done / max(1, len(candidates)),
+                              f"Ekstraksi gap {done}/{len(candidates)} kandidat")
+        except ResearchCancelled:
+            # Kandidat yang belum mulai dibuang; yang sedang berjalan dibiarkan
+            # selesai oleh ``with`` agar tidak ada thread yatim.
+            for fut in futures:
+                fut.cancel()
+            raise
 
     raw_path = str(out_path) + ".raw.jsonl"
     write_jsonl(raw_path, raw_gaps)
@@ -555,22 +588,70 @@ def run_research_pipeline(
     update_job(job_id, status="running", progress=1.0,
                message="Memulai pipeline penelitian")
     summary: Dict[str, Any] = {}
-    for phase, run in stages:
-        with _StageRecorder(job_id, phase) as rec:
-            try:
+    phase = "persiapan"
+    try:
+        for phase, run in stages:
+            _ensure_active(job_id)
+            with _StageRecorder(job_id, phase) as rec:
                 outcome = run()
-            except Exception as exc:
-                logger.exception(f"tahap {phase} gagal")
-                update_job(job_id, status="failed", error=f"{phase}: {exc}",
-                           message=f"Gagal di tahap {phase}")
-                raise
-            rec.finish(outcome)
+                rec.finish(outcome)
             summary[phase] = outcome.metrics
+    except ResearchCancelled:
+        update_job(job_id, status="cancelled",
+                   message=f"Dibatalkan oleh pengguna saat tahap {phase}")
+        raise
+    except Exception as exc:
+        logger.exception(f"tahap {phase} gagal")
+        update_job(job_id, status="failed", error=f"{phase}: {exc}",
+                   message=f"Gagal di tahap {phase}")
+        raise
 
     update_job(job_id, status="completed", progress=100.0,
                message="Pipeline penelitian selesai", completed_at=time.time())
     return {"job_id": job_id, "stages": summary,
             "outputs": {k: str(v) for k, v in paths.items()}}
+
+
+def _shared_embedder():
+    """Embedder milik vector store, agar model tidak dimuat dua kali."""
+    try:
+        from ..api.dependencies import get_vector_store
+        return getattr(get_vector_store(), "embedding_model", None)
+    except Exception as exc:
+        logger.warning(f"Embedder tidak tersedia, novelty memakai leksikal: {exc}")
+        return None
+
+
+def run_research_job(job_id: str) -> None:
+    """Handler antrean: jalankan pipeline penelitian dari payload job tersimpan.
+
+    Dipanggil worker ``AnalysisJobQueue`` (thread pool), bukan event loop.
+    Payload hanya berisi path lokal — ``pdf_paths`` dan ``output_dir`` — yang
+    ditulis ``/api/research/start``; job yang diretry atau dipulihkan setelah
+    restart memakai payload yang sama. Kegagalan sudah dicatat oleh
+    ``run_research_pipeline`` (status, error, event), jadi tidak dilempar
+    ulang: handler generik antrean akan menimpanya dengan pesan umum.
+    Pembatalan diselesaikan di sini pula agar antrean tidak menjadwalkan retry.
+    """
+    job = get_job(job_id)
+    if job is None:
+        raise RuntimeError(f"Job penelitian tidak ditemukan: {job_id}")
+    payload = job.get("payload") or {}
+    pdf_paths = [Path(p) for p in payload.get("pdf_paths") or []]
+    if not pdf_paths or any(not p.exists() for p in pdf_paths):
+        raise FileNotFoundError("PDF masukan job penelitian ini sudah tidak tersedia")
+    out_dir = payload.get("output_dir") or str(
+        Path(get_config().data.processed_path) / "research" / job_id)
+    try:
+        run_research_pipeline(job_id, pdf_paths, Path(out_dir), embedder=_shared_embedder())
+    except ResearchCancelled:
+        logger.info(f"Pipeline penelitian {job_id} dibatalkan")
+        record_job_event(job_id, "job.cancelled", status="cancelled")
+    except Exception as exc:
+        logger.error(f"Pipeline penelitian {job_id} gagal: {exc}")
+        if (get_job(job_id) or {}).get("status") != "failed":
+            update_job(job_id, status="failed", error=str(exc)[:500],
+                       message="Pipeline penelitian gagal")
 
 
 # ── Kode sumber tiap tahap ─────────────────────────────────────────────────

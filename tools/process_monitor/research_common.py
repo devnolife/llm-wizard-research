@@ -14,7 +14,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from common import api_base, fetch_artifacts, fetch_events, fetch_status, fmt_duration
+from common import api_base, fetch_artifacts, fetch_events, fmt_duration
 
 # Dipakai bila backend tak terjangkau; kunci harus sama dengan RESEARCH_STAGES.
 FALLBACK_STAGES = [
@@ -32,6 +32,7 @@ STATE_LABEL = {
     "done": ("✅", "selesai"),
     "running": ("⏳", "berjalan"),
     "failed": ("❌", "gagal"),
+    "cancelled": ("🚫", "dibatalkan"),
     "pending": ("⚪", "menunggu"),
 }
 
@@ -113,6 +114,9 @@ def stage_states(job_id: str) -> dict[str, dict]:
         elif kind == "phase.failed":
             entry["state"] = "failed"
             entry["error"] = (ev.get("data") or {}).get("error")
+        elif kind == "phase.cancelled":
+            entry["state"] = "cancelled"
+            entry["duration_ms"] = ev.get("duration_ms")
     return states
 
 
@@ -313,6 +317,8 @@ def render_stage_body(job_id: str, stage_key: str) -> None:
         st.warning("Tahap ini sedang berjalan — hasil detail muncul setelah selesai.")
     if state == "failed":
         st.error(f"Tahap gagal: {info.get('error', 'tidak diketahui')}")
+    if state == "cancelled":
+        st.warning("Tahap ini dihentikan oleh pembatalan; datanya tidak lengkap.")
 
     tab_ringkas, tab_data, tab_kode = st.tabs(
         ["📊 Ringkasan", "🗂️ Data lengkap", "💻 Kode & rumus"])

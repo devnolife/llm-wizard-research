@@ -7,7 +7,7 @@ sebelum datanya siap.
 
 import streamlit as st
 
-from common import JOB_STATUS_BADGES, fetch_status, fmt_datetime
+from common import JOB_STATUS_BADGES, cancel_job, fetch_status, fmt_datetime
 from research_common import (
     fetch_stages,
     render_stage_body,
@@ -39,7 +39,7 @@ active = st.session_state.get("research_job_id") or st.query_params.get("job", "
 status = fetch_status(active) if active else {}
 state = (status or {}).get("status", "")
 
-if not active or state not in ("queued", "running", "completed", "failed"):
+if not active or state not in ("queued", "running", "completed", "failed", "cancelled"):
     langkah = 1
 elif state in ("queued", "running"):
     langkah = 2
@@ -99,16 +99,32 @@ elif langkah == 2:
     progress = float(status.get("progress") or 0)
     st.progress(min(1.0, progress / 100), text=status.get("message") or "—")
     render_timeline(active)
-    st.info("**Tidak ada yang perlu kamu lakukan.** Biarkan halaman ini terbuka; "
-            "hasil muncul sendiri setelah keempat tahap selesai.")
-    if st.button("🔄 Segarkan sekarang"):
+    if state == "queued":
+        st.info("Job **menunggu giliran worker** (maksimal dua analisis berjalan "
+                "bersamaan). Ia mulai otomatis; biarkan halaman ini terbuka.")
+    else:
+        st.info("**Tidak ada yang perlu kamu lakukan.** Biarkan halaman ini terbuka; "
+                "hasil muncul sendiri setelah keempat tahap selesai.")
+    col_refresh, col_cancel = st.columns([3, 1])
+    if col_refresh.button("🔄 Segarkan sekarang", width="stretch"):
         st.rerun()
+    with col_cancel.popover("⏹️ Batalkan", width="stretch"):
+        st.markdown("Hentikan analisis ini? Job antre berhenti seketika; job berjalan "
+                    "berhenti di batas tahap berikutnya. Tahap yang sudah rampung tetap "
+                    "bisa dibaca.")
+        if st.button("✅ Ya, batalkan", type="primary", key="cancel_research"):
+            if cancel_job(active):
+                st.toast("Pembatalan diminta", icon="⏹️")
+            st.rerun()
 
 
 # ── LANGKAH 3 ──────────────────────────────────────────────────────────────
 else:
     if state == "failed":
         st.error(f"Analisis gagal: {status.get('error') or status.get('message')}")
+    elif state == "cancelled":
+        st.warning(f"Analisis dibatalkan: {status.get('message') or '—'}. Tahap yang "
+                   "sudah rampung tetap bisa dibaca di tab bawah.")
     else:
         st.subheader("Langkah 3 — Hasil siap dibaca")
     st.caption(f"Analisis `{active[:8]}…` · {fmt_datetime(status.get('created_at'))}")

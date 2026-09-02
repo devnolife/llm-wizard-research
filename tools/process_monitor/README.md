@@ -11,8 +11,10 @@ hasil akhirnya langsung di Streamlit.
    analisis** berupa kartu (status, waktu, file, jumlah topik/gap/usulan)
    dengan tombol *Buka detail & hasil*, tombol 🔁 **analisis ulang** (job baru
    dari PDF yang sama memakai engine LLM aktif; hasil lama tetap tersimpan
-   untuk perbandingan), dan tombol 🗑️ **hapus** (dengan
-   konfirmasi; job yang sedang berjalan harus dibatalkan dulu).
+   untuk perbandingan), tombol ⏹️ **batalkan** untuk job yang antre/berjalan
+   (job antre berhenti seketika, job berjalan berhenti di batas tahap
+   berikutnya), dan tombol 🗑️ **hapus** (dengan konfirmasi; job yang sedang
+   berjalan harus dibatalkan dulu).
 2. **🔎 Cari Paper** — dua mode: **💡 ide penelitian** (AI/LLM lokal mengubah ide
    Bahasa Indonesia menjadi kata kunci akademik Inggris) atau **🔑 kata kunci
    langsung**. Hasil dari 8 sumber akademik (arXiv, Europe PMC, CrossRef,

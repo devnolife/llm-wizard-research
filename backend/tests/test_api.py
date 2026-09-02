@@ -189,7 +189,10 @@ def reanalyze_env(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     config = SimpleNamespace(
-        data=SimpleNamespace(raw_path=str(tmp_path / "raw")),
+        data=SimpleNamespace(
+            raw_path=str(tmp_path / "raw"),
+            processed_path=str(tmp_path / "processed"),
+        ),
         queue=SimpleNamespace(max_attempts=1),
     )
     queue = Mock()
@@ -240,6 +243,36 @@ def test_reanalyze_unknown_job_is_404(client, reanalyze_env):
     response = client.post("/api/analysis-jobs/missing-job/reanalyze")
 
     assert response.status_code == 404
+
+
+@pytest.mark.api
+def test_reanalyze_keeps_research_pipeline_and_gives_fresh_output_dir(client, reanalyze_env):
+    """The dashboard's 🔁 button is shown for research jobs too; without the
+    pipeline field the copy would be run as the legacy 8-stage analysis."""
+    tmp_path, queue = reanalyze_env
+    source_dir = tmp_path / "research-src"
+    source_dir.mkdir()
+    pdf = source_dir / "00_paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 research")
+    job_store.save_job(
+        "research-done",
+        {
+            "status": "completed",
+            "pipeline": "research",
+            "payload": {
+                "pdf_paths": [str(pdf)],
+                "output_dir": str(tmp_path / "processed" / "research" / "research-done"),
+            },
+        },
+    )
+
+    body = client.post("/api/analysis-jobs/research-done/reanalyze").json()
+
+    new_job = job_store.get_job(body["job_id"])
+    assert new_job["pipeline"] == "research"
+    assert new_job["payload"]["output_dir"].endswith(f"research/{body['job_id']}")
+    assert new_job["payload"]["output_dir"] != job_store.get_job("research-done")["payload"]["output_dir"]
+    queue.notify.assert_called_once()
 
 
 @pytest.mark.api

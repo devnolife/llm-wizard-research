@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -20,9 +19,10 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from loguru import logger
 
 from ...core.pipeline.io import read_jsonl
-from ...services.research_pipeline import RESEARCH_STAGES, run_research_pipeline, stage_source
+from ...services.analysis_queue import get_analysis_queue
+from ...services.research_pipeline import PIPELINE_NAME, RESEARCH_STAGES, stage_source
 from ...utils.config_loader import get_config
-from ...utils.job_store import get_stage_artifacts, record_job_event, save_job, update_job
+from ...utils.job_store import get_stage_artifacts, record_job_event, save_job
 from ...utils.upload_validation import sanitize_filename, write_validated_pdf_upload
 
 router = APIRouter()
@@ -45,25 +45,6 @@ PHASE_FACETS = {
 }
 
 MAX_PAGE = 500
-
-
-def _embedder():
-    """Pakai embedder milik vector store agar tidak memuat model kedua kali."""
-    try:
-        from ..dependencies import get_vector_store
-        return getattr(get_vector_store(), "embedding_model", None)
-    except Exception as exc:
-        logger.warning(f"Embedder tidak tersedia, novelty memakai leksikal: {exc}")
-        return None
-
-
-def _run_in_background(job_id: str, pdf_paths: List[Path], out_dir: Path) -> None:
-    try:
-        run_research_pipeline(job_id, pdf_paths, out_dir, embedder=_embedder())
-    except Exception as exc:
-        logger.error(f"Pipeline penelitian {job_id} gagal: {exc}")
-        update_job(job_id, status="failed", error=str(exc)[:500],
-                   message="Pipeline penelitian gagal")
 
 
 @router.get("/stages")
@@ -196,32 +177,30 @@ async def start_research(files: List[UploadFile] = File(...)):
         logger.error(f"Unggahan pipeline penelitian gagal: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
-    # Status langsung "running", bukan "queued": worker antrean pipeline lama
-    # mengklaim job queued mana pun tanpa melihat field `pipeline`, sehingga job
-    # penelitian sempat dijalankan sebagai analisis 8 tahap lalu gagal berulang.
+    # Job diantrekan seperti analisis lama; antrean memilih handler dari field
+    # ``pipeline`` (``AnalysisJobQueue.register``). Dengan itu job ini ikut
+    # dibatasi jumlah worker, bisa dibatalkan/diretry, dan dipulihkan setelah
+    # restart — dulu ia berjalan di thread lepas sehingga menggantung bila proses
+    # direstart, atau malah diklaim worker lama sebagai analisis 8 tahap.
     save_job(job_id, {
         "job_id": job_id,
-        "status": "running",
+        "status": "queued",
         "progress": 0.0,
-        "message": "Menyiapkan pipeline penelitian",
+        "message": "Menunggu worker analisis...",
         "created_at": time.time(),
-        "pipeline": "research",
+        "max_attempts": config.queue.max_attempts,
+        "pipeline": PIPELINE_NAME,
         "payload": {"pdf_paths": [str(p) for p in pdf_paths],
                     "input_dir": str(job_dir), "output_dir": str(out_dir)},
     })
-    record_job_event(job_id, "job.created", status="running",
-                     data={"file_count": len(pdf_paths), "pipeline": "research"})
-
-    # Thread biasa, bukan antrean analisis lama: worker itu hanya mengenali
-    # pipeline 8 tahap. Konsekuensinya job menggantung bila proses direstart.
-    threading.Thread(
-        target=_run_in_background, args=(job_id, pdf_paths, out_dir), daemon=True,
-    ).start()
+    record_job_event(job_id, "job.created", status="queued",
+                     data={"file_count": len(pdf_paths), "pipeline": PIPELINE_NAME})
+    get_analysis_queue().notify()
 
     return {
         "success": True,
         "job_id": job_id,
         "files_count": len(pdf_paths),
         "stages": [s[0] for s in RESEARCH_STAGES],
-        "message": "Pipeline penelitian dimulai. Pantau lewat /api/analysis-status/{job_id}.",
+        "message": "Pipeline penelitian diantrekan. Pantau lewat /api/analysis-status/{job_id}.",
     }
