@@ -15,8 +15,10 @@ satunya cara merekam prompt dan balasan LLM. Arah impor juga tetap benar,
 from __future__ import annotations
 
 import hashlib
+import threading
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -55,6 +57,10 @@ RESEARCH_STAGES = [
 
 # Satu run bisa ratusan panggilan LLM; menyimpan semuanya membanjiri basis data.
 DEFAULT_LLM_TRACE_LIMIT = 15
+# Panggilan LLM didominasi waktu tunggu jaringan, jadi diparalelkan seperti CLI.
+# Menaikkan lebih jauh sia-sia: copilotd sendiri melayani max_concurrency 2, dan
+# 12 kandidat terukur 135,4 dtk (1 worker) vs 47,7 dtk (4 worker).
+DEFAULT_EXTRACT_WORKERS = 4
 SAMPLE_ROWS = 8
 
 
@@ -235,6 +241,7 @@ def stage_gap_mining(
     out_path: Path,
     limit: int = 0,
     llm_trace_limit: int = DEFAULT_LLM_TRACE_LIMIT,
+    workers: int = DEFAULT_EXTRACT_WORKERS,
 ) -> StageOutcome:
     chunks = [c for c in read_jsonl(str(chunks_path)) if c.get("record") == "chunk"]
     by_source: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -249,13 +256,18 @@ def stage_gap_mining(
         if not c.get("is_reference") and matched_phrases(c.get("text", "")))
 
     traced = {"n": 0}
+    trace_lock = threading.Lock()
 
     def _generate(prompt: str, system: str) -> Optional[str]:
         result = copilot_client.generate(prompt, system=system, json_mode=True, temperature=0)
         text = result[0] if result else None
-        if traced["n"] < llm_trace_limit:
-            traced["n"] += 1
-            add_stage_artifact(job_id, "gap_mining", "llm", f"kandidat {traced['n']}", {
+        with trace_lock:
+            keep = traced["n"] < llm_trace_limit
+            if keep:
+                traced["n"] += 1
+                seq = traced["n"]
+        if keep:
+            add_stage_artifact(job_id, "gap_mining", "llm", f"kandidat {seq}", {
                 "prompt": prompt,
                 "response": text or "",
                 "model": result[1] if result else "",
@@ -263,16 +275,23 @@ def stage_gap_mining(
             })
         return text
 
+    def _work(cand: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return extract_gaps_from_candidate(
+            cand, with_context(cand, by_source), generate_fn=_generate)
+
     raw_gaps: List[Dict[str, Any]] = []
-    for i, cand in enumerate(candidates, 1):
-        try:
-            raw_gaps.extend(extract_gaps_from_candidate(
-                cand, with_context(cand, by_source), generate_fn=_generate))
-        except Exception as exc:
-            logger.warning(f"kandidat gagal: {exc}")
-        if i % 20 == 0 or i == len(candidates):
-            _progress(job_id, 30 + 30 * i / max(1, len(candidates)),
-                      f"Ekstraksi gap {i}/{len(candidates)} kandidat")
+    done = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_work, c) for c in candidates]
+        for fut in as_completed(futures):
+            done += 1
+            try:
+                raw_gaps.extend(fut.result())
+            except Exception as exc:
+                logger.warning(f"kandidat gagal: {exc}")
+            if done % 10 == 0 or done == len(candidates):
+                _progress(job_id, 30 + 30 * done / max(1, len(candidates)),
+                          f"Ekstraksi gap {done}/{len(candidates)} kandidat")
 
     raw_path = str(out_path) + ".raw.jsonl"
     write_jsonl(raw_path, raw_gaps)
@@ -291,7 +310,8 @@ def stage_gap_mining(
 
     return StageOutcome(
         params={"limit": limit or "semua", "llm_trace_limit": llm_trace_limit,
-                "temperature": 0, "seksi_sasaran": "conclusion + discussion",
+                "workers": workers, "temperature": 0,
+                "seksi_sasaran": "conclusion + discussion",
                 "aturan_cadangan": "abstract, 2 chunk introduction, 2 chunk terakhir"},
         metrics={
             "chunk_masuk": len(chunks),
