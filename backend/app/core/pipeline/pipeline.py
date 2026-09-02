@@ -12,6 +12,7 @@ new chunk schema.
 from __future__ import annotations
 
 import bisect
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -78,6 +79,11 @@ _FALSE_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 _ALPHA_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    return default if raw is None else raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _is_false_header(text: str) -> bool:
@@ -473,6 +479,40 @@ def _apply_section_inheritance(
     return out
 
 
+def _ocr_pages(pdf_path: str) -> Optional[Tuple[List[str], str]]:
+    """Ambil ulang teks lewat ocrd; ``None`` bila layanan mati atau menolak.
+
+    Hanya dipakai untuk PDF yang gagal diekstrak (hasil pindaian tanpa lapisan
+    teks). PDF digital tetap lewat pymupdf yang sudah cepat, sehingga jalur ini
+    tidak menambah waktu pada berkas normal.
+
+    Sengaja TIDAK memakai ``is_available()``: metode itu mensyaratkan
+    ``model_ready``, padahal ocrd berjalan dengan ``managed_runtime`` dan baru
+    memuat model saat permintaan pertama datang. Menjadikannya gerbang membuat
+    pemulihan ini tidak pernah aktif. Permintaan yang gagal (503/koneksi putus)
+    tetap mengembalikan ``None`` sehingga pipeline lanjut dengan teks apa adanya.
+    """
+    if not _env_flag("OCR_ENABLED", True):
+        return None
+    try:
+        from ...utils.ocr_client import OcrdClient
+    except Exception as exc:  # pragma: no cover - dependency opsional
+        logger.debug(f"ocr_client tidak tersedia: {exc}")
+        return None
+
+    # Timeout sendiri: bawaan klien 1800 dtk terlalu lama untuk menahan pipeline
+    # bila runtime OCR ternyata tidak pernah siap.
+    timeout = int(os.getenv("OCR_RECOVERY_TIMEOUT", "300"))
+    result = OcrdClient(timeout=timeout).read_document(pdf_path)
+    if result is None:
+        return None
+
+    pages = [str(p.get("text") or "") for p in result.pages if isinstance(p, dict)]
+    if not any(p.strip() for p in pages):
+        pages = [result.text]
+    return pages, ("ocrd_text_layer" if result.from_text_layer else "ocrd_ocr")
+
+
 def process_pdf(
     pdf_path: str,
     source: Optional[str] = None,
@@ -497,6 +537,17 @@ def process_pdf(
     quality = assess_quality(full_text)
     if quality == "poor":
         logger.warning(f"{source}: poor extraction quality (method={method})")
+        recovered = _ocr_pages(pdf_path)
+        if recovered:
+            ocr_pages, method = recovered
+            raw_pages = ocr_pages
+            cleaned_pages = clean_pages(raw_pages)
+            full_text, page_ends = _build_page_index(cleaned_pages)
+            quality = assess_quality(full_text)
+            # OCR tidak memberi ukuran/berat font, jadi seksi harus dideteksi
+            # dari teks, bukan dari layout.
+            use_layout = False
+            logger.info(f"{source}: teks dipulihkan via {method} -> kualitas {quality}")
 
     meta, grobid_sections = resolve_metadata(
         pdf_path, full_text, source, extraction_quality=quality,
