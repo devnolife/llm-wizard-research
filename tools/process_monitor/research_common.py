@@ -302,23 +302,8 @@ def render_source_tab(stage_key: str) -> None:
         st.code(fn["source"], language="python")
 
 
-def render_stage_page(stage_key: str) -> None:
-    """Halaman satu tahap: ringkasan, data lengkap, dan kode yang dijalankan."""
-    stage = next((s for s in fetch_stages() if s["key"] == stage_key), None)
-    if stage is None:
-        st.error(f"Tahap tidak dikenal: {stage_key}")
-        return
-
-    st.title(f"{stage['icon']} {stage['title']}")
-    st.caption(stage["description"])
-
-    job_id = require_job()
-    if not job_id:
-        return
-
-    render_timeline(job_id)
-    st.divider()
-
+def render_stage_body(job_id: str, stage_key: str) -> None:
+    """Isi satu tahap: ringkasan, seluruh record, dan kode yang dijalankan."""
     info = stage_states(job_id).get(stage_key, {})
     state = info.get("state", "pending")
     if state == "pending":
