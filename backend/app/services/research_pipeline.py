@@ -27,9 +27,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from loguru import logger
 
+from ..core.gap_detection.quote_grounding import QUOTE_MATCH_THRESHOLD
 from ..core.gap_mining.candidates import matched_phrases, select_candidates, with_context
 from ..core.gap_mining.extractor import extract_gaps_from_candidate
-from ..core.gap_mining.novelty import annotate_gaps
+from ..core.gap_mining.novelty import STRONG_MATCH_THRESHOLD, annotate_gaps
 from ..core.gap_mining.verify import verify_gaps
 from ..core.pipeline.corpus_relevance import build_probe, check_corpus_relevance
 from ..core.pipeline.io import read_jsonl, source_name, write_chunks_jsonl, write_jsonl
@@ -40,8 +41,14 @@ from ..core.pipeline.token_chunker import (
     DEFAULT_TARGET_TOKENS,
     chunk_document,
 )
-from ..core.recommendation.novelty import rank_proposals
-from ..core.recommendation.themes import build_themes
+from ..core.recommendation.novelty import (
+    NOVELTY_SWEET_SPOT,
+    W_ACTIONABILITY,
+    W_GAP,
+    W_NOVELTY,
+    rank_proposals,
+)
+from ..core.recommendation.themes import THEME_SIMILARITY_THRESHOLD, build_themes
 from ..utils.config_loader import get_config
 from ..utils.job_store import (
     add_stage_artifact,
@@ -56,6 +63,14 @@ from . import copilot_client
 # handler (lihat ``AnalysisJobQueue.register``).
 PIPELINE_NAME = "research"
 
+# Satu run bisa ratusan panggilan LLM; menyimpan semuanya membanjiri basis data.
+DEFAULT_LLM_TRACE_LIMIT = 15
+# Panggilan LLM didominasi waktu tunggu jaringan, jadi diparalelkan seperti CLI.
+# Menaikkan lebih jauh sia-sia: copilotd sendiri melayani max_concurrency 2, dan
+# 12 kandidat terukur 135,4 dtk (1 worker) vs 47,7 dtk (4 worker).
+DEFAULT_EXTRACT_WORKERS = 4
+SAMPLE_ROWS = 8
+
 # Urutan tahap penelitian; dipakai UI untuk menggambar timeline.
 RESEARCH_STAGES = [
     ("chunking", "📄", "Ekstraksi & Chunking",
@@ -68,37 +83,185 @@ RESEARCH_STAGES = [
      "Gap open diperingkat rumus project, lalu dikelompokkan jadi tema lintas-jurnal"),
 ]
 
-# Satu run bisa ratusan panggilan LLM; menyimpan semuanya membanjiri basis data.
-DEFAULT_LLM_TRACE_LIMIT = 15
-# Panggilan LLM didominasi waktu tunggu jaringan, jadi diparalelkan seperti CLI.
-# Menaikkan lebih jauh sia-sia: copilotd sendiri melayani max_concurrency 2, dan
-# 12 kandidat terukur 135,4 dtk (1 worker) vs 47,7 dtk (4 worker).
-DEFAULT_EXTRACT_WORKERS = 4
-SAMPLE_ROWS = 8
+
+def _sub(key: str, label: str, teknis: str, penjelasan: str, *,
+         masuk: Optional[str] = None, keluar: Optional[str] = None,
+         dibuang: Optional[str] = None, contoh: Optional[str] = None,
+         dalam: Optional[str] = None) -> Dict[str, Any]:
+    return {"key": key, "label": label, "label_teknis": teknis, "penjelasan": penjelasan,
+            "in_metric": masuk, "out_metric": keluar, "drop_metric": dibuang,
+            "sample_key": contoh, "inside": dalam}
+
+
+# Peta proses tiap tahap: sumber kebenaran tunggal untuk UI. Kunci ``in/out/
+# drop_metric`` harus ada di ``StageOutcome.metrics`` tahap itu (dijaga tes),
+# ``sample_key`` merujuk ``substep_samples``. Event ``substep.*`` memakai ``key``
+# yang sama sehingga UI bisa menandai sub-langkah mana yang sedang berjalan.
+#
+# ``inside`` menandai sub-langkah yang terjadi DI DALAM induknya per berkas/per
+# gap (mis. pengenalan seksi di dalam process_pdf) sehingga tidak punya event
+# sendiri; UI menampilkannya bersarang dan mewarisi status induk.
+SUBSTEPS: Dict[str, List[Dict[str, Any]]] = {
+    "chunking": [
+        _sub("proses_pdf", "Memproses tiap PDF satu per satu",
+             "process_pdf per berkas; event file.started/completed per PDF",
+             "Setiap PDF dibaca, bagian-bagiannya dikenali, lalu dipotong menjadi "
+             "chunk. Tiga hal di bawah ini terjadi untuk tiap berkas.",
+             masuk="pdf_masuk", keluar="jurnal", dibuang="pdf_gagal", contoh="pdf_gagal"),
+        _sub("baca_teks", "Membaca teks dari PDF",
+             "PyMuPDF/GROBID; OCR (ocrd) bila kualitas ekstraksi 'poor'",
+             "Teks diambil dari lapisan teks PDF. Bila rusak atau hasil scan, halaman "
+             "dikirim ke layanan OCR.",
+             dalam="proses_pdf"),
+        _sub("kenali_seksi", "Mengenali bagian-bagian jurnal",
+             "section_normalizer \u2192 abstract/introduction/methods/results/discussion/"
+             "conclusion/references/other",
+             "Judul bagian dikenali agar sistem tahu mana abstrak, metode, hasil, "
+             "diskusi, kesimpulan, dan daftar pustaka.",
+             keluar="distribusi_seksi", dalam="proses_pdf"),
+        _sub("potong_chunk", "Memotong teks jadi potongan (chunk)",
+             f"chunk_document: per kalimat, target {DEFAULT_TARGET_TOKENS} token, maks "
+             f"{DEFAULT_MAX_TOKENS}, overlap {DEFAULT_OVERLAP_RATIO:.1%}",
+             "Teks dipotong per kalimat menjadi potongan berukuran sedang yang "
+             "sedikit bertumpang tindih, supaya kalimat di batas tidak terputus.",
+             keluar="chunk", contoh="chunk_kecil", dalam="proses_pdf"),
+        _sub("cek_koherensi", "Mengecek jurnal yang tampak di luar bidang",
+             "check_corpus_relevance: cosine ke centroid korpus, ambang 0.50",
+             "Tiap jurnal dibandingkan dengan yang lain; yang jauh berbeda "
+             "ditandai sebagai peringatan, bukan ditolak.",
+             masuk="jurnal", keluar="jurnal_ditandai_tak_sedomain"),
+    ],
+    "gap_mining": [
+        _sub("pilih_kandidat", "Memilih bagian teks yang mungkin memuat gap",
+             "select_candidates: seksi conclusion/discussion + pola kata "
+             "(matched_phrases) + abstrak, 2 chunk intro, 2 chunk terakhir",
+             "Tidak semua potongan dibaca LLM. Yang dipilih adalah kesimpulan, "
+             "diskusi, dan potongan yang memuat kata-kata seperti 'limitation', "
+             "'future work', 'belum', 'keterbatasan'.",
+             masuk="chunk_masuk", keluar="kandidat"),
+        _sub("ekstrak_llm", "LLM menyalin kalimat gap apa adanya",
+             f"extract_gaps_from_candidate: JSON mode, temperature 0, "
+             f"{DEFAULT_EXTRACT_WORKERS} worker paralel",
+             "Untuk tiap kandidat, LLM diminta menyalin kalimat yang menyatakan "
+             "keterbatasan atau saran penelitian lanjutan — persis seperti tertulis, "
+             "tanpa mengubah kata.",
+             masuk="kandidat", keluar="gap_mentah"),
+        _sub("verifikasi_verbatim", "Memastikan kalimat benar-benar ada di jurnal",
+             f"verify_gaps: fuzzy_contains ke semua chunk sumber, ambang "
+             f"{QUOTE_MATCH_THRESHOLD}",
+             "Setiap kalimat yang dikembalikan LLM dicocokkan kembali ke teks asli "
+             "jurnal. Yang tidak ditemukan dibuang sebagai dugaan halusinasi.",
+             masuk="gap_mentah", keluar="lolos_verifikasi_verbatim",
+             dibuang="gugur_di_verifikasi", contoh="verifikasi_gugur"),
+        _sub("dedup", "Menghitung kalimat yang sama hanya sekali",
+             "_split_duplicates: kunci (source, gap_statement.lower())",
+             "Karena kandidat bertumpang tindih, kalimat yang sama bisa muncul dua "
+             "kali dari satu jurnal. Duplikat dibuang.",
+             masuk="lolos_verifikasi_verbatim", keluar="gap_final_setelah_dedup",
+             dibuang="duplikat_dibuang", contoh="dedup_dibuang"),
+    ],
+    "novelty": [
+        _sub("cek_kebaruan", "Mengecek tiap gap ke literatur terbaru",
+             "annotate_gaps \u2192 classify_novelty per gap; progres per gap",
+             "Satu per satu, tiap gap dicek apakah sudah ada paper 2024+ yang "
+             "menjawabnya. Tiga hal di bawah ini terjadi untuk tiap gap.",
+             masuk="gap_dicek", keluar="open", contoh="contoh_addressed"),
+        _sub("susun_kata_kunci", "Menyusun kata kunci pencarian",
+             "build_keywords: maks 8 term dari gap_statement + istilah topik",
+             "Dari kalimat gap diambil kata-kata penting untuk dijadikan kueri "
+             "pencarian literatur.",
+             dalam="cek_kebaruan"),
+        _sub("cari_openalex", "Mencari paper 2024+ di OpenAlex",
+             "OpenAlexAPI.search_recent: from_date, maks 8 hasil, rate-limit + cache",
+             "Kata kunci dicari di OpenAlex, basis data literatur terbuka, dibatasi "
+             "paper terbaru saja.",
+             keluar="punya_match_literatur", dalam="cek_kebaruan"),
+        _sub("klasifikasi", "Menilai apakah gap sudah dijawab",
+             f"_overlap_score \u2265 {STRONG_MATCH_THRESHOLD} = strong; \u22653 strong \u2192 "
+             "addressed, 1-2 \u2192 partially_addressed, 0 \u2192 open",
+             "Bila \u22653 paper baru sangat cocok, gap dianggap sudah dijawab "
+             "(addressed); 1-2 paper berarti sebagian (partially); tidak ada berarti "
+             "masih terbuka (open).",
+             keluar="open", dalam="cek_kebaruan"),
+    ],
+    "recommendation": [
+        _sub("filter_open", "Meneruskan hanya gap yang masih terbuka",
+             "novelty_status == 'open'",
+             "Gap yang sudah dijawab literatur tidak layak jadi topik baru, jadi "
+             "hanya yang 'open' yang diteruskan.",
+             masuk="gap_dicek", keluar="gap_open", dibuang="gap_bukan_open",
+             contoh="dibuang_bukan_open"),
+        _sub("skor_prioritas", "Menghitung skor prioritas tiap gap",
+             f"rank_proposals: {W_GAP}\u00d7gap_confidence + {W_NOVELTY}\u00d7novelty_credit + "
+             f"{W_ACTIONABILITY}\u00d7actionability; sweet spot {NOVELTY_SWEET_SPOT}",
+             "Tiap gap dinilai dari tiga sisi: seberapa yakin kalimatnya asli, "
+             "seberapa baru dibanding korpus (tidak terlalu mirip, tidak terlalu "
+             "asing), dan seberapa konkret bisa dikerjakan.",
+             masuk="gap_open", keluar="proposal_dinilai"),
+        _sub("kelompokkan_tema", "Menggabungkan gap serupa jadi tema",
+             f"build_themes: cluster_papers single-linkage, ambang "
+             f"{THEME_SIMILARITY_THRESHOLD}",
+             "Gap yang mirip dari jurnal berbeda dikelompokkan jadi satu tema. Tema "
+             "yang didukung banyak jurnal lebih kuat daripada satu jurnal yang "
+             "banyak bicara.",
+             masuk="proposal_dinilai", keluar="tema", contoh="tema_terbesar"),
+    ],
+}
+
+# Ambang dan bobot yang dipakai pipeline, diimpor dari modul aslinya agar UI
+# menampilkan nilai yang benar-benar berjalan.
+PIPELINE_CONSTANTS: Dict[str, Dict[str, Any]] = {
+    "chunking": {"target_tokens": DEFAULT_TARGET_TOKENS, "max_tokens": DEFAULT_MAX_TOKENS,
+                 "overlap_ratio": DEFAULT_OVERLAP_RATIO},
+    "gap_mining": {"quote_match_threshold": QUOTE_MATCH_THRESHOLD,
+                   "llm_temperature": 0, "workers": DEFAULT_EXTRACT_WORKERS},
+    "novelty": {"strong_match_threshold": STRONG_MATCH_THRESHOLD,
+                "addressed_min_strong": 3, "partially_min_strong": 1,
+                "from_date": "2024-01-01", "max_results": 8},
+    "recommendation": {"w_gap": W_GAP, "w_novelty": W_NOVELTY,
+                       "w_actionability": W_ACTIONABILITY,
+                       "sweet_spot": list(NOVELTY_SWEET_SPOT),
+                       "theme_similarity_threshold": THEME_SIMILARITY_THRESHOLD},
+}
 
 
 @dataclass
 class StageOutcome:
-    """Hasil satu tahap: parameter, angka, contoh data, dan berkas keluaran."""
+    """Hasil satu tahap: parameter, angka, contoh data, dan berkas keluaran.
+
+    ``substep_samples`` memuat contoh per sub-langkah, termasuk data yang
+    DIBUANG (gap gugur verifikasi, duplikat) — bukti bahwa penyaringan
+    benar-benar bekerja, bukan sekadar angka.
+    """
 
     params: Dict[str, Any] = field(default_factory=dict)
     metrics: Dict[str, Any] = field(default_factory=dict)
     samples: List[Dict[str, Any]] = field(default_factory=list)
     outputs: Dict[str, str] = field(default_factory=dict)
     notes: List[str] = field(default_factory=list)
+    substep_samples: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
 
 
-def _dedup_gaps(gaps: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _split_duplicates(
+    gaps: Sequence[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Pisahkan gap unik dari duplikatnya (sumber + kalimat sama, abaikan kapital)."""
     seen: set = set()
-    out: List[Dict[str, Any]] = []
+    unique: List[Dict[str, Any]] = []
+    duplicates: List[Dict[str, Any]] = []
     for gap in gaps:
         key = (gap.get("source"), (gap.get("gap_statement") or "").strip().lower())
         digest = hashlib.sha1(str(key).encode()).hexdigest()
         if digest in seen:
+            duplicates.append(gap)
             continue
         seen.add(digest)
-        out.append(gap)
-    return out
+        unique.append(gap)
+    return unique, duplicates
+
+
+def _dedup_gaps(gaps: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return _split_duplicates(gaps)[0]
 
 
 def _median(values: Sequence[int]) -> int:
@@ -152,12 +315,50 @@ class _StageRecorder:
             "samples": outcome.samples,
             "outputs": outcome.outputs,
             "notes": outcome.notes,
+            "substep_samples": outcome.substep_samples,
             "duration_ms": duration_ms,
         })
         record_job_event(
             self.job_id, "phase.completed", phase=self.phase, status="running",
             duration_ms=duration_ms, data=dict(outcome.metrics),
         )
+
+
+class _substep:
+    """Catat awal/akhir satu sub-langkah agar UI bisa menunjukkannya live.
+
+    Angka ``masuk`` diberi saat masuk; ``keluar`` (dan ``dibuang``) diisi lewat
+    ``done()`` sebelum blok berakhir. Sub-langkah yang gagal tetap dicatat
+    selesai dengan ``error`` supaya urutan di UI tidak menggantung; galatnya
+    sendiri dilempar ulang dan ditangani ``_StageRecorder``.
+    """
+
+    def __init__(self, job_id: str, phase: str, key: str, masuk: Optional[int] = None):
+        self.job_id, self.phase, self.key = job_id, phase, key
+        self._data: Dict[str, Any] = {"substep": key}
+        if masuk is not None:
+            self._data["masuk"] = masuk
+        self._t0 = 0.0
+
+    def __enter__(self) -> "_substep":
+        self._t0 = time.monotonic()
+        record_job_event(self.job_id, "substep.started", phase=self.phase,
+                         status="running", data=dict(self._data))
+        return self
+
+    def done(self, keluar: Optional[int] = None, **extra: Any) -> None:
+        if keluar is not None:
+            self._data["keluar"] = keluar
+        self._data.update(extra)
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if exc is not None and not isinstance(exc, ResearchCancelled):
+            self._data["error"] = str(exc)[:300]
+        record_job_event(
+            self.job_id, "substep.completed", phase=self.phase, status="running",
+            duration_ms=int((time.monotonic() - self._t0) * 1000), data=dict(self._data),
+        )
+        return False
 
 
 def _progress(job_id: str, pct: float, message: str) -> None:
@@ -176,40 +377,44 @@ def stage_chunking(
     embedder=None,
 ) -> StageOutcome:
     results = []
+    failed: List[Dict[str, Any]] = []
     total = len(pdf_paths)
-    for i, pdf in enumerate(pdf_paths, 1):
-        source = source_name(pdf)
-        record_job_event(job_id, "file.started", phase="chunking",
-                         data={"file": source, "index": i, "of": total})
-        try:
-            result = process_pdf(str(pdf), source=source, target_tokens=target_tokens,
-                                 max_tokens=max_tokens, overlap_ratio=overlap_ratio)
-        except Exception as exc:
-            logger.error(f"chunking gagal pada {source}: {exc}")
-            record_job_event(job_id, "file.failed", phase="chunking",
-                             data={"file": source, "error": str(exc)[:300]})
-            continue
-        results.append(result)
-        add_stage_artifact(job_id, "chunking", "extraction", source, {
-            "file": source,
-            "title": result.meta.paper_title,
-            "year": result.meta.year,
-            "language": result.meta.language,
-            "extraction_method": result.extraction_method,
-            "extraction_quality": result.meta.extraction_quality,
-            "grobid_used": result.grobid_used,
-            "pages": result.num_pages,
-            "chunks": len(result.chunks),
-            "sample_chunks": [
-                {"chunk_index": c.chunk_index, "section": c.section_normalized,
-                 "tokens": c.token_count, "text": c.text[:400]}
-                for c in result.chunks[:3]
-            ],
-        })
-        record_job_event(job_id, "file.completed", phase="chunking",
-                         data={"file": source, "index": i, "of": total,
-                               "chunks": len(result.chunks)})
-        _progress(job_id, 5 + 25 * i / max(1, total), f"Chunking {i}/{total} — {source}")
+    with _substep(job_id, "chunking", "proses_pdf", masuk=total) as sub:
+        for i, pdf in enumerate(pdf_paths, 1):
+            source = source_name(pdf)
+            record_job_event(job_id, "file.started", phase="chunking",
+                             data={"file": source, "index": i, "of": total})
+            try:
+                result = process_pdf(str(pdf), source=source, target_tokens=target_tokens,
+                                     max_tokens=max_tokens, overlap_ratio=overlap_ratio)
+            except Exception as exc:
+                logger.error(f"chunking gagal pada {source}: {exc}")
+                record_job_event(job_id, "file.failed", phase="chunking",
+                                 data={"file": source, "error": str(exc)[:300]})
+                failed.append({"file": source, "error": str(exc)[:300]})
+                continue
+            results.append(result)
+            add_stage_artifact(job_id, "chunking", "extraction", source, {
+                "file": source,
+                "title": result.meta.paper_title,
+                "year": result.meta.year,
+                "language": result.meta.language,
+                "extraction_method": result.extraction_method,
+                "extraction_quality": result.meta.extraction_quality,
+                "grobid_used": result.grobid_used,
+                "pages": result.num_pages,
+                "chunks": len(result.chunks),
+                "sample_chunks": [
+                    {"chunk_index": c.chunk_index, "section": c.section_normalized,
+                     "tokens": c.token_count, "text": c.text[:400]}
+                    for c in result.chunks[:3]
+                ],
+            })
+            record_job_event(job_id, "file.completed", phase="chunking",
+                             data={"file": source, "index": i, "of": total,
+                                   "chunks": len(result.chunks)})
+            _progress(job_id, 5 + 25 * i / max(1, total), f"Chunking {i}/{total} — {source}")
+        sub.done(keluar=len(results), dibuang=len(failed))
 
     summary = write_chunks_jsonl(str(out_path), results, job_id=job_id)
     chunks = [c for r in results for c in r.chunks]
@@ -220,8 +425,9 @@ def stage_chunking(
 
     outcome = StageOutcome(
         params={"target_tokens": target_tokens, "max_tokens": max_tokens,
-                "overlap_ratio": overlap_ratio, "pdf_masuk": total},
+                "overlap_ratio": overlap_ratio},
         metrics={
+            "pdf_masuk": total,
             "jurnal": summary.get("jurnal", len(results)),
             "chunk": summary.get("chunk", len(chunks)),
             "pdf_gagal": total - len(results),
@@ -239,24 +445,40 @@ def stage_chunking(
             for c in chunks[:SAMPLE_ROWS]
         ],
         outputs={"chunks_jsonl": str(out_path)},
+        substep_samples={
+            "pdf_gagal": failed[:SAMPLE_ROWS],
+            "chunk_kecil": [
+                {"source": c.source, "chunk_index": c.chunk_index,
+                 "section": c.section_normalized, "tokens": c.token_count,
+                 "text": c.text[:300]}
+                for c in sorted((c for c in chunks if c.token_count < 150),
+                                key=lambda c: c.token_count)[:SAMPLE_ROWS]
+            ],
+        },
     )
 
     if embedder is not None and len(results) > 1:
-        probes = {
-            r.meta.source: build_probe(
-                r.meta.paper_title,
-                [{"text": c.text, "is_reference": c.is_reference,
-                  "chunk_index": c.chunk_index} for c in r.chunks])
-            for r in results
-        }
-        reports = check_corpus_relevance(probes, embedder=embedder)
-        flagged = [rep.to_dict() for rep in reports if rep.flagged]
+        with _substep(job_id, "chunking", "cek_koherensi", masuk=len(results)) as sub:
+            probes = {
+                r.meta.source: build_probe(
+                    r.meta.paper_title,
+                    [{"text": c.text, "is_reference": c.is_reference,
+                      "chunk_index": c.chunk_index} for c in r.chunks])
+                for r in results
+            }
+            reports = check_corpus_relevance(probes, embedder=embedder)
+            flagged = [rep.to_dict() for rep in reports if rep.flagged]
+            sub.done(keluar=len(flagged))
         outcome.metrics["jurnal_ditandai_tak_sedomain"] = len(flagged)
         if flagged:
             outcome.notes.append(
                 f"{len(flagged)} jurnal tampak di luar bidang batch ini — peringatan, "
                 "bukan penolakan; hanya andal untuk penyusup minoritas.")
             outcome.samples.extend(flagged)
+    else:
+        # Kunci tetap ada agar peta proses bisa menunjukkan langkah ini dilewati,
+        # bukan menyamarkannya sebagai "0 jurnal ditandai".
+        outcome.metrics["jurnal_ditandai_tak_sedomain"] = "tidak dicek"
     return outcome
 
 
@@ -275,12 +497,14 @@ def stage_gap_mining(
     for c in chunks:
         by_source[c.get("source")].append(c)
 
-    candidates = select_candidates(chunks)
-    if limit:
-        candidates = candidates[:limit]
-    regex_baseline = sum(
-        1 for c in chunks
-        if not c.get("is_reference") and matched_phrases(c.get("text", "")))
+    with _substep(job_id, "gap_mining", "pilih_kandidat", masuk=len(chunks)) as sub:
+        candidates = select_candidates(chunks)
+        if limit:
+            candidates = candidates[:limit]
+        regex_baseline = sum(
+            1 for c in chunks
+            if not c.get("is_reference") and matched_phrases(c.get("text", "")))
+        sub.done(keluar=len(candidates), baseline_regex=regex_baseline)
 
     traced = {"n": 0}
     trace_lock = threading.Lock()
@@ -308,7 +532,8 @@ def stage_gap_mining(
 
     raw_gaps: List[Dict[str, Any]] = []
     done = 0
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    with _substep(job_id, "gap_mining", "ekstrak_llm", masuk=len(candidates)) as sub, \
+            ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(_work, c) for c in candidates]
         try:
             for fut in as_completed(futures):
@@ -319,7 +544,7 @@ def stage_gap_mining(
                     logger.warning(f"kandidat gagal: {exc}")
                 if done % 10 == 0 or done == len(candidates):
                     _ensure_active(job_id)
-                    _progress(job_id, 30 + 30 * done / max(1, len(candidates)),
+                    _progress(job_id, 30 + 26 * done / max(1, len(candidates)),
                               f"Ekstraksi gap {done}/{len(candidates)} kandidat")
         except ResearchCancelled:
             # Kandidat yang belum mulai dibuang; yang sedang berjalan dibiarkan
@@ -327,11 +552,24 @@ def stage_gap_mining(
             for fut in futures:
                 fut.cancel()
             raise
+        sub.done(keluar=len(raw_gaps))
 
     raw_path = str(out_path) + ".raw.jsonl"
     write_jsonl(raw_path, raw_gaps)
-    grounded = verify_gaps(raw_gaps, by_source)
-    gaps = _dedup_gaps(grounded)
+
+    _progress(job_id, 57, f"Verifikasi verbatim {len(raw_gaps)} gap ke teks sumber")
+    with _substep(job_id, "gap_mining", "verifikasi_verbatim", masuk=len(raw_gaps)) as sub:
+        grounded = verify_gaps(raw_gaps, by_source)
+        # verify_gaps menulis grounding_score ke SEMUA gap, termasuk yang ditolak,
+        # jadi contoh yang gugur bisa diambil tanpa menghitung ulang.
+        kept_ids = {id(g) for g in grounded}
+        rejected = [g for g in raw_gaps if id(g) not in kept_ids]
+        sub.done(keluar=len(grounded), dibuang=len(rejected))
+
+    _progress(job_id, 59, f"Menghapus duplikat dari {len(grounded)} gap")
+    with _substep(job_id, "gap_mining", "dedup", masuk=len(grounded)) as sub:
+        gaps, duplicates = _split_duplicates(grounded)
+        sub.done(keluar=len(gaps), dibuang=len(duplicates))
     journals = len({g["source"] for g in gaps})
 
     meta = {
@@ -342,6 +580,12 @@ def stage_gap_mining(
         "catatan": "Gap terstruktur; gap_statement diverifikasi verbatim di chunk sumber.",
     }
     write_jsonl(str(out_path), [meta] + gaps)
+
+    def _gap_row(g: Dict[str, Any]) -> Dict[str, Any]:
+        return {"source": g.get("source"), "gap_type": g.get("gap_type"),
+                "topic": g.get("topic"), "grounding_score": g.get("grounding_score"),
+                "gap_statement": (g.get("gap_statement") or "")[:300],
+                "gap_paraphrase": (g.get("gap_paraphrase") or "")[:200]}
 
     return StageOutcome(
         params={"limit": limit or "semua", "llm_trace_limit": llm_trace_limit,
@@ -354,18 +598,21 @@ def stage_gap_mining(
             "baseline_regex_saja": regex_baseline,
             "gap_mentah": len(raw_gaps),
             "lolos_verifikasi_verbatim": len(grounded),
-            "gugur_di_verifikasi": len(raw_gaps) - len(grounded),
+            "gugur_di_verifikasi": len(rejected),
+            "duplikat_dibuang": len(duplicates),
             "gap_final_setelah_dedup": len(gaps),
             "jurnal_bergap": journals,
         },
-        samples=[
-            {"source": g.get("source"), "gap_type": g.get("gap_type"),
-             "topic": g.get("topic"), "grounding_score": g.get("grounding_score"),
-             "gap_statement": (g.get("gap_statement") or "")[:300],
-             "gap_paraphrase": (g.get("gap_paraphrase") or "")[:200]}
-            for g in gaps[:SAMPLE_ROWS]
-        ],
+        samples=[_gap_row(g) for g in gaps[:SAMPLE_ROWS]],
         outputs={"gaps_jsonl": str(out_path), "gaps_raw_jsonl": raw_path},
+        substep_samples={
+            # Skor terendah dulu: itulah kandidat halusinasi yang paling jelas.
+            "verifikasi_gugur": [
+                _gap_row(g) for g in sorted(
+                    rejected, key=lambda g: g.get("grounding_score") or 0.0)[:SAMPLE_ROWS]
+            ],
+            "dedup_dibuang": [_gap_row(g) for g in duplicates[:SAMPLE_ROWS]],
+        },
         notes=["Tiap gap_statement wajib muncul verbatim di chunk sumbernya; "
                "yang di bawah ambang grounding dibuang sebagai dugaan halusinasi.",
                "Cakupan gap tidak reproducible penuh: dua run pada chunk identik "
@@ -387,13 +634,23 @@ def stage_novelty(
     meta = next((r for r in rows if r.get("record") == "meta"), {})
     gaps = [r for r in rows if "gap_statement" in r]
 
-    _progress(job_id, 62, f"Cek kebaruan {len(gaps)} gap ke OpenAlex")
-    enriched = annotate_gaps(gaps, from_date=from_date,
-                             min_interval=min_interval, max_retries=max_retries)
+    def _tick(done: int, total: int) -> None:
+        # OpenAlex dibatasi ~1 permintaan/dtk, jadi tahap ini lambat dan tanpa
+        # progres per gap pengguna hanya melihat angka diam selama beberapa menit.
+        if done % 5 == 0 or done == total:
+            _ensure_active(job_id)
+            _progress(job_id, 62 + 18 * done / max(1, total),
+                      f"Cek OpenAlex {done}/{total} gap")
 
-    counts: Dict[str, int] = defaultdict(int)
-    for g in enriched:
-        counts[g.get("novelty_status", "?")] += 1
+    _progress(job_id, 62, f"Cek kebaruan {len(gaps)} gap ke OpenAlex")
+    with _substep(job_id, "novelty", "cek_kebaruan", masuk=len(gaps)) as sub:
+        enriched = annotate_gaps(gaps, from_date=from_date, min_interval=min_interval,
+                                 max_retries=max_retries, on_progress=_tick)
+        counts: Dict[str, int] = defaultdict(int)
+        for g in enriched:
+            counts[g.get("novelty_status", "?")] += 1
+        sub.done(keluar=counts.get("open", 0), **{k: v for k, v in counts.items()
+                                                  if k != "open"})
     with_matches = sum(1 for g in enriched if g.get("related_recent_papers"))
 
     out_meta = dict(meta)
@@ -404,9 +661,19 @@ def stage_novelty(
     })
     write_jsonl(str(out_path), [out_meta] + enriched)
 
+    def _nov_row(g: Dict[str, Any]) -> Dict[str, Any]:
+        return {"source": g.get("source"), "novelty_status": g.get("novelty_status"),
+                "novelty_query": g.get("novelty_query"),
+                "gap_statement": (g.get("gap_statement") or "")[:200],
+                "literatur_2024plus": [
+                    {"title": (p.get("title") or "")[:100], "year": p.get("year"),
+                     "match_score": p.get("match_score")}
+                    for p in (g.get("related_recent_papers") or [])[:3]]}
+
     return StageOutcome(
         params={"from_date": from_date, "min_interval": min_interval,
-                "max_retries": max_retries, "sumber": "OpenAlex"},
+                "max_retries": max_retries, "sumber": "OpenAlex",
+                "ambang_strong_match": STRONG_MATCH_THRESHOLD},
         metrics={
             "gap_dicek": len(enriched),
             "open": counts.get("open", 0),
@@ -424,6 +691,14 @@ def stage_novelty(
             for g in enriched[:SAMPLE_ROWS]
         ],
         outputs={"gaps_novelty_jsonl": str(out_path)},
+        substep_samples={
+            # Yang "sudah dijawab" adalah bukti bahwa pengecekan bekerja; yang
+            # "open" tanpa paper sama sekali perlu dicurigai sebagai efek throttle.
+            "contoh_addressed": [_nov_row(g) for g in enriched
+                                 if g.get("novelty_status") == "addressed"][:SAMPLE_ROWS],
+            "contoh_open": [_nov_row(g) for g in enriched
+                            if g.get("novelty_status") == "open"][:SAMPLE_ROWS],
+        },
         notes=["Saat OpenAlex tak terjangkau atau kena throttle, gap tetap "
                "dihitung 'open' secara konservatif — cakupan 100% tapi bisa "
                "terlalu optimistis."],
@@ -441,7 +716,11 @@ def stage_recommendation(
     top: int = 15,
 ) -> StageOutcome:
     gaps = [g for g in read_jsonl(str(gaps_novelty_path)) if "gap_statement" in g]
-    open_gaps = [g for g in gaps if g.get("novelty_status") == "open"]
+    _progress(job_id, 82, f"Menyaring gap open dari {len(gaps)} gap")
+    with _substep(job_id, "recommendation", "filter_open", masuk=len(gaps)) as sub:
+        open_gaps = [g for g in gaps if g.get("novelty_status") == "open"]
+        not_open = [g for g in gaps if g.get("novelty_status") != "open"]
+        sub.done(keluar=len(open_gaps), dibuang=len(not_open))
     chunks = [c for c in read_jsonl(str(chunks_path)) if c.get("record") == "chunk"]
 
     # Bentuk korpus & confidence harus sama persis dengan experiments/recommend_topics.py,
@@ -472,8 +751,13 @@ def stage_recommendation(
         })
 
     _progress(job_id, 85, f"Memeringkat {len(proposals)} proposal")
-    ranked = rank_proposals(proposals, corpus, gap_conf, embedder=embedder)
-    themes = build_themes(ranked, embedder=embedder)
+    with _substep(job_id, "recommendation", "skor_prioritas", masuk=len(proposals)) as sub:
+        ranked = rank_proposals(proposals, corpus, gap_conf, embedder=embedder)
+        sub.done(keluar=len(ranked))
+    _progress(job_id, 92, f"Mengelompokkan {len(ranked)} proposal jadi tema")
+    with _substep(job_id, "recommendation", "kelompokkan_tema", masuk=len(ranked)) as sub:
+        themes = build_themes(ranked, embedder=embedder)
+        sub.done(keluar=len(themes))
     cross = [t for t in themes if t.journal_support >= 2]
     singletons = sum(1 for t in themes if len(t.members) == 1)
 
@@ -515,6 +799,13 @@ def stage_recommendation(
             "novelty": nov.get("novelty"),
             "band": nov.get("band"),
             "actionability": nov.get("actionability"),
+            # Tiga suku rumus + tetangga terdekat, agar UI bisa menunjukkan dari
+            # mana priority_score berasal, bukan hanya angkanya.
+            "gap_confidence": nov.get("gap_confidence"),
+            "novelty_credit": nov.get("novelty_credit"),
+            "nearest_paper": nov.get("nearest_paper"),
+            "nearest_similarity": nov.get("nearest_similarity"),
+            "score_notes": nov.get("notes"),
             "theme_id": theme.theme_id if theme else None,
             "theme_label": theme.label if theme else None,
             "theme_journal_support": theme.journal_support if theme else None,
@@ -530,7 +821,9 @@ def stage_recommendation(
                 "embedder": "multilingual-MiniLM" if embedder is not None else "leksikal",
                 "top": top},
         metrics={
+            "gap_dicek": len(gaps),
             "gap_open": len(open_gaps),
+            "gap_bukan_open": len(not_open),
             "proposal_dinilai": len(proposals),
             "tema": len(themes),
             "tema_lintas_jurnal": len(cross),
@@ -548,6 +841,22 @@ def stage_recommendation(
         outputs={"rekomendasi_md": str(out_path),
                  "proposals_jsonl": str(proposals_path),
                  "themes_jsonl": str(themes_path)},
+        substep_samples={
+            "dibuang_bukan_open": [
+                {"source": g.get("source"), "novelty_status": g.get("novelty_status"),
+                 "gap_statement": (g.get("gap_statement") or "")[:200],
+                 "paper_penjawab": [(p.get("title") or "")[:100] for p in
+                                    (g.get("related_recent_papers") or [])[:2]]}
+                for g in not_open[:SAMPLE_ROWS]
+            ],
+            "tema_terbesar": [
+                {"theme_id": t.theme_id, "label": t.label, "journal_support": t.journal_support,
+                 "size": len(t.members), "topics": t.topics,
+                 "anggota": [{"source": m.get("source"), "title": (m.get("title") or "")[:120]}
+                             for m in t.members[:6]]}
+                for t in sorted(themes, key=lambda t: -len(t.members))[:3]
+            ],
+        },
         notes=["journal_support pada tema besar adalah batas atas, bukan bukti "
                "bahwa N jurnal menyatakan gap yang sama (chaining single-linkage)."],
     )

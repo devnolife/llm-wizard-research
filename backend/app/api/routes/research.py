@@ -20,7 +20,13 @@ from loguru import logger
 
 from ...core.pipeline.io import read_jsonl
 from ...services.analysis_queue import get_analysis_queue
-from ...services.research_pipeline import PIPELINE_NAME, RESEARCH_STAGES, stage_source
+from ...services.research_pipeline import (
+    PIPELINE_CONSTANTS,
+    PIPELINE_NAME,
+    RESEARCH_STAGES,
+    SUBSTEPS,
+    stage_source,
+)
 from ...utils.config_loader import get_config
 from ...utils.job_store import get_stage_artifacts, record_job_event, save_job
 from ...utils.upload_validation import sanitize_filename, write_validated_pdf_upload
@@ -49,10 +55,16 @@ MAX_PAGE = 500
 
 @router.get("/stages")
 async def list_stages():
-    """Deskripsi tahap agar UI bisa menggambar timeline sebelum job berjalan."""
+    """Deskripsi tahap, sub-langkahnya, dan konstanta yang dipakai.
+
+    UI menggambar timeline dan peta proses dari sini sebelum job berjalan;
+    ``substeps[*].key`` sama dengan ``data.substep`` pada event ``substep.*``.
+    """
     return {
         "stages": [
-            {"key": key, "icon": icon, "title": title, "description": desc}
+            {"key": key, "icon": icon, "title": title, "description": desc,
+             "substeps": SUBSTEPS.get(key, []),
+             "constants": PIPELINE_CONSTANTS.get(key, {})}
             for key, icon, title, desc in RESEARCH_STAGES
         ]
     }

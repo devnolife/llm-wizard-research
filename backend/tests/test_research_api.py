@@ -200,3 +200,19 @@ class TestStageSourceEndpoint:
 
     def test_unknown_stage_is_rejected(self):
         assert client.get("/api/research/stages/bogus/source").status_code == 404
+
+
+class TestStagesCarryProcessMap:
+    def test_each_stage_lists_substeps_and_constants(self):
+        for stage in client.get("/api/research/stages").json()["stages"]:
+            assert stage["substeps"], stage["key"]
+            assert stage["constants"], stage["key"]
+            for sub in stage["substeps"]:
+                assert {"key", "label", "label_teknis", "penjelasan", "in_metric",
+                        "out_metric", "drop_metric", "sample_key", "inside"} <= set(sub)
+
+    def test_recommendation_constants_expose_the_formula_weights(self):
+        rec = next(s for s in client.get("/api/research/stages").json()["stages"]
+                   if s["key"] == "recommendation")
+        c = rec["constants"]
+        assert abs(c["w_gap"] + c["w_novelty"] + c["w_actionability"] - 1.0) < 1e-9

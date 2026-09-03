@@ -252,3 +252,301 @@ class TestStageRecommendation:
         assert out_md.exists()
         assert "Rekomendasi Topik" in out_md.read_text(encoding="utf-8")
         assert out.outputs["rekomendasi_md"] == str(out_md)
+
+
+# ── Peta proses & pencatatan sub-langkah ───────────────────────────────────
+
+from app.core.gap_detection.quote_grounding import QUOTE_MATCH_THRESHOLD  # noqa: E402
+from app.core.gap_mining.novelty import STRONG_MATCH_THRESHOLD, annotate_gaps  # noqa: E402
+from app.core.pipeline.schema import PaperMeta, PipelineChunk  # noqa: E402
+from app.core.recommendation import novelty as rec_novelty  # noqa: E402
+from app.services.research_pipeline import (  # noqa: E402
+    PIPELINE_CONSTANTS,
+    SUBSTEPS,
+    _split_duplicates,
+    _substep,
+    stage_chunking,
+    stage_gap_mining,
+    stage_novelty,
+)
+
+
+class _FakePdfResult:
+    """Bentuk minimal yang dibaca stage_chunking dan write_chunks_jsonl."""
+
+    def __init__(self, source: str, texts: list[str], sections: list[str]):
+        self.meta = PaperMeta(source=source, paper_title=f"Judul {source}", year=2024,
+                              language="id", extraction_quality="good")
+        self.extraction_method = "pymupdf"
+        self.grobid_used = False
+        self.num_pages = 3
+        self.chunks = [
+            PipelineChunk(source=source, chunk_index=i, text=t, token_count=len(t.split()),
+                          section_normalized=s, paper_title=self.meta.paper_title, year=2024)
+            for i, (t, s) in enumerate(zip(texts, sections))
+        ]
+
+
+_CONCLUSION = ("Penelitian ini masih terbatas pada satu institusi sehingga generalisasi "
+               "hasil perlu diuji ulang pada konteks yang berbeda. Studi lanjutan disarankan.")
+
+
+def _chunks_file(path: Path) -> Path:
+    """Dua chunk, tetapi hanya kesimpulannya yang jadi kandidat: pendahuluan
+    dibuat < 80 karakter agar aturan cadangan intro/tail tidak memilihnya."""
+    write_jsonl(str(path), [
+        {"record": "meta", "job_id": "x"},
+        {"record": "chunk", "source": "a.pdf", "chunk_index": 0, "chunk_id": "a::0",
+         "section_normalized": "introduction", "token_count": 8, "is_reference": False,
+         "text": "Pendahuluan singkat tentang deteksi anomali pembelajaran."},
+        {"record": "chunk", "source": "a.pdf", "chunk_index": 1, "chunk_id": "a::1",
+         "section_normalized": "conclusion", "token_count": 40, "is_reference": False,
+         "text": _CONCLUSION},
+    ])
+    return path
+
+
+def _llm_stub(reply: str):
+    def generate(prompt, system=None, json_mode=False, temperature=None):
+        return reply, "model-uji"
+    return generate
+
+
+class TestProcessMap:
+    def test_every_stage_has_substeps_with_both_labels(self):
+        assert set(SUBSTEPS) == {s[0] for s in RESEARCH_STAGES}
+        for subs in SUBSTEPS.values():
+            assert subs, "tiap tahap harus punya minimal satu sub-langkah"
+            for s in subs:
+                assert s["key"] and s["label"] and s["label_teknis"] and s["penjelasan"]
+
+    def test_nested_substeps_point_at_an_existing_parent(self):
+        for subs in SUBSTEPS.values():
+            keys = {s["key"] for s in subs}
+            for s in subs:
+                if s["inside"]:
+                    assert s["inside"] in keys
+
+    def test_constants_come_from_the_modules_that_use_them(self):
+        assert PIPELINE_CONSTANTS["gap_mining"]["quote_match_threshold"] == QUOTE_MATCH_THRESHOLD
+        assert PIPELINE_CONSTANTS["novelty"]["strong_match_threshold"] == STRONG_MATCH_THRESHOLD
+        rec = PIPELINE_CONSTANTS["recommendation"]
+        assert (rec["w_gap"], rec["w_novelty"], rec["w_actionability"]) == (
+            rec_novelty.W_GAP, rec_novelty.W_NOVELTY, rec_novelty.W_ACTIONABILITY)
+        assert rec["sweet_spot"] == list(rec_novelty.NOVELTY_SWEET_SPOT)
+
+    def test_metric_keys_in_map_exist_in_stage_outputs(self, monkeypatch):
+        """Peta proses merujuk kunci metrik; kalau tahapnya berhenti menulis kunci
+        itu, UI akan menampilkan corong kosong tanpa galat. Tes ini menjaganya."""
+        job_store.save_job("pm", {"status": "running", "progress": 0})
+        pdf = SCRATCH / "00_a.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        monkeypatch.setattr(research_pipeline, "process_pdf", lambda *a, **k: _FakePdfResult(
+            "a.pdf", ["Pendahuluan " * 30, _CONCLUSION], ["introduction", "conclusion"]))
+        chunk_out = stage_chunking("pm", [pdf], SCRATCH / "chunks.jsonl")
+
+        reply = ('[{"gap_type":"stated_limitation","gap_statement":"Penelitian ini masih '
+                 'terbatas pada satu institusi sehingga generalisasi hasil perlu diuji ulang '
+                 'pada konteks yang berbeda.","gap_paraphrase":"Terbatas satu institusi.",'
+                 '"topic":"other"}]')
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", _llm_stub(reply))
+        gap_out = stage_gap_mining("pm", SCRATCH / "chunks.jsonl", SCRATCH / "gaps.jsonl",
+                                   workers=1)
+
+        def fake_annotate(gaps, on_progress=None, **_):
+            out = []
+            for i, g in enumerate(gaps, 1):
+                out.append({**g, "novelty_status": "open", "novelty_query": "q",
+                            "related_recent_papers": []})
+                if on_progress:
+                    on_progress(i, len(gaps))
+            return out
+        monkeypatch.setattr(research_pipeline, "annotate_gaps", fake_annotate)
+        nov_out = stage_novelty("pm", SCRATCH / "gaps.jsonl", SCRATCH / "gaps_nov.jsonl")
+        rec_out = stage_recommendation("pm", SCRATCH / "gaps_nov.jsonl",
+                                       SCRATCH / "chunks.jsonl", SCRATCH / "rek.md")
+
+        outcomes = {"chunking": chunk_out, "gap_mining": gap_out,
+                    "novelty": nov_out, "recommendation": rec_out}
+        for stage_key, subs in SUBSTEPS.items():
+            metrics = outcomes[stage_key].metrics
+            samples = outcomes[stage_key].substep_samples
+            for s in subs:
+                for field in ("in_metric", "out_metric", "drop_metric"):
+                    key = s[field]
+                    assert key is None or key in metrics, \
+                        f"{stage_key}/{s['key']}: metrik '{key}' tidak ditulis tahap"
+                if s["sample_key"]:
+                    assert s["sample_key"] in samples, \
+                        f"{stage_key}/{s['key']}: substep_samples '{s['sample_key']}' hilang"
+
+
+class TestSubstepRecorder:
+    def test_records_start_and_completion_with_counts(self):
+        job_store.save_job("ss", {"status": "running", "progress": 0})
+        with _substep("ss", "gap_mining", "dedup", masuk=10) as sub:
+            sub.done(keluar=7, dibuang=3)
+        events = [e for e in job_store.get_job_events("ss") if e["type"].startswith("substep.")]
+        assert [e["type"] for e in events] == ["substep.started", "substep.completed"]
+        assert events[0]["data"] == {"substep": "dedup", "masuk": 10}
+        assert events[1]["data"] == {"substep": "dedup", "masuk": 10, "keluar": 7, "dibuang": 3}
+        assert events[1]["duration_ms"] is not None
+
+    def test_error_is_recorded_then_reraised(self):
+        job_store.save_job("ss2", {"status": "running", "progress": 0})
+        with pytest.raises(RuntimeError):
+            with _substep("ss2", "novelty", "cek_kebaruan"):
+                raise RuntimeError("putus")
+        done = [e for e in job_store.get_job_events("ss2") if e["type"] == "substep.completed"]
+        assert done and done[0]["data"]["error"] == "putus"
+
+
+class TestGapMiningKeepsWhatItDiscards:
+    """Contoh yang DIBUANG harus terlihat: itu bukti penyaringan bekerja."""
+
+    def _run(self, monkeypatch, reply: str):
+        job_store.save_job("gm", {"status": "running", "progress": 0})
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", _llm_stub(reply))
+        return stage_gap_mining("gm", _chunks_file(SCRATCH / "chunks.jsonl"),
+                                SCRATCH / "gaps.jsonl", workers=1)
+
+    def test_hallucinated_statement_lands_in_rejected_samples(self, monkeypatch):
+        reply = ('[{"gap_type":"stated_limitation","gap_statement":"Penelitian ini masih '
+                 'terbatas pada satu institusi sehingga generalisasi hasil perlu diuji ulang '
+                 'pada konteks yang berbeda.","topic":"other"},'
+                 '{"gap_type":"implicit_gap","gap_statement":"Kalimat ini tidak pernah ada '
+                 'di dalam jurnal mana pun sama sekali.","topic":"other"}]')
+        out = self._run(monkeypatch, reply)
+        assert out.metrics["gap_mentah"] == 2
+        assert out.metrics["gugur_di_verifikasi"] == 1
+        rejected = out.substep_samples["verifikasi_gugur"]
+        assert len(rejected) == 1
+        assert rejected[0]["gap_statement"].startswith("Kalimat ini tidak pernah")
+        assert rejected[0]["grounding_score"] < QUOTE_MATCH_THRESHOLD
+
+    def test_duplicate_statement_lands_in_dedup_samples(self, monkeypatch):
+        stmt = ("Penelitian ini masih terbatas pada satu institusi sehingga generalisasi "
+                "hasil perlu diuji ulang pada konteks yang berbeda.")
+        reply = (f'[{{"gap_type":"stated_limitation","gap_statement":"{stmt}","topic":"other"}},'
+                 f'{{"gap_type":"stated_limitation","gap_statement":"{stmt.upper()}",'
+                 f'"topic":"legal"}}]')
+        out = self._run(monkeypatch, reply)
+        assert out.metrics["duplikat_dibuang"] == 1
+        assert out.metrics["gap_final_setelah_dedup"] == 1
+        assert out.substep_samples["dedup_dibuang"][0]["topic"] == "legal"
+
+    def test_substep_events_follow_the_process_map_order(self, monkeypatch):
+        self._run(monkeypatch, "[]")
+        started = [e["data"]["substep"] for e in job_store.get_job_events("gm")
+                   if e["type"] == "substep.started"]
+        assert started == [s["key"] for s in SUBSTEPS["gap_mining"] if not s["inside"]]
+
+    def test_verification_progress_message_is_surfaced(self, monkeypatch):
+        seen: list[str] = []
+        original = research_pipeline.update_job
+
+        def spy(job_id, **fields):
+            if "message" in fields:
+                seen.append(fields["message"])
+            return original(job_id, **fields)
+        monkeypatch.setattr(research_pipeline, "update_job", spy)
+        self._run(monkeypatch, "[]")
+        assert any("Verifikasi verbatim" in m for m in seen)
+        assert any("duplikat" in m for m in seen)
+
+
+class TestSplitDuplicates:
+    def test_returns_unique_and_duplicates_separately(self):
+        gaps = [{"source": "a", "gap_statement": "X"}, {"source": "a", "gap_statement": "x "},
+                {"source": "b", "gap_statement": "X"}]
+        unique, dups = _split_duplicates(gaps)
+        assert len(unique) == 2 and len(dups) == 1
+        assert _dedup_gaps(gaps) == unique
+
+
+class TestNoveltyProgress:
+    def test_annotate_gaps_reports_progress_per_gap(self):
+        class _NoHits:
+            def search_recent(self, *a, **k):
+                return []
+        ticks: list[tuple[int, int]] = []
+        annotate_gaps([{"gap_statement": "alpha beta"}, {"gap_statement": "gamma delta"}],
+                      openalex=_NoHits(), on_progress=lambda d, t: ticks.append((d, t)))
+        assert ticks == [(1, 2), (2, 2)]
+
+    def test_annotate_gaps_without_callback_still_works(self):
+        class _NoHits:
+            def search_recent(self, *a, **k):
+                return []
+        out = annotate_gaps([{"gap_statement": "alpha beta"}], openalex=_NoHits())
+        assert out[0]["novelty_status"] == "open"
+
+    def test_stage_surfaces_openalex_progress_and_examples(self, monkeypatch):
+        job_store.save_job("nv", {"status": "running", "progress": 0})
+        write_jsonl(str(SCRATCH / "gaps.jsonl"), [
+            {"record": "meta"},
+            *[{"source": "a.pdf", "gap_statement": f"gap {i}", "gap_type": "implicit_gap"}
+              for i in range(10)],
+        ])
+
+        def fake_annotate(gaps, on_progress=None, **_):
+            out = []
+            for i, g in enumerate(gaps, 1):
+                status = "addressed" if i <= 3 else "open"
+                out.append({**g, "novelty_status": status, "novelty_query": "q",
+                            "related_recent_papers": [{"title": "P", "year": 2025,
+                                                       "match_score": 0.8}]
+                            if status == "addressed" else []})
+                if on_progress:
+                    on_progress(i, len(gaps))
+            return out
+        monkeypatch.setattr(research_pipeline, "annotate_gaps", fake_annotate)
+        messages: list[str] = []
+        original = research_pipeline.update_job
+
+        def spy(job_id, **fields):
+            if "message" in fields:
+                messages.append(fields["message"])
+            return original(job_id, **fields)
+        monkeypatch.setattr(research_pipeline, "update_job", spy)
+
+        out = stage_novelty("nv", SCRATCH / "gaps.jsonl", SCRATCH / "nov.jsonl")
+
+        assert "Cek OpenAlex 5/10 gap" in messages and "Cek OpenAlex 10/10 gap" in messages
+        assert len(out.substep_samples["contoh_addressed"]) == 3
+        assert out.substep_samples["contoh_addressed"][0]["literatur_2024plus"][0]["match_score"] == 0.8
+        done = next(e for e in job_store.get_job_events("nv")
+                    if e["type"] == "substep.completed" and e["data"]["substep"] == "cek_kebaruan")
+        assert done["data"]["masuk"] == 10 and done["data"]["keluar"] == 7
+        assert done["data"]["addressed"] == 3
+
+
+class TestScoreBreakdownIsPersisted:
+    def test_proposal_records_carry_the_three_terms_that_sum_to_priority(self):
+        job_store.save_job("sb", {"status": "running", "progress": 0})
+        write_jsonl(str(SCRATCH / "nov.jsonl"), [
+            {"record": "meta"},
+            {"source": "a.pdf", "gap_statement": "Protokol pengujian alat forensik belum ada.",
+             "gap_paraphrase": "Belum ada protokol pengujian alat.", "gap_type": "stated_limitation",
+             "topic": "tools", "grounding_score": 0.9, "novelty_status": "open"},
+            {"source": "b.pdf", "gap_statement": "Sudah dijawab.", "gap_type": "implicit_gap",
+             "topic": "legal", "grounding_score": 1.0, "novelty_status": "addressed"},
+        ])
+        write_jsonl(str(SCRATCH / "chunks.jsonl"), [
+            {"record": "meta"},
+            {"record": "chunk", "source": "a.pdf", "paper_title": "A", "text": "Alat forensik."},
+            {"record": "chunk", "source": "b.pdf", "paper_title": "B", "text": "Hukum digital."},
+        ])
+        out = stage_recommendation("sb", SCRATCH / "nov.jsonl", SCRATCH / "chunks.jsonl",
+                                   SCRATCH / "rek.md")
+        rec = research_pipeline.read_jsonl(out.outputs["proposals_jsonl"])[0]
+        for key in ("gap_confidence", "novelty_credit", "actionability",
+                    "nearest_paper", "nearest_similarity"):
+            assert key in rec, key
+        expected = (rec_novelty.W_GAP * rec["gap_confidence"]
+                    + rec_novelty.W_NOVELTY * rec["novelty_credit"]
+                    + rec_novelty.W_ACTIONABILITY * rec["actionability"])
+        assert abs(expected - rec["priority_score"]) < 1e-3
+        assert out.metrics["gap_bukan_open"] == 1
+        assert out.substep_samples["dibuang_bukan_open"][0]["novelty_status"] == "addressed"
+        assert out.substep_samples["tema_terbesar"][0]["size"] >= 1

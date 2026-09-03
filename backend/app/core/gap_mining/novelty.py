@@ -17,6 +17,11 @@ from loguru import logger
 
 from ...services.paper_apis.openalex import OpenAlexAPI
 
+# A recent paper "strongly" matches a gap when at least this share of the gap's
+# keywords appears in its title+abstract. 3+ strong matches => addressed,
+# 1-2 => partially_addressed, 0 => open.
+STRONG_MATCH_THRESHOLD = 0.5
+
 _STOPWORDS = set(
     """the a an and or of to in for on with from by as is are be this that these those
     we our their study paper research results method approach using used based can may
@@ -68,7 +73,7 @@ def classify_novelty(
     openalex: Optional[OpenAlexAPI] = None,
     from_date: str = "2024-01-01",
     max_results: int = 8,
-    strong_threshold: float = 0.5,
+    strong_threshold: float = STRONG_MATCH_THRESHOLD,
     s2_search_fn: Optional[Callable[[str], List[Any]]] = None,
 ) -> Dict[str, Any]:
     """Return novelty fields for a single gap.
@@ -128,12 +133,16 @@ def annotate_gaps(
     s2_search_fn: Optional[Callable[[str], List[Any]]] = None,
     min_interval: float = 1.0,
     max_retries: int = 4,
+    on_progress: Optional[Callable[[int, int], None]] = None,
 ) -> List[Dict[str, Any]]:
     """Attach novelty fields to every gap (100% coverage — TAHAP 3 kriteria #1).
 
     Note: when OpenAlex is unreachable/hard-throttled a gap simply gets no recent
     matches and is conservatively classified ``open`` — so coverage stays 100%
     even under rate limiting.
+
+    ``on_progress(done, total)`` is called after each gap so a caller can
+    surface live progress; the CLI leaves it ``None``.
     """
     openalex = openalex or OpenAlexAPI(min_interval=min_interval, max_retries=max_retries)
     out = []
@@ -142,6 +151,8 @@ def annotate_gaps(
         enriched.update(classify_novelty(gap, openalex=openalex, from_date=from_date,
                                          s2_search_fn=s2_search_fn))
         out.append(enriched)
+        if on_progress is not None:
+            on_progress(i, len(gaps))
         if i % 20 == 0:
             logger.info(f"  novelty-checked {i}/{len(gaps)} gaps")
     return out

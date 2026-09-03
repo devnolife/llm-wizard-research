@@ -174,6 +174,7 @@ class NoveltyScore:
     gap_confidence: float = 0.0
     priority_score: float = 0.0
     band: str = ""                       # derivative | sweet_spot | off_topic
+    novelty_credit: float = 0.0          # the novelty term actually used in priority
     notes: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -185,6 +186,7 @@ class NoveltyScore:
             "gap_confidence": round(self.gap_confidence, 4),
             "priority_score": round(self.priority_score, 4),
             "band": self.band,
+            "novelty_credit": round(self.novelty_credit, 4),
             "notes": self.notes,
         }
 
@@ -282,6 +284,7 @@ def score_proposal(
         gap_confidence=round(gap_confidence, 4),
         priority_score=round(priority, 4),
         band=band,
+        novelty_credit=round(novelty_credit, 4),
         notes=notes,
     )
 
