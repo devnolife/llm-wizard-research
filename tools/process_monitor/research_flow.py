@@ -19,6 +19,7 @@ import pandas as pd
 import streamlit as st
 
 from common import fetch_events, fmt_datetime, fmt_duration
+from research_charts import render_stage_charts
 from research_common import (
     fetch_records,
     fetch_stages,
@@ -31,6 +32,7 @@ from research_common import (
     stage_states,
     substep_states,
 )
+from research_explorer import render_candidate_trace
 from research_vocab import (
     ENUM_LABELS,
     enum_label,
@@ -246,7 +248,8 @@ def estimate_stage_durations(api_base: str, max_jobs: int = 5) -> dict[str, int]
 # ── Langkah 3: isi satu tab tahap ──────────────────────────────────────────
 
 def render_stage_body(job_id: str, stage: dict, events: list[dict]) -> None:
-    """Tiga tab: alur & angka (corong + contoh), data lengkap (+ jejak), kode."""
+    """Tab per tahap: alur & angka, grafik, data lengkap (+ jejak), kode —
+    plus jejak per kandidat khusus tahap penambangan gap."""
     key = stage["key"]
     info = stage_states(job_id, events).get(key, {})
     state = info.get("state", "pending")
@@ -261,9 +264,11 @@ def render_stage_body(job_id: str, stage: dict, events: list[dict]) -> None:
         st.warning("Tahap ini dihentikan oleh pembatalan; datanya tidak lengkap.")
 
     arts, payload = stage_result_payload(job_id, key)
-    tab_alur, tab_data, tab_kode = st.tabs(
-        ["🧭 Alur & angka", "🗂️ Data lengkap", "💻 Kode & rumus"])
-    with tab_alur:
+    names = ["🧭 Alur & angka", "📈 Grafik", "🗂️ Data lengkap", "💻 Kode & rumus"]
+    if key == "gap_mining":
+        names.insert(2, "🔍 Jejak per kandidat")
+    tabs = st.tabs(names)
+    with tabs[0]:
         if not payload:
             st.info("Belum ada hasil detail untuk tahap ini.")
         else:
@@ -276,10 +281,15 @@ def render_stage_body(job_id: str, stage: dict, events: list[dict]) -> None:
                 render_metrics_grid(payload["metrics"])
             render_stage_extras(arts, payload)
         render_glossary(key)
-    with tab_data:
+    with tabs[1]:
+        render_stage_charts(job_id, key, events)
+    if key == "gap_mining":
+        with tabs[2]:
+            render_candidate_trace(job_id)
+    with tabs[-2]:
         render_records_tab(job_id, key, trace=render_record_trace)
         render_glossary(key)
-    with tab_kode:
+    with tabs[-1]:
         render_source_tab(key, stage.get("substeps"))
 
 

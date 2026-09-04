@@ -22,14 +22,18 @@ from research_common import (
     render_timeline,
     research_jobs,
     set_active_job,
+    stage_result_payload,
     start_research,
 )
+from research_charts import render_overview_charts
+from research_explorer import render_theme_browser
 from research_flow import (
     estimate_stage_durations,
     render_activity_log,
     render_live_map,
     render_stage_body,
 )
+from research_journals import render_journal_crosstab
 from research_vocab import mode_teknis
 
 LANGKAH = ["1 · Unggah jurnal", "2 · Pipeline berjalan", "3 · Baca hasil"]
@@ -213,14 +217,25 @@ else:
     st.caption(f"Analisis `{active[:8]}…` · {fmt_datetime(status.get('created_at'))}")
     render_timeline(active)
 
-    st.markdown("**Buka tab di bawah untuk menelusuri tiap tahap.** Di dalam tiap tab "
-                "ada *Alur & angka* (apa yang dikerjakan, berapa masuk → keluar, contoh "
-                "yang lolos dan yang dibuang), *Data lengkap* (semua record, bisa dicari, "
-                "dengan jejak ke sumbernya), dan *Kode & rumus* (kode Python yang "
-                "dijalankan).")
+    st.markdown("**Tiga tab pertama merangkum seluruh analisis**: *Ikhtisar* (corong angka & "
+                "waktu), *Per jurnal* (apa yang terjadi pada tiap PDF dari awal sampai akhir), "
+                "*Tema* (gap serupa lintas jurnal). **Empat tab berikutnya menelusuri tiap "
+                "tahap**: *Alur & angka*, *Grafik*, *Data lengkap* dengan jejak ke sumber, dan "
+                "*Kode & rumus*. Tahap penambangan gap punya *Jejak per kandidat*: chunk → "
+                "LLM → gap → verifikasi.")
 
     events = job_events(active)
-    for tab, stage in zip(st.tabs([f"{s['icon']} {s['title']}" for s in stages]), stages):
+    tab_names = ["📊 Ikhtisar", "📚 Per jurnal", "🧩 Tema"] + \
+                [f"{s['icon']} {s['title']}" for s in stages]
+    tabs = st.tabs(tab_names)
+    with tabs[0]:
+        payloads = {s["key"]: stage_result_payload(active, s["key"])[1] for s in stages}
+        render_overview_charts(stages, payloads, events)
+    with tabs[1]:
+        render_journal_crosstab(active)
+    with tabs[2]:
+        render_theme_browser(active)
+    for tab, stage in zip(tabs[3:], stages):
         with tab:
             render_stage_body(active, stage, events)
 

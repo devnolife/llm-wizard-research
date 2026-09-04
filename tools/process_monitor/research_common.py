@@ -183,6 +183,32 @@ def fetch_records(job_id: str, phase: str, q: str = "", filters: dict | None = N
         return {"error": str(exc)}
 
 
+@st.cache_data(ttl=120, show_spinner="Memuat data lengkap…")
+def fetch_all_records(job_id: str, collection: str, max_rows: int = 5000) -> list[dict]:
+    """Seluruh record satu koleksi (dipaginasi 500), untuk tabel silang & grafik.
+
+    Kosong bila koleksi tidak ada pada job ini (job lama) — pemanggil yang
+    memutuskan apakah itu perlu dijelaskan ke pengguna.
+    """
+    rows: list[dict] = []
+    offset = 0
+    while offset < max_rows:
+        page = fetch_records(job_id, collection, offset=offset, limit=500)
+        if page.get("error"):
+            break
+        batch = page.get("records") or []
+        rows.extend(batch)
+        offset += len(batch)
+        if len(batch) < 500 or offset >= page.get("total", 0):
+            break
+    return rows
+
+
+def collection_available(job_id: str, collection: str) -> bool:
+    """True bila job ini menulis berkas koleksi tersebut (bukan job lama)."""
+    return not fetch_records(job_id, collection, limit=1).get("error")
+
+
 @st.cache_data(ttl=60)
 def fetch_stage_source(stage_key: str) -> dict:
     try:

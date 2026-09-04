@@ -25,6 +25,7 @@ pages = {
     "Penelitian": [
         st.Page("page_research_wizard.py", title="Analisis Penelitian", icon="🔬",
                 default=True),
+        st.Page("page_research_compare.py", title="Bandingkan Dua Analisis", icon="⚖️"),
         st.Page("page_research_source.py", title="Teks Sumber Jurnal", icon="📖"),
         st.Page("page_research_raw.py", title="Log & Artefak", icon="🧾"),
     ],

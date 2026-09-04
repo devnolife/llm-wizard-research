@@ -168,6 +168,29 @@ FIELD_LABELS: dict[str, tuple[str, str]] = {
     "year": ("tahun", ""),
     "language": ("bahasa", ""),
     "extraction_quality": ("kualitas ekstraksi", ""),
+    # jejak kandidat
+    "seq": ("nomor kandidat", "Urutan kandidat (per jurnal, per posisi chunk)."),
+    "matched_phrases": ("pola kata cocok", "Kata kunci gap yang ditemukan di chunk ini."),
+    "context_chars": ("panjang konteks", "Karakter yang dikirim ke LLM: chunk ini plus satu "
+                                          "chunk sebelum & sesudahnya."),
+    "llm_answered": ("LLM menjawab?", "False = panggilan tidak dijawab (gagal sistem), bukan "
+                                       "'tidak ada gap'."),
+    "response": ("balasan mentah LLM", "Teks apa adanya yang dikembalikan model."),
+    "gap_mentah": ("gap mentah", "Gap yang ter-parse dari balasan, sebelum verifikasi."),
+    "gap_lolos": ("lolos verbatim", ""),
+    "gap_final": ("gap final", "Lolos verbatim dan bukan duplikat."),
+    "lolos_verifikasi": ("lolos verbatim?", ""),
+    "duplikat": ("duplikat?", ""),
+    "model": ("model", ""),
+    # tema
+    "journal_support": ("jurnal pendukung", "Batas atas, bukan bukti kesepakatan."),
+    "journals": ("jurnal", ""),
+    "size": ("anggota", ""),
+    "priority": ("skor rata-rata anggota", ""),
+    "top_priority": ("skor tertinggi anggota", ""),
+    "topics": ("topik anggota", ""),
+    "match_score": ("skor kecocokan paper", "Porsi kata kunci gap yang muncul di judul+abstrak "
+                                             "paper; ≥0,5 dihitung 'kuat'."),
 }
 
 # Istilah umum untuk glosarium per tahap.
@@ -184,6 +207,10 @@ GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("gap penelitian", "Keterbatasan, kekurangan, atau saran lanjutan yang disebut "
                            "penulis jurnal sendiri."),
         ("kandidat", "Chunk yang dipilih untuk dibaca LLM karena kemungkinan besar memuat gap."),
+        ("alasan kandidat", "section:conclusion/discussion = bagian kesimpulan/diskusi; phrase = "
+                            "memuat kata seperti 'limitation'/'keterbatasan'; abstract, "
+                            "introduction, tail = aturan cadangan agar jurnal tanpa struktur "
+                            "tetap terbaca."),
         ("verbatim", "Kata demi kata. Kalimat gap harus tersalin persis dari jurnal, bukan "
                      "diringkas atau dikarang."),
         ("halusinasi", "Kalimat yang dikarang LLM padahal tidak ada di sumber. Tahap "
