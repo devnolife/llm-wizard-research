@@ -512,30 +512,58 @@ def stage_gap_mining(
 
     traced = {"n": 0, "calls": 0, "empty": 0}
     trace_lock = threading.Lock()
-
-    def _generate(prompt: str, system: str) -> Optional[str]:
-        result = copilot_client.generate(prompt, system=system, json_mode=True)
-        text = result[0] if result else None
-        with trace_lock:
-            traced["calls"] += 1
-            if not text:
-                traced["empty"] += 1
-            keep = traced["n"] < llm_trace_limit
-            if keep:
-                traced["n"] += 1
-                seq = traced["n"]
-        if keep:
-            add_stage_artifact(job_id, "gap_mining", "llm", f"kandidat {seq}", {
-                "prompt": prompt,
-                "response": text or "",
-                "model": result[1] if result else "",
-                "system": system,
-            })
-        return text
+    # Jejak per kandidat: chunk mana dibaca → LLM menjawab apa → gap apa yang
+    # ter-parse. Dianotasi hasil verifikasi & dedup di bawah, lalu ditulis ke JSONL
+    # agar UI bisa menelusuri rantai lengkapnya untuk SEMUA kandidat (jejak DB
+    # hanya menyimpan prompt/balasan 15 pertama).
+    cand_trace: List[Dict[str, Any]] = []
 
     def _work(cand: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return extract_gaps_from_candidate(
-            cand, with_context(cand, by_source), generate_fn=_generate)
+        captured: Dict[str, Any] = {"response": None, "model": ""}
+
+        def _generate(prompt: str, system: str) -> Optional[str]:
+            result = copilot_client.generate(prompt, system=system, json_mode=True)
+            text = result[0] if result else None
+            captured["response"], captured["model"] = text, (result[1] if result else "")
+            with trace_lock:
+                traced["calls"] += 1
+                if not text:
+                    traced["empty"] += 1
+                keep = traced["n"] < llm_trace_limit
+                if keep:
+                    traced["n"] += 1
+                    seq = traced["n"]
+            if keep:
+                add_stage_artifact(job_id, "gap_mining", "llm", f"kandidat {seq}", {
+                    "prompt": prompt,
+                    "response": text or "",
+                    "model": captured["model"],
+                    "system": system,
+                    "source": cand.get("source"),
+                    "chunk_id": cand.get("chunk_id"),
+                    "candidate_reason": cand.get("candidate_reason"),
+                })
+            return text
+
+        context = with_context(cand, by_source)
+        gaps = extract_gaps_from_candidate(cand, context, generate_fn=_generate)
+        with trace_lock:
+            cand_trace.append({
+                "source": cand.get("source"),
+                "paper_title": cand.get("paper_title"),
+                "chunk_id": cand.get("chunk_id"),
+                "chunk_index": cand.get("chunk_index"),
+                "section_normalized": cand.get("section_normalized"),
+                "token_count": cand.get("token_count"),
+                "candidate_reason": cand.get("candidate_reason"),
+                "matched_phrases": cand.get("matched_phrases") or [],
+                "context_chars": len(context),
+                "llm_answered": bool(captured["response"]),
+                "model": captured["model"],
+                "response": captured["response"] or "",
+                "_gaps": gaps,  # referensi objek; dianotasi setelah verifikasi
+            })
+        return gaps
 
     raw_gaps: List[Dict[str, Any]] = []
     done = 0
@@ -593,6 +621,31 @@ def stage_gap_mining(
         sub.done(keluar=len(gaps), dibuang=len(duplicates))
     journals = len({g["source"] for g in gaps})
 
+    # Anotasi jejak kandidat dengan nasib tiap gap-nya. verify_gaps menulis
+    # grounding_score in-place, jadi objek gap yang sama sudah membawa skornya.
+    dup_ids = {id(g) for g in duplicates}
+    cand_trace.sort(key=lambda t: (str(t.get("source")), t.get("chunk_index") or 0))
+    for seq, trace in enumerate(cand_trace, 1):
+        trace["seq"] = seq
+        gap_rows = []
+        for g in trace.pop("_gaps"):
+            gap_rows.append({
+                "gap_statement": g.get("gap_statement"),
+                "gap_type": g.get("gap_type"),
+                "topic": g.get("topic"),
+                "gap_paraphrase": g.get("gap_paraphrase"),
+                "grounding_score": g.get("grounding_score"),
+                "lolos_verifikasi": id(g) in kept_ids,
+                "duplikat": id(g) in dup_ids,
+            })
+        trace["gaps"] = gap_rows
+        trace["gap_mentah"] = len(gap_rows)
+        trace["gap_lolos"] = sum(1 for r in gap_rows if r["lolos_verifikasi"])
+        trace["gap_final"] = sum(1 for r in gap_rows
+                                 if r["lolos_verifikasi"] and not r["duplikat"])
+    candidates_path = Path(out_path).with_name(f"candidates_{Path(out_path).stem}.jsonl")
+    write_jsonl(str(candidates_path), cand_trace)
+
     meta = {
         "record": "meta", "job_id": job_id,
         "diekspor_pada": datetime.now().isoformat(timespec="seconds"),
@@ -627,7 +680,8 @@ def stage_gap_mining(
             "jurnal_bergap": journals,
         },
         samples=[_gap_row(g) for g in gaps[:SAMPLE_ROWS]],
-        outputs={"gaps_jsonl": str(out_path), "gaps_raw_jsonl": raw_path},
+        outputs={"gaps_jsonl": str(out_path), "gaps_raw_jsonl": raw_path,
+                 "candidates_jsonl": str(candidates_path)},
         substep_samples={
             # Skor terendah dulu: itulah kandidat halusinasi yang paling jelas.
             "verifikasi_gugur": [

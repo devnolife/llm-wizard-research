@@ -455,6 +455,63 @@ class TestGapMiningKeepsWhatItDiscards:
         assert any("duplikat" in m for m in seen)
 
 
+class TestCandidateTraceIsPersisted:
+    """Rantai chunk → LLM → gap → verifikasi harus bisa ditelusuri untuk SEMUA
+    kandidat, bukan hanya 15 yang prompt-nya disimpan di basis data."""
+
+    _REAL = ("Penelitian ini masih terbatas pada satu institusi sehingga generalisasi "
+             "hasil perlu diuji ulang pada konteks yang berbeda.")
+    _FAKE = "Kalimat ini tidak pernah ada di dalam jurnal mana pun sama sekali."
+
+    def _run(self, monkeypatch, reply):
+        job_store.save_job("ct", {"status": "running", "progress": 0})
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", _llm_stub(reply))
+        out = stage_gap_mining("ct", _chunks_file(SCRATCH / "chunks.jsonl"),
+                               SCRATCH / "gaps.jsonl", workers=1)
+        return out, read_jsonl(out.outputs["candidates_jsonl"])
+
+    def test_one_record_per_candidate_with_chunk_and_reason(self, monkeypatch):
+        out, rows = self._run(monkeypatch, "[]")
+        assert out.metrics["kandidat"] == len(rows) == 1
+        row = rows[0]
+        assert row["chunk_id"] == "a::1" and row["source"] == "a.pdf"
+        assert "section:conclusion" in row["candidate_reason"]
+        assert row["llm_answered"] is True and row["model"] == "model-uji"
+        assert row["seq"] == 1 and row["context_chars"] > 0
+
+    def test_each_parsed_gap_carries_its_verification_fate(self, monkeypatch):
+        reply = (f'[{{"gap_type":"stated_limitation","gap_statement":"{self._REAL}","topic":"other"}},'
+                 f'{{"gap_type":"stated_limitation","gap_statement":"{self._REAL.upper()}","topic":"other"}},'
+                 f'{{"gap_type":"implicit_gap","gap_statement":"{self._FAKE}","topic":"other"}}]')
+        _, rows = self._run(monkeypatch, reply)
+        gaps = rows[0]["gaps"]
+        fate = {g["gap_statement"][:20]: (g["lolos_verifikasi"], g["duplikat"]) for g in gaps}
+        assert fate[self._REAL[:20]] == (True, False)
+        assert fate[self._REAL.upper()[:20]] == (True, True)
+        assert fate[self._FAKE[:20]] == (False, False)
+        assert all(g["grounding_score"] is not None for g in gaps)
+        assert (rows[0]["gap_mentah"], rows[0]["gap_lolos"], rows[0]["gap_final"]) == (3, 2, 1)
+
+    def test_raw_llm_response_is_kept_for_audit(self, monkeypatch):
+        _, rows = self._run(monkeypatch, "[]")
+        assert rows[0]["response"] == "[]"
+
+    def test_unanswered_call_is_marked(self, monkeypatch):
+        job_store.save_job("ct2", {"status": "running", "progress": 0})
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate",
+                            lambda *a, **k: None)
+        out = stage_gap_mining("ct2", _chunks_file(SCRATCH / "chunks.jsonl"),
+                               SCRATCH / "gaps.jsonl", workers=1)
+        rows = read_jsonl(out.outputs["candidates_jsonl"])
+        assert rows[0]["llm_answered"] is False and rows[0]["gaps"] == []
+
+    def test_db_llm_trace_links_back_to_its_candidate(self, monkeypatch):
+        self._run(monkeypatch, "[]")
+        llm = [a for a in job_store.get_stage_artifacts("ct", "gap_mining") if a["kind"] == "llm"]
+        assert llm and llm[0]["payload"]["chunk_id"] == "a::1"
+        assert llm[0]["payload"]["source"] == "a.pdf"
+
+
 class TestSilentLLMOutageIsNotAFinding:
     """copilotd mati/401 membuat generate() mengembalikan None tanpa galat;
     ekstraksi lalu menghasilkan 0 gap yang tampak sah. Terjadi nyata 4 Sep 2026:

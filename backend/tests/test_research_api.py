@@ -173,6 +173,31 @@ class TestRecordEndpoints:
         detail = client.get(f"/api/research/{self.JOB}/records/novelty").json()["detail"]
         assert "belum selesai" in detail.lower()
 
+    def test_side_collections_resolve_to_their_owning_stage(self):
+        """'candidates' & 'themes' bukan tahap; berkasnya ditulis gap_mining &
+        recommendation dan harus ditemukan lewat artefak tahap pemilik itu."""
+        cands = SCRATCH / "candidates.jsonl"
+        cands.write_text('{"seq":1,"source":"a.pdf","chunk_id":"a::0","candidate_reason":'
+                         '"section:conclusion","llm_answered":true,"gaps":[]}\n'
+                         '{"seq":2,"source":"b.pdf","chunk_id":"b::1","candidate_reason":'
+                         '"tail","llm_answered":false,"gaps":[]}\n', encoding="utf-8")
+        job_store.add_stage_artifact(self.JOB, "gap_mining", "result", "gap_mining", {
+            "outputs": {"gaps_jsonl": str(SCRATCH / "x.jsonl"), "candidates_jsonl": str(cands)}})
+        body = client.get(f"/api/research/{self.JOB}/records/candidates").json()
+        assert body["total"] == 2
+        assert body["facets"]["candidate_reason"] == ["section:conclusion", "tail"]
+        assert body["facets"]["llm_answered"] == ["False", "True"]
+        only = client.get(f"/api/research/{self.JOB}/records/candidates",
+                          params={"llm_answered": "False"}).json()
+        assert [r["source"] for r in only["records"]] == ["b.pdf"]
+
+    def test_themes_collection_missing_on_old_job_explains_rerun(self):
+        detail = client.get(f"/api/research/{self.JOB}/records/themes").json()["detail"]
+        assert "themes_jsonl" in detail and "jalankan ulang" in detail.lower()
+
+    def test_unknown_collection_is_rejected(self):
+        assert client.get(f"/api/research/{self.JOB}/records/bogus").status_code == 404
+
     def test_fulltext_lists_journals_with_chunk_counts(self):
         body = client.get(f"/api/research/{self.JOB}/fulltext").json()
         assert {j["source"]: j["chunks"] for j in body["journals"]} == {"a.pdf": 1, "b.pdf": 1}

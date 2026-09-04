@@ -33,21 +33,27 @@ from ...utils.upload_validation import sanitize_filename, write_validated_pdf_up
 
 router = APIRouter()
 
-# Berkas keluaran yang memuat data lengkap tiap tahap. Artefak di basis data
-# hanya menyimpan 8 baris contoh; UI membaca berkas ini untuk menampilkan semua.
-PHASE_RECORD_FILE = {
-    "chunking": "chunks_jsonl",
-    "gap_mining": "gaps_jsonl",
-    "novelty": "gaps_novelty_jsonl",
-    "recommendation": "proposals_jsonl",
+# Koleksi record yang bisa dibaca UI → (tahap pemilik artefak, kunci di outputs).
+# Artefak di basis data hanya menyimpan 8 baris contoh; berkas inilah yang lengkap.
+# Nama koleksi tidak selalu sama dengan tahap: ``candidates`` dan ``themes`` adalah
+# berkas samping yang ditulis tahap gap_mining dan recommendation.
+RECORD_SOURCES = {
+    "chunking": ("chunking", "chunks_jsonl"),
+    "gap_mining": ("gap_mining", "gaps_jsonl"),
+    "candidates": ("gap_mining", "candidates_jsonl"),
+    "novelty": ("novelty", "gaps_novelty_jsonl"),
+    "recommendation": ("recommendation", "proposals_jsonl"),
+    "themes": ("recommendation", "themes_jsonl"),
 }
 
 # Kolom yang boleh dipakai memfilter; daftar putih agar query sembarang ditolak.
 PHASE_FACETS = {
     "chunking": ("source", "section_normalized", "extraction_quality"),
     "gap_mining": ("source", "gap_type", "topic"),
+    "candidates": ("source", "section_normalized", "candidate_reason", "llm_answered"),
     "novelty": ("source", "novelty_status", "gap_type", "topic"),
     "recommendation": ("source", "topic", "band", "theme_id"),
+    "themes": ("journal_support",),
 }
 
 MAX_PAGE = 500
@@ -78,11 +84,11 @@ async def stage_source_code(stage_key: str):
     return {"stage": stage_key, "functions": stage_source(stage_key)}
 
 
-def _record_path(job_id: str, phase: str) -> Path:
-    """Berkas keluaran lengkap satu tahap, diambil dari artefak job."""
-    key = PHASE_RECORD_FILE.get(phase)
-    if key is None:
-        raise HTTPException(status_code=404, detail=f"Tahap tidak dikenal: {phase}")
+def _record_path(job_id: str, collection: str) -> Path:
+    """Berkas record lengkap satu koleksi, diambil dari artefak tahap pemiliknya."""
+    if collection not in RECORD_SOURCES:
+        raise HTTPException(status_code=404, detail=f"Koleksi tidak dikenal: {collection}")
+    phase, key = RECORD_SOURCES[collection]
     for art in reversed(get_stage_artifacts(job_id, phase)):
         if art.get("kind") != "result":
             continue
