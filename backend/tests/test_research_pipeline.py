@@ -17,7 +17,7 @@ from app.services.research_pipeline import (
     run_research_pipeline,
     stage_recommendation,
 )
-from app.core.pipeline.io import source_name, write_jsonl
+from app.core.pipeline.io import read_jsonl, source_name, write_jsonl
 from app.utils import job_store
 
 SCRATCH = Path(__file__).parent / ".scratch_research_pipeline"
@@ -453,6 +453,60 @@ class TestGapMiningKeepsWhatItDiscards:
         self._run(monkeypatch, "[]")
         assert any("Verifikasi verbatim" in m for m in seen)
         assert any("duplikat" in m for m in seen)
+
+
+class TestSilentLLMOutageIsNotAFinding:
+    """copilotd mati/401 membuat generate() mengembalikan None tanpa galat;
+    ekstraksi lalu menghasilkan 0 gap yang tampak sah. Terjadi nyata 4 Sep 2026:
+    lima job berturut-turut '100 kandidat → 0 gap' tanpa satu pun peringatan."""
+
+    def _run(self, monkeypatch, generate):
+        job_store.save_job("gm-out", {"status": "running", "progress": 0})
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", generate)
+        return stage_gap_mining("gm-out", _chunks_file(SCRATCH / "chunks.jsonl"),
+                                SCRATCH / "gaps.jsonl", workers=1)
+
+    def test_all_calls_unanswered_is_flagged_as_system_failure(self, monkeypatch):
+        out = self._run(monkeypatch, lambda *a, **k: None)
+        assert out.metrics["llm_dipanggil"] > 0
+        assert out.metrics["llm_tanpa_jawaban"] == out.metrics["llm_dipanggil"]
+        assert out.metrics["gap_mentah"] == 0
+        assert any("TIDAK MENJAWAB" in n and "BUKAN temuan" in n for n in out.notes)
+
+    def test_partial_outage_is_reported_with_counts(self, monkeypatch):
+        # Fixture bawaan hanya punya 1 kandidat; tambahkan jurnal kedua agar ada
+        # dua panggilan LLM dan salah satunya bisa gagal.
+        path = _chunks_file(SCRATCH / "chunks.jsonl")
+        records = read_jsonl(str(path))
+        records.append({"record": "chunk", "source": "b.pdf", "chunk_index": 0,
+                        "chunk_id": "b::0", "section_normalized": "conclusion",
+                        "token_count": 40, "is_reference": False, "text": _CONCLUSION})
+        write_jsonl(str(path), records)
+        calls = {"n": 0}
+
+        def flaky(prompt, system=None, json_mode=False, temperature=None):
+            calls["n"] += 1
+            return None if calls["n"] == 1 else ("[]", "model-uji")
+        job_store.save_job("gm-out", {"status": "running", "progress": 0})
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", flaky)
+        out = stage_gap_mining("gm-out", path, SCRATCH / "gaps.jsonl", workers=1)
+        assert calls["n"] == 2
+        assert out.metrics["llm_tanpa_jawaban"] == 1
+        assert out.metrics["llm_dipanggil"] == 2
+        assert any("1 dari 2" in n and "tidak dijawab" in n for n in out.notes)
+        assert not any("BUKAN temuan" in n for n in out.notes)
+
+    def test_healthy_llm_adds_no_outage_note(self, monkeypatch):
+        out = self._run(monkeypatch, _llm_stub("[]"))
+        assert out.metrics["llm_tanpa_jawaban"] == 0
+        assert not any("tidak dijawab" in n or "TIDAK MENJAWAB" in n for n in out.notes)
+
+    def test_unanswered_count_is_recorded_on_the_substep_event(self, monkeypatch):
+        self._run(monkeypatch, lambda *a, **k: None)
+        done = next(e for e in job_store.get_job_events("gm-out")
+                    if e["type"] == "substep.completed"
+                    and e["data"].get("substep") == "ekstrak_llm")
+        assert done["data"]["llm_tanpa_jawaban"] == done["data"]["masuk"]
 
 
 class TestSplitDuplicates:

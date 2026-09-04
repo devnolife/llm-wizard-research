@@ -87,10 +87,10 @@ RESEARCH_STAGES = [
 def _sub(key: str, label: str, teknis: str, penjelasan: str, *,
          masuk: Optional[str] = None, keluar: Optional[str] = None,
          dibuang: Optional[str] = None, contoh: Optional[str] = None,
-         dalam: Optional[str] = None) -> Dict[str, Any]:
+         dalam: Optional[str] = None, jenis: str = "saring") -> Dict[str, Any]:
     return {"key": key, "label": label, "label_teknis": teknis, "penjelasan": penjelasan,
             "in_metric": masuk, "out_metric": keluar, "drop_metric": dibuang,
-            "sample_key": contoh, "inside": dalam}
+            "sample_key": contoh, "inside": dalam, "jenis": jenis}
 
 
 # Peta proses tiap tahap: sumber kebenaran tunggal untuk UI. Kunci ``in/out/
@@ -101,6 +101,9 @@ def _sub(key: str, label: str, teknis: str, penjelasan: str, *,
 # ``inside`` menandai sub-langkah yang terjadi DI DALAM induknya per berkas/per
 # gap (mis. pengenalan seksi di dalam process_pdf) sehingga tidak punya event
 # sendiri; UI menampilkannya bersarang dan mewarisi status induk.
+#
+# ``jenis``: "saring" = keluar adalah yang lolos (corong masuk → keluar);
+# "periksa" = tidak ada yang dibuang, keluar adalah jumlah yang DITANDAI.
 SUBSTEPS: Dict[str, List[Dict[str, Any]]] = {
     "chunking": [
         _sub("proses_pdf", "Memproses tiap PDF satu per satu",
@@ -129,7 +132,7 @@ SUBSTEPS: Dict[str, List[Dict[str, Any]]] = {
              "check_corpus_relevance: cosine ke centroid korpus, ambang 0.50",
              "Tiap jurnal dibandingkan dengan yang lain; yang jauh berbeda "
              "ditandai sebagai peringatan, bukan ditolak.",
-             masuk="jurnal", keluar="jurnal_ditandai_tak_sedomain"),
+             masuk="jurnal", keluar="jurnal_ditandai_tak_sedomain", jenis="periksa"),
     ],
     "gap_mining": [
         _sub("pilih_kandidat", "Memilih bagian teks yang mungkin memuat gap",
@@ -506,13 +509,16 @@ def stage_gap_mining(
             if not c.get("is_reference") and matched_phrases(c.get("text", "")))
         sub.done(keluar=len(candidates), baseline_regex=regex_baseline)
 
-    traced = {"n": 0}
+    traced = {"n": 0, "calls": 0, "empty": 0}
     trace_lock = threading.Lock()
 
     def _generate(prompt: str, system: str) -> Optional[str]:
         result = copilot_client.generate(prompt, system=system, json_mode=True, temperature=0)
         text = result[0] if result else None
         with trace_lock:
+            traced["calls"] += 1
+            if not text:
+                traced["empty"] += 1
             keep = traced["n"] < llm_trace_limit
             if keep:
                 traced["n"] += 1
@@ -552,7 +558,21 @@ def stage_gap_mining(
             for fut in futures:
                 fut.cancel()
             raise
-        sub.done(keluar=len(raw_gaps))
+        sub.done(keluar=len(raw_gaps), llm_tanpa_jawaban=traced["empty"])
+
+    # LLM mati/tidak terautentikasi tidak melempar galat: generate() mengembalikan
+    # None dan ekstraksi diam-diam menghasilkan 0 gap. Tanpa peringatan ini,
+    # "100 kandidat → 0 gap" terbaca seperti hasil analisis yang sah.
+    llm_notes: List[str] = []
+    if traced["calls"] and traced["empty"] == traced["calls"]:
+        llm_notes.append(
+            f"LLM TIDAK MENJAWAB satu pun dari {traced['calls']} panggilan — hasil "
+            "0 gap ini BUKAN temuan, melainkan gagal sistem (copilotd/Copilot mati atau "
+            "autentikasi hilang). Perbaiki layanan LLM lalu jalankan ulang.")
+    elif traced["empty"]:
+        llm_notes.append(
+            f"{traced['empty']} dari {traced['calls']} panggilan LLM tidak dijawab; "
+            "cakupan gap di bawah normal. Pertimbangkan menjalankan ulang.")
 
     raw_path = str(out_path) + ".raw.jsonl"
     write_jsonl(raw_path, raw_gaps)
@@ -596,6 +616,8 @@ def stage_gap_mining(
             "chunk_masuk": len(chunks),
             "kandidat": len(candidates),
             "baseline_regex_saja": regex_baseline,
+            "llm_dipanggil": traced["calls"],
+            "llm_tanpa_jawaban": traced["empty"],
             "gap_mentah": len(raw_gaps),
             "lolos_verifikasi_verbatim": len(grounded),
             "gugur_di_verifikasi": len(rejected),
@@ -613,7 +635,8 @@ def stage_gap_mining(
             ],
             "dedup_dibuang": [_gap_row(g) for g in duplicates[:SAMPLE_ROWS]],
         },
-        notes=["Tiap gap_statement wajib muncul verbatim di chunk sumbernya; "
+        notes=llm_notes + [
+               "Tiap gap_statement wajib muncul verbatim di chunk sumbernya; "
                "yang di bawah ambang grounding dibuang sebagai dugaan halusinasi.",
                "Cakupan gap tidak reproducible penuh: dua run pada chunk identik "
                "hanya ~75% tumpang tindih."],
