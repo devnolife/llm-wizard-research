@@ -15,8 +15,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 EXEMPT_PATHS = {"/health", "/api/system-stats"}
-# GET polling endpoints (status/events/artifacts/daftar job) — mutasi tetap dibatasi.
-EXEMPT_GET_PREFIXES = ("/api/analysis-status/", "/api/analysis-jobs")
+# GET polling endpoints (status/events/artifacts/daftar job/record penelitian) —
+# mutasi (POST /api/research/start, cancel) tetap dibatasi.
+EXEMPT_GET_PREFIXES = ("/api/analysis-status/", "/api/analysis-jobs", "/api/research/")
 
 
 def _is_exempt(request: Request) -> bool:

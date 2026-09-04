@@ -19,6 +19,7 @@ st.set_page_config(
 
 st.session_state.setdefault("api_base", DEFAULT_API)
 st.session_state.setdefault("auto_refresh", True)
+st.session_state.setdefault("mode_teknis", False)
 
 pages = {
     "Penelitian": [
@@ -47,6 +48,9 @@ with st.sidebar:
     if job_id := st.session_state.get("research_job_id"):
         st.caption(f"Analisis aktif: `{job_id[:8]}…`")
     st.info("Mulai dari **🔬 Analisis Penelitian**. Menu lain hanya pelengkap.")
+    st.toggle("🔬 Mode teknis", key="mode_teknis",
+              help="Tampilkan nama kunci asli (gap_type, priority_score, …) seperti di "
+                   "kode dan BAB III, bukan bahasa awam.")
     with st.expander("⚙️ Pengaturan", expanded=False):
         st.text_input("API backend", key="api_base")
         st.toggle("Auto-refresh saat berjalan", key="auto_refresh")

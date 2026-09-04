@@ -15,6 +15,7 @@ import requests
 import streamlit as st
 
 from common import api_base, fetch_artifacts, fetch_events, fmt_duration
+from research_vocab import ENUM_LABELS, enum_help, enum_label, help_of, label
 
 # Dipakai bila backend tak terjangkau; kunci harus sama dengan RESEARCH_STAGES.
 FALLBACK_STAGES = [
@@ -95,10 +96,20 @@ def research_jobs(limit: int = 30) -> list[dict]:
         return []
 
 
-def stage_states(job_id: str) -> dict[str, dict]:
-    """Status tiap tahap diturunkan dari event phase.* milik job."""
-    payload = fetch_events(job_id) or {}
-    events = payload.get("events") or []
+def job_events(job_id: str) -> list[dict]:
+    """Semua event job; [] bila backend sedang tak terjangkau (bukan sentinel str)."""
+    payload = fetch_events(job_id)
+    return (payload.get("events") or []) if isinstance(payload, dict) else []
+
+
+def stage_states(job_id: str, events: list[dict] | None = None) -> dict[str, dict]:
+    """Status tiap tahap diturunkan dari event phase.* milik job.
+
+    ``events`` boleh diberikan agar pemanggil yang sudah mengambilnya (fragment
+    live) tidak memanggil backend dua kali.
+    """
+    if events is None:
+        events = job_events(job_id)
     states: dict[str, dict] = {}
     for ev in events:
         phase, kind = ev.get("phase"), ev.get("type")
@@ -116,6 +127,28 @@ def stage_states(job_id: str) -> dict[str, dict]:
             entry["error"] = (ev.get("data") or {}).get("error")
         elif kind == "phase.cancelled":
             entry["state"] = "cancelled"
+            entry["duration_ms"] = ev.get("duration_ms")
+    return states
+
+
+def substep_states(events: list[dict], phase: str) -> dict[str, dict]:
+    """Status sub-langkah satu tahap dari event substep.*: pending/running/done/error
+    beserta angka masuk/keluar/dibuang yang dicatat backend."""
+    states: dict[str, dict] = {}
+    for ev in events:
+        if ev.get("phase") != phase or not str(ev.get("type")).startswith("substep."):
+            continue
+        data = ev.get("data") or {}
+        key = data.get("substep")
+        if not key:
+            continue
+        entry = states.setdefault(key, {"state": "pending"})
+        entry.update({k: v for k, v in data.items() if k != "substep"})
+        if ev["type"] == "substep.started":
+            entry["state"] = "running"
+            entry["started_at"] = ev.get("created_at")
+        elif ev["type"] == "substep.completed":
+            entry["state"] = "error" if data.get("error") else "done"
             entry["duration_ms"] = ev.get("duration_ms")
     return states
 
@@ -219,11 +252,17 @@ def _render_metrics(metrics: dict[str, Any]) -> None:
     items = list(scalars.items())
     for start in range(0, len(items), 4):
         for col, (key, value) in zip(st.columns(4), items[start:start + 4]):
-            col.metric(key.replace("_", " "), value)
+            col.metric(label(key), value, help=help_of(key))
     for key, value in metrics.items():
         if isinstance(value, dict) and value:
-            st.caption(key.replace("_", " "))
+            st.caption(label(key))
             _render_table([{"kunci": k, "jumlah": v} for k, v in value.items()])
+
+
+def _display_value(field: str, value: Any) -> str:
+    if field in ENUM_LABELS:
+        return enum_label(field, value)
+    return str(value)
 
 
 def _render_record(rec: dict) -> None:
@@ -235,17 +274,26 @@ def _render_record(rec: dict) -> None:
     nested = {k: v for k, v in rec.items() if isinstance(v, (dict, list)) and v}
 
     for field, value in longs.items():
-        st.caption(field.replace("_", " "))
+        st.caption(label(field), help=help_of(field))
         st.markdown(f"> {value}".replace("\n", "\n> "))
     if shorts:
-        _render_table([{"kolom": k, "nilai": str(v)} for k, v in shorts.items()])
+        rows = []
+        for k, v in shorts.items():
+            note = enum_help(k, v) if k in ENUM_LABELS else (help_of(k) or "")
+            rows.append({"kolom": label(k), "nilai": _display_value(k, v), "arti": note})
+        _render_table(rows)
     for field, value in nested.items():
-        with st.expander(f"{field.replace('_', ' ')} ({len(value)})", expanded=False):
+        with st.expander(f"{label(field)} ({len(value)})", expanded=False):
             st.json(value)
 
 
-def render_records_tab(job_id: str, phase: str) -> None:
-    """Semua record tahap ini, bisa dicari dan difilter — bukan 8 sampel."""
+def render_records_tab(job_id: str, phase: str, trace=None) -> None:
+    """Semua record tahap ini, bisa dicari dan difilter — bukan 8 sampel.
+
+    ``trace(rec, phase, job_id)`` opsional: bagian jejak di bawah tiap record
+    (chunk sumber, putusan kebaruan, rincian skor) — disuplai research_flow
+    agar modul ini tidak mengimpornya balik.
+    """
     probe = fetch_records(job_id, phase, limit=1)
     if probe.get("error"):
         st.warning(probe["error"])
@@ -258,7 +306,9 @@ def render_records_tab(job_id: str, phase: str) -> None:
     filters: dict[str, str] = {}
     for col, field in zip(cols[1:], PHASE_FACETS.get(phase, ())):
         options = [SEMUA] + facets.get(field, [])
-        filters[field] = col.selectbox(field.replace("_", " "), options, key=f"f_{phase}_{field}")
+        filters[field] = col.selectbox(
+            label(field), options, key=f"f_{phase}_{field}",
+            format_func=lambda v, f=field: v if v == SEMUA else _display_value(f, v))
 
     per_page = st.select_slider("Baris per halaman", [10, 25, 50, 100], value=25,
                                 key=f"pp_{phase}")
@@ -280,22 +330,33 @@ def render_records_tab(job_id: str, phase: str) -> None:
     for rec in records:
         with st.expander(titler(rec), expanded=False):
             _render_record(rec)
+            if trace is not None:
+                trace(rec, phase, job_id)
 
-    st.download_button(
-        "⬇️ Unduh hasil filter (JSON)",
-        json.dumps(fetch_records(job_id, phase, query, filters, 0, 500).get("records", []),
-                   ensure_ascii=False, indent=2),
-        file_name=f"{phase}_{job_id[:8]}.json", mime="application/json",
-        key=f"dl_{phase}", help="Maksimal 500 record pertama dari hasil filter.")
+    # Dua langkah: mengambil 500 record pada setiap rerun hanya untuk mengisi
+    # tombol unduh terlalu boros, padahal jarang dipakai.
+    dl_key = f"dl_{phase}_{job_id[:8]}_{query}_{sorted(filters.items())}"
+    if st.button("⬇️ Siapkan unduhan hasil filter (JSON, maks 500)", key=f"prep_{phase}"):
+        st.session_state[dl_key] = json.dumps(
+            fetch_records(job_id, phase, query, filters, 0, 500).get("records", []),
+            ensure_ascii=False, indent=2)
+    if dl_key in st.session_state:
+        st.download_button("💾 Unduh sekarang", st.session_state[dl_key],
+                           file_name=f"{phase}_{job_id[:8]}.json", mime="application/json",
+                           key=f"dl_{phase}")
 
 
-def render_source_tab(stage_key: str) -> None:
+def render_source_tab(stage_key: str, substeps: list[dict] | None = None) -> None:
     """Kode Python yang benar-benar dieksekusi tahap ini."""
     data = fetch_stage_source(stage_key)
     if data.get("error"):
         st.warning(f"Kode sumber tak terbaca: {data['error']}")
         return
     functions = data.get("functions") or []
+    if substeps:
+        st.markdown("**Sub-langkah → fungsi yang menjalankannya**")
+        _render_table([{"sub-langkah": s["label"], "implementasi": s["label_teknis"]}
+                       for s in substeps])
     st.caption("Diambil langsung dari modul yang berjalan lewat `inspect`, "
                "jadi selalu sama dengan kode yang dieksekusi.")
     for fn in functions:
@@ -306,55 +367,20 @@ def render_source_tab(stage_key: str) -> None:
         st.code(fn["source"], language="python")
 
 
-def render_stage_body(job_id: str, stage_key: str) -> None:
-    """Isi satu tahap: ringkasan, seluruh record, dan kode yang dijalankan."""
-    info = stage_states(job_id).get(stage_key, {})
-    state = info.get("state", "pending")
-    if state == "pending":
-        st.info("Tahap ini belum berjalan.")
-        return
-    if state == "running":
-        st.warning("Tahap ini sedang berjalan — hasil detail muncul setelah selesai.")
-    if state == "failed":
-        st.error(f"Tahap gagal: {info.get('error', 'tidak diketahui')}")
-    if state == "cancelled":
-        st.warning("Tahap ini dihentikan oleh pembatalan; datanya tidak lengkap.")
-
-    tab_ringkas, tab_data, tab_kode = st.tabs(
-        ["📊 Ringkasan", "🗂️ Data lengkap", "💻 Kode & rumus"])
-    with tab_ringkas:
-        _render_summary(job_id, stage_key)
-    with tab_data:
-        render_records_tab(job_id, stage_key)
-    with tab_kode:
-        render_source_tab(stage_key)
-
-
-def _render_summary(job_id: str, stage_key: str) -> None:
-    """Angka ringkas, parameter, contoh, jejak LLM, dan berkas keluaran."""
+def stage_result_payload(job_id: str, stage_key: str) -> tuple[dict, dict]:
+    """(artefak per jenis, payload result terakhir) satu tahap."""
     arts = stage_artifacts(job_id, stage_key)
     results = arts.get("result") or []
-    if not results:
-        st.info("Belum ada hasil detail untuk tahap ini.")
-        return
-    payload = results[-1].get("payload") or {}
+    payload = (results[-1].get("payload") or {}) if results else {}
+    return arts, payload
 
-    if payload.get("duration_ms") is not None:
-        st.caption(f"⏱️ Durasi tahap: **{fmt_duration(payload['duration_ms'])}**")
 
-    if payload.get("metrics"):
-        st.subheader("📊 Metrik")
-        _render_metrics(payload["metrics"])
-
+def render_stage_extras(arts: dict, payload: dict) -> None:
+    """Parameter, rincian per berkas, jejak LLM, catatan, dan berkas keluaran."""
     if payload.get("params"):
-        with st.expander("⚙️ Parameter yang dipakai", expanded=False):
+        with st.expander("⚙️ Parameter run ini", expanded=False):
             _render_table([{"parameter": k, "nilai": str(v)}
                            for k, v in payload["params"].items()])
-
-    if payload.get("samples"):
-        st.subheader("🔍 Contoh hasil")
-        st.caption("Cuplikan cepat. Semua record ada di tab **🗂️ Data lengkap**.")
-        _render_table(payload["samples"])
 
     if arts.get("extraction"):
         with st.expander(f"📄 Rincian per berkas ({len(arts['extraction'])})", expanded=False):
@@ -362,7 +388,8 @@ def _render_summary(job_id: str, stage_key: str) -> None:
                 p = art.get("payload") or {}
                 samples = p.get("sample_chunks") or []
                 st.markdown(f"**{p.get('file')}** · {p.get('chunks')} chunk · "
-                            f"{p.get('pages')} halaman · kualitas `{p.get('extraction_quality')}`")
+                            f"{p.get('pages')} halaman · kualitas "
+                            f"{enum_label('extraction_quality', p.get('extraction_quality'))}")
                 _render_table([{k: v for k, v in p.items() if k != "sample_chunks"}])
                 for chunk in samples:
                     st.caption(f"chunk #{chunk.get('chunk_index')} · {chunk.get('section')} "
@@ -383,11 +410,18 @@ def _render_summary(job_id: str, stage_key: str) -> None:
                 st.divider()
 
     if payload.get("notes"):
-        st.subheader("⚠️ Catatan & keterbatasan")
+        st.markdown("**⚠️ Catatan & keterbatasan**")
         for note in payload["notes"]:
-            st.warning(note)
+            # Catatan gagal-sistem dari backend diawali huruf kapital penuh;
+            # harus mencolok agar "0 gap" tidak dibaca sebagai temuan.
+            (st.error if "TIDAK MENJAWAB" in note or "BUKAN temuan" in note
+             else st.warning)(note)
 
     if payload.get("outputs"):
-        st.subheader("📦 Berkas keluaran")
-        for label, path in payload["outputs"].items():
-            st.code(f"{label}: {path}", language="text")
+        with st.expander("📦 Berkas keluaran", expanded=False):
+            for name, path in payload["outputs"].items():
+                st.code(f"{name}: {path}", language="text")
+
+
+def render_metrics_grid(metrics: dict[str, Any]) -> None:
+    _render_metrics(metrics)

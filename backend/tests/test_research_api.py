@@ -209,7 +209,15 @@ class TestStagesCarryProcessMap:
             assert stage["constants"], stage["key"]
             for sub in stage["substeps"]:
                 assert {"key", "label", "label_teknis", "penjelasan", "in_metric",
-                        "out_metric", "drop_metric", "sample_key", "inside"} <= set(sub)
+                        "out_metric", "drop_metric", "sample_key", "inside", "jenis"} <= set(sub)
+                assert sub["jenis"] in ("saring", "periksa"), sub["key"]
+
+    def test_coherence_check_is_an_inspection_not_a_filter(self):
+        """UI menampilkan 'diperiksa N · ditandai M', bukan corong '10 → 0'."""
+        chunking = next(s for s in client.get("/api/research/stages").json()["stages"]
+                        if s["key"] == "chunking")
+        cek = next(u for u in chunking["substeps"] if u["key"] == "cek_koherensi")
+        assert cek["jenis"] == "periksa"
 
     def test_recommendation_constants_expose_the_formula_weights(self):
         rec = next(s for s in client.get("/api/research/stages").json()["stages"]
