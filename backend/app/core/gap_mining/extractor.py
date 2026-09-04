@@ -52,9 +52,10 @@ TEXT:
 
 
 def _default_generate(prompt: str, system: str) -> Optional[str]:
-    # temperature=0 mengurangi (TIDAK menghilangkan) variasi antar-run: kandidat
-    # yang sama masih bisa menghasilkan 0 atau 2 gap. Cakupan gap perlu multi-run.
-    result = copilot_client.generate(prompt, system=system, json_mode=True, temperature=0)
+    # Copilot tidak mengekspos temperature (copilotd dulu pun membuang field ini
+    # tanpa meneruskannya), jadi variasi antar-run tidak bisa ditekan dari sini:
+    # kandidat yang sama bisa menghasilkan 0 atau 2 gap. Cakupan gap perlu multi-run.
+    result = copilot_client.generate(prompt, system=system, json_mode=True)
     return result[0] if result else None
 
 

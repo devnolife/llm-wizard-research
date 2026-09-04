@@ -25,7 +25,7 @@ from loguru import logger
 
 from dotenv import load_dotenv
 
-load_dotenv()  # pick up COPILOTD_URL etc. for the CLI process
+load_dotenv()  # pick up COPILOT_* etc. for the CLI process
 
 from app.core.gap_mining.candidates import matched_phrases, select_candidates, with_context
 from app.core.gap_mining.extractor import extract_gaps_from_candidate

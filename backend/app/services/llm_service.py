@@ -39,9 +39,9 @@ class ModelConfig:
     # Max worker threads for generate_batch(). Should be <= Ollama's
     # OLLAMA_NUM_PARALLEL so requests actually run concurrently server-side.
     max_parallel: int = int(os.getenv("OLLAMA_NUM_PARALLEL", "4"))
-    # Text-generation engine: "copilot" (GitHub Copilot via copilotd) or
+    # Text-generation engine: "copilot" (GitHub Copilot via Copilot SDK) or
     # "ollama" (local). Empty = auto: env LLM_ENGINE, else "copilot" whenever
-    # copilotd is configured (COPILOTD_URL), else "ollama".
+    # the SDK is installed and not disabled (COPILOT_DISABLED), else "ollama".
     engine: str = ""
 
 
@@ -155,7 +155,7 @@ class GLMInterface:
         if not engine:
             engine = "copilot" if copilot_client.is_configured() else "ollama"
         if engine == "copilot" and not copilot_client.is_configured():
-            logger.warning("LLM_ENGINE=copilot but COPILOTD_URL is empty — using Ollama")
+            logger.warning("LLM_ENGINE=copilot but Copilot SDK is unavailable or disabled — using Ollama")
             engine = "ollama"
         self.engine = engine
 
@@ -170,7 +170,7 @@ class GLMInterface:
 
     @staticmethod
     def _copilot_model() -> str:
-        return (os.getenv("COPILOTD_MODEL") or copilot_client.DEFAULT_MODEL).strip()
+        return (os.getenv("COPILOT_MODEL") or copilot_client.DEFAULT_MODEL).strip()
 
     @staticmethod
     def _copilot_strict() -> bool:
@@ -422,9 +422,9 @@ class GLMInterface:
         return results
     
     def _copilot_complete(self, messages: List[Dict], format: Optional[str] = None) -> Optional[str]:
-        """Generate via copilotd (GitHub Copilot) with bounded retries.
+        """Generate via Copilot SDK (GitHub Copilot) with bounded retries.
 
-        Returns the generated text, or None when copilotd is unavailable and
+        Returns the generated text, or None when Copilot is unavailable and
         strict mode is off (caller then falls back to local Ollama). In strict
         mode (COPILOT_STRICT=1, default) unavailability raises instead, so
         results are guaranteed to come from the Copilot model.
@@ -453,18 +453,18 @@ class GLMInterface:
                 )
             if result:
                 text, model_id = result
-                logger.info(f"copilotd ({model_id}) answered in {time.time() - start_time:.2f}s")
+                logger.info(f"Copilot ({model_id}) answered in {time.time() - start_time:.2f}s")
                 return text
             if attempt < attempts - 1:
                 delay = self._COPILOT_RETRY_DELAYS[attempt]
                 logger.warning(
-                    f"copilotd attempt {attempt + 1}/{attempts} failed; retrying in {delay}s"
+                    f"Copilot attempt {attempt + 1}/{attempts} failed; retrying in {delay}s"
                 )
                 time.sleep(delay)
 
         if self._copilot_strict():
             raise RuntimeError(
-                "copilotd unavailable after retries and COPILOT_STRICT is on — "
+                "Copilot unavailable after retries and COPILOT_STRICT is on — "
                 "refusing to fall back to local Ollama"
             )
         return None
@@ -475,7 +475,7 @@ class GLMInterface:
             text = self._copilot_complete(messages, format=format)
             if text is not None:
                 return text
-            logger.warning("copilotd unavailable — falling back to local Ollama for this request")
+            logger.warning("Copilot unavailable — falling back to local Ollama for this request")
 
         start_time = time.time()
         
@@ -522,12 +522,12 @@ class GLMInterface:
     def _generate_stream(self, messages: List[Dict], options: Dict) -> Generator[str, None, None]:
         """Generate streaming response"""
         if self.engine == "copilot":
-            # copilotd has no streaming endpoint — emit the full answer once.
+            # Copilot SDK path is non-streaming here — emit the full answer once.
             text = self._copilot_complete(messages)
             if text is not None:
                 yield text
                 return
-            logger.warning("copilotd unavailable — streaming via local Ollama for this request")
+            logger.warning("Copilot unavailable — streaming via local Ollama for this request")
 
         for attempt in range(self._MAX_TRANSIENT_RETRIES + 1):
             yielded_content = False

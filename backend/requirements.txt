@@ -50,6 +50,7 @@ openpyxl>=3.1.0
 python-dotenv>=1.0.0
 pyyaml>=6.0.1
 requests>=2.31.0
+github-copilot-sdk>=0.1.25   # GitHub Copilot via SDK resmi (CLI dibundel)
 aiohttp>=3.9.0
 tqdm>=4.66.0
 

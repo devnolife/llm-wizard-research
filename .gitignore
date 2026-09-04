@@ -142,3 +142,4 @@ flood-geoai-research/results/fusion_model.txt
 
 # Direktori sementara milik tes (dibuat & dihapus setup/teardown)
 backend/tests/.scratch_*/
+.copilot-sdk/

@@ -2,7 +2,7 @@
 
 Skill dari https://github.com/Orchestra-Research/AI-Research-SKILLs terpasang
 di ``<repo>/.agents/skills/<nama>/SKILL.md`` (markdown + YAML frontmatter).
-Endpoint di sini membuat LLM (GitHub Copilot via copilotd, fallback Ollama)
+Endpoint di sini membuat LLM (GitHub Copilot via SDK, fallback Ollama)
 menjawab pertanyaan riset dengan SATU skill sebagai panduan/sistem prompt.
 """
 
@@ -79,7 +79,7 @@ def list_skills():
 
 def _llm_generate(prompt: str, system: str, json_mode: bool = False,
                   timeout: float = 120.0, max_tokens: int = 1500) -> tuple[str, str]:
-    """Generate via Copilot (copilotd) dengan fallback Ollama.
+    """Generate via Copilot SDK dengan fallback Ollama.
 
     Returns:
         (text, engine_label). Raises HTTPException 503 bila keduanya mati.
@@ -98,7 +98,7 @@ def _llm_generate(prompt: str, system: str, json_mode: bool = False,
         )
         return str(text), "LLM lokal (Ollama)"
     except Exception as e:
-        logger.error(f"LLM generate gagal (copilotd & Ollama): {e}")
+        logger.error(f"LLM generate gagal (Copilot & Ollama): {e}")
         raise HTTPException(status_code=503, detail="Tidak ada LLM yang tersedia saat ini.")
 
 
@@ -110,7 +110,7 @@ def _strip_json_fences(raw: str) -> str:
 def ask_with_skill(request: SkillAskRequest):
     """Jawab pertanyaan riset dengan satu skill sebagai panduan sistem.
 
-    LLM = GitHub Copilot (copilotd) bila tersedia, fallback Ollama lokal.
+    LLM = GitHub Copilot (SDK) bila tersedia, fallback Ollama lokal.
     """
     path = _safe_skill_path(request.skill)
     if not path.is_file():

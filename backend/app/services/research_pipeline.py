@@ -66,7 +66,7 @@ PIPELINE_NAME = "research"
 # Satu run bisa ratusan panggilan LLM; menyimpan semuanya membanjiri basis data.
 DEFAULT_LLM_TRACE_LIMIT = 15
 # Panggilan LLM didominasi waktu tunggu jaringan, jadi diparalelkan seperti CLI.
-# Menaikkan lebih jauh sia-sia: copilotd sendiri melayani max_concurrency 2, dan
+# Menaikkan lebih jauh sia-sia: klien Copilot membatasi 2 permintaan serentak, dan
 # 12 kandidat terukur 135,4 dtk (1 worker) vs 47,7 dtk (4 worker).
 DEFAULT_EXTRACT_WORKERS = 4
 SAMPLE_ROWS = 8
@@ -143,8 +143,8 @@ SUBSTEPS: Dict[str, List[Dict[str, Any]]] = {
              "'future work', 'belum', 'keterbatasan'.",
              masuk="chunk_masuk", keluar="kandidat"),
         _sub("ekstrak_llm", "LLM menyalin kalimat gap apa adanya",
-             f"extract_gaps_from_candidate: JSON mode, temperature 0, "
-             f"{DEFAULT_EXTRACT_WORKERS} worker paralel",
+             f"extract_gaps_from_candidate: JSON mode, temperature tidak dapat diatur "
+             f"(Copilot), {DEFAULT_EXTRACT_WORKERS} worker paralel",
              "Untuk tiap kandidat, LLM diminta menyalin kalimat yang menyatakan "
              "keterbatasan atau saran penelitian lanjutan — persis seperti tertulis, "
              "tanpa mengubah kata.",
@@ -217,7 +217,8 @@ PIPELINE_CONSTANTS: Dict[str, Dict[str, Any]] = {
     "chunking": {"target_tokens": DEFAULT_TARGET_TOKENS, "max_tokens": DEFAULT_MAX_TOKENS,
                  "overlap_ratio": DEFAULT_OVERLAP_RATIO},
     "gap_mining": {"quote_match_threshold": QUOTE_MATCH_THRESHOLD,
-                   "llm_temperature": 0, "workers": DEFAULT_EXTRACT_WORKERS},
+                   "llm_temperature": "tidak dapat diatur (Copilot)",
+                   "workers": DEFAULT_EXTRACT_WORKERS},
     "novelty": {"strong_match_threshold": STRONG_MATCH_THRESHOLD,
                 "addressed_min_strong": 3, "partially_min_strong": 1,
                 "from_date": "2024-01-01", "max_results": 8},
@@ -513,7 +514,7 @@ def stage_gap_mining(
     trace_lock = threading.Lock()
 
     def _generate(prompt: str, system: str) -> Optional[str]:
-        result = copilot_client.generate(prompt, system=system, json_mode=True, temperature=0)
+        result = copilot_client.generate(prompt, system=system, json_mode=True)
         text = result[0] if result else None
         with trace_lock:
             traced["calls"] += 1
@@ -567,7 +568,7 @@ def stage_gap_mining(
     if traced["calls"] and traced["empty"] == traced["calls"]:
         llm_notes.append(
             f"LLM TIDAK MENJAWAB satu pun dari {traced['calls']} panggilan — hasil "
-            "0 gap ini BUKAN temuan, melainkan gagal sistem (copilotd/Copilot mati atau "
+            "0 gap ini BUKAN temuan, melainkan gagal sistem (CLI Copilot mati, belum login, atau "
             "autentikasi hilang). Perbaiki layanan LLM lalu jalankan ulang.")
     elif traced["empty"]:
         llm_notes.append(
@@ -609,7 +610,7 @@ def stage_gap_mining(
 
     return StageOutcome(
         params={"limit": limit or "semua", "llm_trace_limit": llm_trace_limit,
-                "workers": workers, "temperature": 0,
+                "workers": workers, "temperature": "tidak dapat diatur (Copilot)",
                 "seksi_sasaran": "conclusion + discussion",
                 "aturan_cadangan": "abstract, 2 chunk introduction, 2 chunk terakhir"},
         metrics={

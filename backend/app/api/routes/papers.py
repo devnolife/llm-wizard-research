@@ -101,7 +101,7 @@ def idea_to_query(request: IdeaToQueryRequest):
     try:
         engine = None
         raw = None
-        # Coba GitHub Copilot (copilotd, akun enterprise user) lebih dulu —
+        # Coba GitHub Copilot (SDK, akun enterprise user) lebih dulu —
         # kualitas terjemahan ide → istilah teknis jauh lebih baik.
         copilot_result = copilot_client.generate(
             f'Research idea: "{idea}"',

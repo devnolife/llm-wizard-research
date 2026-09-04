@@ -14,6 +14,7 @@ import os
 import shutil
 
 from .api.routes import health, documents, papers, analysis, graph, skills, research
+from .services import copilot_client
 from .telemetry.recorder import telemetry_middleware
 from .utils.config_loader import get_config, get_effective_config_summary
 
@@ -66,6 +67,8 @@ async def lifespan(app: FastAPI):
 
     # --- Shutdown ---
     queue.stop(wait=True)
+    # Setelah antrean: job yang masih berjalan boleh menuntaskan panggilan LLM-nya.
+    copilot_client.stop()
     cleanup = job_store.cleanup_expired(
         retention_days=config.queue.retention_days,
         telemetry_retention_days=config.telemetry.retention_days,
