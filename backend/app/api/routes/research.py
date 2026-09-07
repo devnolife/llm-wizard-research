@@ -179,8 +179,22 @@ async def journal_fulltext(job_id: str, source: str = ""):
 
 
 @router.post("/start")
-async def start_research(files: List[UploadFile] = File(...)):
-    """Unggah PDF lalu jalankan pipeline penelitian di latar belakang."""
+async def start_research(
+    files: List[UploadFile] = File(...),
+    until: str = Form(""),
+    ocr_mode: str = Form("auto"),
+):
+    """Unggah PDF lalu jalankan pipeline penelitian di latar belakang.
+
+    ``until`` (opsional) menghentikan job setelah tahap itu selesai — UI bertahap
+    memakai ``gap_mining`` agar OpenAlex/rekomendasi belum dipanggil. ``ocr_mode``
+    sama seperti pada ``chunk-preview``.
+    """
+    stage_keys = [s[0] for s in RESEARCH_STAGES]
+    if until and until not in stage_keys:
+        raise HTTPException(status_code=422, detail=f"until harus salah satu dari {stage_keys}")
+    if ocr_mode not in OCR_MODES:
+        raise HTTPException(status_code=422, detail=f"ocr_mode harus salah satu dari {list(OCR_MODES)}")
     config = get_config()
     allowed = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
     if "pdf" not in allowed:
@@ -218,17 +232,20 @@ async def start_research(files: List[UploadFile] = File(...)):
         "max_attempts": config.queue.max_attempts,
         "pipeline": PIPELINE_NAME,
         "payload": {"pdf_paths": [str(p) for p in pdf_paths],
-                    "input_dir": str(job_dir), "output_dir": str(out_dir)},
+                    "input_dir": str(job_dir), "output_dir": str(out_dir),
+                    "until": until or None, "ocr_mode": ocr_mode},
     })
     record_job_event(job_id, "job.created", status="queued",
-                     data={"file_count": len(pdf_paths), "pipeline": PIPELINE_NAME})
+                     data={"file_count": len(pdf_paths), "pipeline": PIPELINE_NAME,
+                           "until": until or None})
     get_analysis_queue().notify()
 
+    planned = stage_keys[: stage_keys.index(until) + 1] if until else stage_keys
     return {
         "success": True,
         "job_id": job_id,
         "files_count": len(pdf_paths),
-        "stages": [s[0] for s in RESEARCH_STAGES],
+        "stages": planned,
         "message": "Pipeline penelitian diantrekan. Pantau lewat /api/analysis-status/{job_id}.",
     }
 

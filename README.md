@@ -114,7 +114,9 @@ cd tools/process_monitor && .venv/bin/streamlit run app.py
 
 **Wizard Lite** (`tools/wizard_lite/`) is a deliberately small, step-by-step UI being built
 alongside the full dashboard. Step 1 uploads PDFs and shows the resulting chunks via
-`POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector store):
+`POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector store); step 2
+runs a research job with `until=gap_mining` and shows every candidate chunk, the LLM's
+answer, and the gaps that survived verbatim verification:
 
 ```bash
 bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process_monitor venv)
@@ -138,6 +140,7 @@ bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process
 |--------|----------|-------------|
 | `POST` | `/api/upload-and-analyze` | Upload PDFs and run full analysis pipeline |
 | `POST` | `/api/research/chunk-preview` | Upload PDFs, get stage-1 chunks immediately (no job/LLM); form field `ocr_mode=auto\|force` (force = read via ocrd) |
+| `POST` | `/api/research/start` | Queue the research pipeline; optional form fields `until=<stage>` (stop after that stage) and `ocr_mode` |
 | `GET` | `/api/analysis-status/{job_id}` | Check analysis progress |
 | `POST` | `/api/recommend` | Get research recommendations |
 | `POST` | `/api/gaps` | Detect synthesis gap indicators |

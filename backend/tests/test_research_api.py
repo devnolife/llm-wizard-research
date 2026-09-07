@@ -69,10 +69,11 @@ class TestStartEndpoint:
         for d in self._dirs:
             shutil.rmtree(d, ignore_errors=True)
 
-    def _start(self):
+    def _start(self, data=None):
         resp = client.post(
             "/api/research/start",
             files=[("files", ("uji.pdf", _MINIMAL_PDF, "application/pdf"))],
+            data=data,
         )
         if resp.status_code == 200:
             from app.utils.config_loader import get_config
@@ -84,6 +85,25 @@ class TestStartEndpoint:
         body = self._start().json()
         assert body["success"] and body["files_count"] == 1
         assert body["stages"] == [s[0] for s in RESEARCH_STAGES]
+
+    def test_until_is_stored_in_payload_and_trims_planned_stages(self):
+        from app.utils.job_store import get_job
+
+        body = self._start(data={"until": "gap_mining", "ocr_mode": "force"}).json()
+        assert body["stages"] == ["chunking", "gap_mining"]
+        payload = get_job(body["job_id"])["payload"]
+        assert payload["until"] == "gap_mining" and payload["ocr_mode"] == "force"
+
+    def test_default_payload_has_no_until_and_auto_ocr(self):
+        from app.utils.job_store import get_job
+
+        payload = get_job(self._start().json()["job_id"])["payload"]
+        assert payload["until"] is None and payload["ocr_mode"] == "auto"
+
+    def test_unknown_until_or_ocr_mode_is_422(self):
+        assert self._start(data={"until": "novelti"}).status_code == 422
+        assert self._start(data={"ocr_mode": "gpu"}).status_code == 422
+        assert self.notified == [], "job tidak boleh dibuat bila parameter salah"
 
     def test_job_is_persisted_as_research_pipeline(self):
         from app.utils.job_store import get_job

@@ -1,87 +1,44 @@
-"""Wizard Lite — langkah 1: unggah PDF jurnal, lihat hasil chunk.
+"""Wizard Lite — UI bertahap di atas pipeline penelitian.
 
-UI sengaja kecil dan bertahap. Langkah ini hanya memakai TAHAP 1 pipeline
-(``POST /api/research/chunk-preview``): tidak ada job, LLM, atau vector store.
+Langkah 1: unggah PDF → lihat chunk (``POST /api/research/chunk-preview``; tanpa job/LLM).
+Langkah 2: cari research gap dengan LLM (job pipeline ``until=gap_mining``).
 
 Jalankan:  bash tools/wizard_lite/run.sh   (backend harus hidup di :8001)
 """
 
 from __future__ import annotations
 
-import html
 import io
 import json
 
 import pandas as pd
-import requests
 import streamlit as st
 
-DEFAULT_API = "http://127.0.0.1:8001"
-TIMEOUT_SECONDS = 600  # OCR pada PDF hasil pindaian bisa lama
+import step2_gaps
+from wl_common import (
+    DEFAULT_API,
+    METHOD_LABELS,
+    OCR_CHOICES,
+    QUALITY_BADGES,
+    SECTION_ORDER,
+    backend_alive,
+    render_reading_text,
+    render_view_switch,
+    request_chunks,
+    section_label,
+)
 
-OCR_CHOICES = {
-    "auto": "Otomatis — PyMuPDF lokal; ocrd hanya bila teks buruk (hasil pindaian)",
-    "force": "Paksa ocrd — kirim PDF ke layanan OCR (lapisan teks / OCR GPU)",
-}
-VIEW_TABLE, VIEW_STACK, VIEW_FOCUS = "📋 Tabel + baca di bawah", "📖 Baca berurutan", "🎯 Fokus satu chunk"
-# Urutan tampil mengikuti struktur artikel, bukan abjad.
-SECTION_ORDER = ["abstract", "introduction", "related_work", "methods", "results",
-                 "discussion", "conclusion", "references", "other"]
-SECTION_LABELS = {
-    "abstract": "Abstrak",
-    "introduction": "Pendahuluan",
-    "related_work": "Kajian Terkait",
-    "methods": "Metode",
-    "results": "Hasil",
-    "discussion": "Pembahasan",
-    "conclusion": "Kesimpulan",
-    "references": "Referensi",
-    "other": "Lainnya",
-}
-METHOD_LABELS = {
-    "pymupdf_layout": "PyMuPDF (layout/font)",
-    "pymupdf": "PyMuPDF",
-    "pypdf": "pypdf",
-    "ocrd_text_layer": "ocrd — lapisan teks",
-    "ocrd_ocr": "ocrd — OCR GPU",
-}
-QUALITY_BADGES = {"good": "🟢 baik", "fair": "🟡 cukup", "poor": "🔴 buruk"}
-
-st.set_page_config(page_title="Wizard Lite — Chunk", page_icon="📄", layout="wide")
+st.set_page_config(page_title="Wizard Lite", page_icon="📄", layout="wide")
 st.session_state.setdefault("api_base", DEFAULT_API)
 st.session_state.setdefault("preview", None)
 st.session_state.setdefault("ocr_mode", "auto")
 
 
-# ── Backend ────────────────────────────────────────────────────────────────
-
-def backend_alive(api_base: str) -> bool:
-    try:
-        return requests.get(f"{api_base}/health", timeout=3).status_code == 200
-    except requests.RequestException:
-        return False
-
-
-def request_chunks(api_base: str, uploads, ocr_mode: str) -> dict:
-    files = [("files", (u.name, u.getvalue(), "application/pdf")) for u in uploads]
-    resp = requests.post(f"{api_base}/api/research/chunk-preview", files=files,
-                         data={"ocr_mode": ocr_mode}, timeout=TIMEOUT_SECONDS)
-    if resp.status_code != 200:
-        detail = resp.json().get("detail", resp.text) if resp.content else resp.reason
-        raise RuntimeError(f"HTTP {resp.status_code}: {detail}")
-    return resp.json()
-
-
-# ── Tampilan ───────────────────────────────────────────────────────────────
-
-def section_label(key: str) -> str:
-    return SECTION_LABELS.get(key, key or "—")
-
+# ── Langkah 1: tampilan ────────────────────────────────────────────────────
 
 def render_summary(item: dict) -> None:
     meta = item.get("meta") or {}
-    title = meta.get("paper_title") or item["source"]
-    st.subheader(title)
+    st.subheader(meta.get("paper_title") or item["source"])
     bits = []
     if meta.get("year"):
         bits.append(str(meta["year"]))
@@ -100,8 +57,9 @@ def render_summary(item: dict) -> None:
     avg = round(item["token_total"] / item["num_chunks"]) if item["num_chunks"] else 0
     c4.metric("Token / chunk", avg)
     c5.metric("Kualitas ekstraksi", QUALITY_BADGES.get(meta.get("extraction_quality"), "—"))
+    method = item.get("extraction_method")
     st.caption(
-        f"Metode ekstraksi: **{METHOD_LABELS.get(item.get('extraction_method'), item.get('extraction_method'))}**"
+        f"Metode ekstraksi: **{METHOD_LABELS.get(method, method)}**"
         + (" · struktur IMRaD dari GROBID" if item.get("grobid_used") else "")
         + f" · metadata: {meta.get('metadata_source', '—')}"
     )
@@ -125,78 +83,10 @@ def chunk_heading(c: dict) -> str:
     return head
 
 
-def render_reading_text(text: str) -> None:
-    """Teks chunk dalam tipografi baca (bukan monospace), aman dari markdown/HTML."""
-    st.markdown(
-        "<div style='white-space:pre-wrap;font-size:1.05rem;line-height:1.7;'>"
-        f"{html.escape(text)}</div>",
-        unsafe_allow_html=True,
-    )
-
-
 def render_chunk_card(c: dict) -> None:
     with st.container(border=True):
         st.markdown(f"**{chunk_heading(c)}**")
         render_reading_text(c["text"])
-
-
-def render_table_with_reader(shown: list, key: str) -> None:
-    """Tabel ringkas di atas; klik satu baris → teks lengkapnya tampil di bawah."""
-    table = pd.DataFrame(
-        [
-            {
-                "#": c["chunk_index"],
-                "Bagian": section_label(c["section_normalized"]),
-                "Hal.": c.get("page_start"),
-                "Token": c["token_count"],
-                "Teks": c["text"],
-            }
-            for c in shown
-        ]
-    )
-    event = st.dataframe(
-        table,
-        width="stretch",
-        hide_index=True,
-        height=min(420, 38 + 35 * max(1, len(shown))),
-        on_select="rerun",
-        selection_mode="single-row",
-        key=f"table-{key}",
-        column_config={"Teks": st.column_config.TextColumn(width="large")},
-    )
-    rows = (event.selection.rows if event and event.selection else []) or []
-    if not rows:
-        st.info("Klik satu baris di tabel untuk membaca chunk itu secara utuh di sini.")
-        return
-    render_chunk_card(shown[rows[0]])
-
-
-def render_stacked(shown: list) -> None:
-    for c in shown:
-        render_chunk_card(c)
-
-
-def render_focus(shown: list, key: str) -> None:
-    """Satu chunk per layar dengan tombol maju/mundur."""
-    slider_key = f"slider-{key}"
-    n = len(shown)
-    current = min(int(st.session_state.get(slider_key, 1)), n)
-
-    b1, b2, b3 = st.columns([1, 3, 1])
-    if b1.button("⬅️ Sebelumnya", key=f"prev-{key}", width="stretch"):
-        current -= 1
-    if b3.button("Berikutnya ➡️", key=f"next-{key}", width="stretch"):
-        current += 1
-    current = max(1, min(current, n))
-    # widget state must be written before the slider is instantiated in this run
-    st.session_state[slider_key] = current
-    if n > 1:
-        current = b2.slider("Chunk ke-", 1, n, key=slider_key, label_visibility="collapsed")
-    else:
-        b2.caption("Hanya satu chunk yang lolos filter")
-
-    st.caption(f"Chunk {current} dari {n} yang lolos filter")
-    render_chunk_card(shown[current - 1])
 
 
 def render_chunks(item: dict, key: str) -> None:
@@ -218,20 +108,14 @@ def render_chunks(item: dict, key: str) -> None:
         and (show_ref or not c.get("is_reference"))
         and (not needle or needle in c["text"].lower())
     ]
+    st.caption(f"{len(shown)} dari {len(chunks)} chunk")
 
-    v1, v2 = st.columns([3, 1])
-    view = v1.radio("Tampilan", [VIEW_TABLE, VIEW_STACK, VIEW_FOCUS], horizontal=True,
-                    key=f"view-{key}", label_visibility="collapsed")
-    v2.caption(f"{len(shown)} dari {len(chunks)} chunk")
+    def row(c: dict) -> dict:
+        return {"#": c["chunk_index"], "Bagian": section_label(c["section_normalized"]),
+                "Hal.": c.get("page_start"), "Token": c["token_count"], "Teks": c["text"]}
 
-    if not shown:
-        st.warning("Tidak ada chunk yang cocok dengan filter.")
-    elif view == VIEW_TABLE:
-        render_table_with_reader(shown, key)
-    elif view == VIEW_STACK:
-        render_stacked(shown)
-    else:
-        render_focus(shown, key)
+    render_view_switch(shown, key, row, lambda i: render_chunk_card(shown[i]),
+                       column_config={"Teks": st.column_config.TextColumn(width="large")})
 
     jsonl = "\n".join(json.dumps(c, ensure_ascii=False) for c in chunks)
     st.download_button("⬇️ Unduh semua chunk (.jsonl)", data=jsonl.encode("utf-8"),
@@ -243,7 +127,7 @@ def render_chunks(item: dict, key: str) -> None:
 
 with st.sidebar:
     st.title("📄 Wizard Lite")
-    st.caption("Langkah 1 — unggah PDF, lihat chunk")
+    st.caption("Langkah 1 chunk → Langkah 2 research gap")
     st.text_input("Alamat backend", key="api_base")
     alive = backend_alive(st.session_state["api_base"])
     st.markdown("Backend: " + ("🟢 hidup" if alive else "🔴 tidak terjangkau"))
@@ -253,7 +137,7 @@ with st.sidebar:
              format_func=OCR_CHOICES.get,
              help="Metode yang benar-benar terpakai tampil di ringkasan tiap jurnal.")
 
-st.title("Unggah jurnal → lihat hasil chunk")
+st.title("Langkah 1 — unggah jurnal, lihat hasil chunk")
 st.write(
     "PDF dibaca, dibersihkan, dideteksi bagiannya (Pendahuluan, Metode, …), lalu "
     "dipotong menjadi chunk berukuran token yang seragam. Inilah teks yang akan "
@@ -270,6 +154,7 @@ if run:
             st.session_state["preview"] = request_chunks(
                 st.session_state["api_base"], uploads, st.session_state["ocr_mode"]
             )
+            step2_gaps.reset()  # chunk baru → hasil gap lama tidak lagi relevan
         except Exception as exc:
             st.session_state["preview"] = None
             st.error(f"Gagal memproses: {exc}")
@@ -324,3 +209,15 @@ if len(ok_items) > 1:
             buf.write(json.dumps(c, ensure_ascii=False) + "\n")
     st.download_button("⬇️ Unduh chunk semua berkas (.jsonl)", data=buf.getvalue().encode("utf-8"),
                        file_name="chunks.jsonl", mime="application/x-ndjson")
+
+# ── Langkah 2 ──────────────────────────────────────────────────────────────
+
+st.divider()
+chunks_by_id = {c["chunk_id"]: c for i in ok_items for c in i["chunks"]}
+step2_gaps.render(
+    api_base=st.session_state["api_base"],
+    uploads=uploads,
+    ocr_mode=st.session_state["ocr_mode"],
+    backend_ok=alive,
+    chunks_by_id=chunks_by_id,
+)

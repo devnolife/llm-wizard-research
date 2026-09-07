@@ -149,7 +149,56 @@ class TestOrchestratorAsQueueHandler:
         assert job["status"] == "completed" and job["progress"] == 100
         assert calls == ["stage_chunking", "stage_gap_mining", "stage_novelty",
                          "stage_recommendation"]
+        assert job["stages_done"] == ["chunking", "gap_mining", "novelty", "recommendation"]
         assert (SCRATCH / "out").is_dir(), "output_dir dari payload dipakai"
+
+    def test_until_stops_after_the_named_stage(self, monkeypatch):
+        """UI bertahap berhenti di gap_mining: OpenAlex & rekomendasi tidak disentuh."""
+        calls = self._stub_stages(monkeypatch)
+        pdf = SCRATCH / "u.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        job_store.save_job("rq-until", {
+            "status": "running", "progress": 0, "pipeline": "research",
+            "payload": {"pdf_paths": [str(pdf)], "output_dir": str(SCRATCH / "out-u"),
+                        "until": "gap_mining"},
+        })
+
+        run_research_job("rq-until")
+
+        job = job_store.get_job("rq-until")
+        assert calls == ["stage_chunking", "stage_gap_mining"]
+        assert job["status"] == "completed" and job["progress"] == 100
+        assert job["stages_done"] == ["chunking", "gap_mining"]
+        assert "gap_mining" in job["message"]
+
+    def test_ocr_mode_from_payload_reaches_stage_chunking(self, monkeypatch):
+        seen = {}
+
+        def chunking(job_id, pdf_paths, out_path, **kwargs):
+            seen["ocr_mode"] = kwargs.get("ocr_mode")
+            return StageOutcome(metrics={"ok": 1})
+        self._stub_stages(monkeypatch)
+        monkeypatch.setattr(research_pipeline, "stage_chunking", chunking)
+        pdf = SCRATCH / "o.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        job_store.save_job("rq-ocr", {
+            "status": "running", "progress": 0, "pipeline": "research",
+            "payload": {"pdf_paths": [str(pdf)], "output_dir": str(SCRATCH / "out-o"),
+                        "until": "chunking", "ocr_mode": "force"},
+        })
+
+        run_research_job("rq-ocr")
+
+        assert seen == {"ocr_mode": "force"}
+        assert job_store.get_job("rq-ocr")["status"] == "completed"
+
+    def test_unknown_until_is_rejected_before_any_stage_runs(self, monkeypatch):
+        calls = self._stub_stages(monkeypatch)
+        job_store.save_job("rq-bad", {"status": "running", "progress": 0})
+        with pytest.raises(ValueError):
+            run_research_pipeline("rq-bad", [SCRATCH / "x.pdf"], SCRATCH / "out-bad",
+                                  until="novelti")
+        assert calls == []
 
     def test_failure_keeps_the_specific_stage_error(self, monkeypatch):
         """The generic queue handler would overwrite the error; ours must not

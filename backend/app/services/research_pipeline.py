@@ -380,6 +380,7 @@ def stage_chunking(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     overlap_ratio: float = DEFAULT_OVERLAP_RATIO,
     embedder=None,
+    ocr_mode: str = "auto",
 ) -> StageOutcome:
     results = []
     failed: List[Dict[str, Any]] = []
@@ -391,7 +392,8 @@ def stage_chunking(
                              data={"file": source, "index": i, "of": total})
             try:
                 result = process_pdf(str(pdf), source=source, target_tokens=target_tokens,
-                                     max_tokens=max_tokens, overlap_ratio=overlap_ratio)
+                                     max_tokens=max_tokens, overlap_ratio=overlap_ratio,
+                                     ocr_mode=ocr_mode)
             except Exception as exc:
                 logger.error(f"chunking gagal pada {source}: {exc}")
                 record_job_event(job_id, "file.failed", phase="chunking",
@@ -430,7 +432,7 @@ def stage_chunking(
 
     outcome = StageOutcome(
         params={"target_tokens": target_tokens, "max_tokens": max_tokens,
-                "overlap_ratio": overlap_ratio},
+                "overlap_ratio": overlap_ratio, "ocr_mode": ocr_mode},
         metrics={
             "pdf_masuk": total,
             "jurnal": summary.get("jurnal", len(results)),
@@ -950,8 +952,17 @@ def run_research_pipeline(
     embedder=None,
     limit: int = 0,
     from_date: str = "2024-01-01",
+    until: Optional[str] = None,
+    ocr_mode: str = "auto",
 ) -> Dict[str, Any]:
-    """Jalankan keempat tahap berurutan, merekam progres dan hasil detailnya."""
+    """Jalankan tahap-tahap berurutan, merekam progres dan hasil detailnya.
+
+    ``until`` menghentikan pipeline setelah tahap itu selesai (mis. ``"gap_mining"``
+    untuk UI bertahap yang belum ingin memanggil OpenAlex); bawaan = semua tahap.
+    """
+    stage_keys = [s[0] for s in RESEARCH_STAGES]
+    if until is not None and until not in stage_keys:
+        raise ValueError(f"until harus salah satu dari {stage_keys}, bukan {until!r}")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     short = job_id[:8]
@@ -963,7 +974,7 @@ def run_research_pipeline(
     }
     stages: List[tuple[str, Callable[[], StageOutcome]]] = [
         ("chunking", lambda: stage_chunking(
-            job_id, pdf_paths, paths["chunks"], embedder=embedder)),
+            job_id, pdf_paths, paths["chunks"], embedder=embedder, ocr_mode=ocr_mode)),
         ("gap_mining", lambda: stage_gap_mining(
             job_id, paths["chunks"], paths["gaps"], limit=limit)),
         ("novelty", lambda: stage_novelty(
@@ -972,6 +983,8 @@ def run_research_pipeline(
             job_id, paths["novelty"], paths["chunks"], paths["rekomendasi"],
             embedder=embedder)),
     ]
+    if until is not None:
+        stages = stages[: stage_keys.index(until) + 1]
 
     update_job(job_id, status="running", progress=1.0,
                message="Memulai pipeline penelitian")
@@ -994,9 +1007,11 @@ def run_research_pipeline(
                    message=f"Gagal di tahap {phase}")
         raise
 
+    done_message = ("Pipeline penelitian selesai" if until is None
+                    else f"Selesai sampai tahap {until}")
     # Atomic with the cancel flag: a cancel that arrived during the last stage
     # must not be overwritten by "completed".
-    if complete_job(job_id, message="Pipeline penelitian selesai") is None:
+    if complete_job(job_id, message=done_message, stages_done=[s[0] for s in stages]) is None:
         update_job(job_id, status="cancelled", progress=0,
                    message=f"Dibatalkan oleh pengguna saat tahap {phase}")
         raise ResearchCancelled("Pipeline penelitian dibatalkan oleh pengguna")
@@ -1035,7 +1050,9 @@ def run_research_job(job_id: str) -> None:
     out_dir = payload.get("output_dir") or str(
         Path(get_config().data.processed_path) / "research" / job_id)
     try:
-        run_research_pipeline(job_id, pdf_paths, Path(out_dir), embedder=_shared_embedder())
+        run_research_pipeline(job_id, pdf_paths, Path(out_dir), embedder=_shared_embedder(),
+                              until=payload.get("until") or None,
+                              ocr_mode=payload.get("ocr_mode") or "auto")
     except ResearchCancelled:
         logger.info(f"Pipeline penelitian {job_id} dibatalkan")
         record_job_event(job_id, "job.cancelled", status="cancelled")
