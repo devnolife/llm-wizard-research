@@ -93,7 +93,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware for React frontend (whitelist from config)
+# CORS middleware for browser clients (whitelist from config)
 if config.api.cors_enabled:
     app.add_middleware(
         CORSMiddleware,

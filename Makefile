@@ -1,6 +1,6 @@
 # Wizard Research — Neuro-Symbolic Synthesis Gap Detection
 
-.PHONY: help install install-backend-locked lock-backend dev test test-api runtime-doctor clean docker-up docker-down backend frontend experiment db-stats db-sources db-query papers-search papers-ingest experiment-ablation-nli experiment-breakdown experiment-calibration experiment-benchmark experiment-prf experiment-retrieval experiment-errors
+.PHONY: help install install-backend-locked lock-backend dev test test-api runtime-doctor clean docker-up docker-down backend experiment db-stats db-sources db-query papers-search papers-ingest experiment-ablation-nli experiment-breakdown experiment-calibration experiment-benchmark experiment-prf experiment-retrieval experiment-errors
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -8,12 +8,9 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install all dependencies (backend + frontend)
-	@echo "Installing backend dependencies..."
+install: ## Install backend dependencies
 	cd backend && pip install -r requirements.txt
-	@echo "Installing frontend dependencies..."
-	cd frontend && npm install
-	@echo "✅ All dependencies installed!"
+	@echo "✅ Dependencies installed!"
 
 install-backend: ## Install backend dependencies only
 	cd backend && pip install -r requirements.txt
@@ -24,18 +21,10 @@ install-backend-locked: ## Install the reproducible CPU-safe backend lock (requi
 lock-backend: ## Refresh backend lock with CPU PyTorch wheels (requires uv)
 	uv pip compile --torch-backend cpu backend/requirements.txt --output-file backend/requirements.lock
 
-install-frontend: ## Install frontend dependencies only
-	cd frontend && npm install
-
-dev: ## Run both backend and frontend in development mode
-	@echo "Starting development servers..."
-	make -j2 backend frontend
+dev: backend ## Run the backend in development mode (UI: tools/process_monitor, see README)
 
 backend: ## Run backend server
 	./run_backend.sh
-
-frontend: ## Run frontend development server
-	cd frontend && npm run dev
 
 test: ## Run all tests
 	cd backend && python -m pytest tests/
@@ -95,17 +84,14 @@ experiment-annotate: ## Sample 50 SPO facts into an annotation sheet (precision)
 
 lint: ## Run linters
 	cd backend && flake8 app/
-	cd frontend && npm run lint
 
 format: ## Format code
 	cd backend && black app/
-	@echo "Frontend formatter is not configured; skipping frontend format."
 
 clean: ## Clean temporary files and caches
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
-	cd frontend && rm -rf node_modules/.vite
 
 docker-up: ## Start optional services (GROBID) with Docker Compose
 	docker compose --profile grobid up -d
@@ -132,8 +118,7 @@ papers-ingest: ## Fetch papers and add them to the searchable corpus: make paper
 	cd backend && python scripts/papers_cli.py ingest "$(Q)" -k $(or $(K),10)
 
 setup: install ## Initial project setup
-	@echo "Creating .env files from examples..."
+	@echo "Creating .env file from example..."
 	cp -n backend/.env.example backend/.env 2>/dev/null || true
-	cp -n frontend/.env.example frontend/.env 2>/dev/null || true
 	@echo "✅ Project setup complete!"
-	@echo "Please edit .env files with your configuration"
+	@echo "Please edit backend/.env with your configuration"

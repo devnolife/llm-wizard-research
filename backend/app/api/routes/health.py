@@ -25,7 +25,7 @@ class ModelSwitchRequest(BaseModel):
 
 @router.get("/", response_class=HTMLResponse)
 async def root():
-    """Serve frontend HTML"""
+    """Serve the landing page (static/index.html if present, else a minimal HTML)."""
     static_dir = Path(__file__).parent.parent.parent.parent.parent / "static"
     index_file = static_dir / "index.html"
     

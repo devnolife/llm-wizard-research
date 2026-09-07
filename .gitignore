@@ -113,21 +113,10 @@ data/backups/
 # Redundant configs (use backend/config.yaml)
 configs/
 
-# Frontend build & deps
-frontend/dist/
-frontend/node_modules/
-package-lock.json
-package.json
-frontend/public/vite.svg
-frontend/src/assets/react.svg
-frontend/src/App.css
-frontend/postcss.config.cjs
-frontend/README.md
-
 # Research papers (sample data)
 research_papers/
 
-# Static HTML (superseded by React app)
+# Static HTML (legacy landing page)
 static/
 
 # graphify knowledge-graph cache (generated, local only)

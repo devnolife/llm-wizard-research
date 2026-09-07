@@ -56,15 +56,7 @@ wizard-research/
 │   ├── config.yaml
 │   └── requirements.txt
 │
-├── frontend/                    # React 19 + Vite + TailwindCSS (shadcn/ui style)
-│   └── src/
-│       ├── components/
-│       │   ├── pages/           # Upload, Results, Search, Chat, Documents, Revisi
-│       │   ├── layout/          # Navbar
-│       │   └── common/          # Badge, EmptyState, ErrorBoundary, LoadingSpinner
-│       ├── contexts/            # DarkMode, Toast
-│       ├── hooks/               # useApi
-│       └── services/            # API clients
+├── tools/process_monitor/       # Streamlit UI: upload, monitor per tahap, hasil, cari paper
 │
 ├── drafts/                      # Proposal chapter drafts (BAB I–V)
 ├── RINGKASAN_REVISI.md          # Comprehensive revision summary
@@ -79,7 +71,6 @@ wizard-research/
 ### Prerequisites
 
 - Python 3.9+
-- Node.js 18+
 - [Ollama](https://ollama.ai) with `llama3.2:latest` (or any compatible model)
 - Optional: **GitHub Copilot** via the official SDK (`github-copilot-sdk`, CLI bundled). Log in once with
   `<site-packages>/copilot/bin/copilot --config-dir .copilot-sdk login`; when the SDK is installed and
@@ -114,22 +105,22 @@ ollama pull llama3.2
 # Terminal 1 — Backend (port 8001)
 make backend
 
-# Terminal 2 — Frontend (port 5173)
-make frontend
+# Terminal 2 — Streamlit UI (port 8501; one-time: python -m venv .venv && .venv/bin/pip install streamlit requests pyvis)
+cd tools/process_monitor && .venv/bin/streamlit run app.py
 ```
 
-- **Frontend:** http://localhost:5173
+- **UI:** http://localhost:8501 — see [tools/process_monitor/README.md](tools/process_monitor/README.md)
 - **API Docs:** http://localhost:8001/docs
 
 ---
 
 ## Usage
 
-1. **Upload Papers** — Drag & drop 3–10 PDF papers on the upload page
-2. **Auto-Analysis** — System extracts facts, builds KG, runs agentic analysis
-3. **View Results** — Dashboard with 5 tabs: Overview, Topics, Gaps, Recommendations, Roadmap
+1. **Upload Papers** — Upload 3–10 PDF papers on the *Proses & Hasil* page (or pick open-access papers on *Cari Paper* and let the server download them)
+2. **Auto-Analysis** — System extracts facts, builds KG, runs agentic analysis; progress is shown per phase
+3. **View Results** — Topics, gap indicators with provenance, proposals with novelty score, roadmap; export the whole run as one Markdown file
 4. **Search** — Query external APIs (arXiv, Semantic Scholar, CORE, PubMed, CrossRef, Europe PMC, ScienceDirect)
-5. **Chat** — Interactive Q&A about your research corpus
+5. **API** — Every step is also available as a REST endpoint (below) for scripts and the CLI tools
 
 ---
 
@@ -499,7 +490,7 @@ ELSEVIER_INSTTOKEN=your_token    # optional, for off-campus full-text
 | Layer | Technology |
 |-------|------------|
 | **Backend** | Python, FastAPI, LangGraph, ChromaDB |
-| **Frontend** | React 19, Vite 5, TailwindCSS 3.4 (shadcn/ui style) |
+| **UI** | Streamlit dashboard (`tools/process_monitor/`, isolated venv) |
 | **LLM** | GitHub Copilot via the official SDK (`claude-opus-4.8-fast` default) with Ollama (llama3.2 / gpt-oss) as local engine or fallback |
 | **Embeddings** | Multilingual Sentence-Transformers (paraphrase-multilingual-MiniLM-L12-v2) bi-encoder + cross-encoder reranker (ms-marco-MiniLM) |
 | **Vector DB** | ChromaDB |
