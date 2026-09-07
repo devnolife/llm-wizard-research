@@ -137,7 +137,7 @@ bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/upload-and-analyze` | Upload PDFs and run full analysis pipeline |
-| `POST` | `/api/research/chunk-preview` | Upload PDFs, get stage-1 chunks immediately (no job/LLM) |
+| `POST` | `/api/research/chunk-preview` | Upload PDFs, get stage-1 chunks immediately (no job/LLM); form field `ocr_mode=auto\|force` (force = read via ocrd) |
 | `GET` | `/api/analysis-status/{job_id}` | Check analysis progress |
 | `POST` | `/api/recommend` | Get research recommendations |
 | `POST` | `/api/gaps` | Detect synthesis gap indicators |
