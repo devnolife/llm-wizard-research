@@ -8,12 +8,19 @@ from fastapi.testclient import TestClient
 from app.api.routes import papers
 from app.main import app
 from app.services.paper_apis.unpaywall import UnpaywallAPI
-from app.utils import job_store
+from app.utils import job_store, url_guard
 
 
 @pytest.fixture(autouse=True)
 def isolated_job_store(tmp_path):
     job_store.load_jobs(tmp_path / "analysis_jobs.sqlite3")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch):
+    """Every hostname resolves to a public IP so the SSRF guard passes offline."""
+    monkeypatch.setattr(url_guard, "resolve_host", lambda hostname: ["151.101.1.1"])
     yield
 
 
@@ -156,6 +163,101 @@ def test_download_and_analyze_failed_download_is_skipped(client, monkeypatch):
     assert "Unduhan gagal" in body["skipped"][0]["reason"]
 
 
+@pytest.mark.api
+def test_download_and_analyze_skips_private_url_without_downloading(client, monkeypatch):
+    async def must_not_download(session, url, destination, max_mb):
+        raise AssertionError("URL internal tidak boleh diunduh")
+
+    monkeypatch.setattr(papers, "_download_pdf", must_not_download)
+
+    response = client.post("/api/papers/download-and-analyze", json={
+        "papers": [{"title": "Internal", "pdf_url": "http://127.0.0.1:8001/health"}]
+    })
+
+    body = response.json()
+    assert body["success"] is False
+    assert body["job_id"] is None
+    assert "tidak diizinkan" in body["skipped"][0]["reason"]
+    assert job_store.list_jobs() == []
+
+
+# ── _download_pdf redirect handling ─────────────────────────────────────────────
+
+class _FakeResponse:
+    def __init__(self, status, headers=None, body=b""):
+        self.status = status
+        self.headers = headers or {}
+        self._body = body
+        self.released = False
+        self.content = self
+
+    async def iter_chunked(self, size):
+        yield self._body
+
+    def release(self):
+        self.released = True
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        self.release()
+
+
+class _FakeSession:
+    """Maps url -> response; records every GET and asserts redirects are not auto-followed."""
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.requested = []
+
+    async def get(self, url, allow_redirects=True):
+        assert allow_redirects is False
+        self.requested.append(url)
+        return self.routes[url]
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_follows_public_redirect(tmp_path):
+    session = _FakeSession({
+        "https://doi.example/abc": _FakeResponse(302, {"Location": "/files/abc.pdf"}),
+        "https://doi.example/files/abc.pdf": _FakeResponse(200, body=b"%PDF-1.5 isi"),
+    })
+    destination = tmp_path / "abc.pdf"
+
+    await papers._download_pdf(session, "https://doi.example/abc", destination, max_mb=5)
+
+    assert session.requested == ["https://doi.example/abc", "https://doi.example/files/abc.pdf"]
+    assert destination.read_bytes().startswith(b"%PDF-")
+    assert session.routes["https://doi.example/abc"].released
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_redirect_to_private_address_is_rejected(tmp_path):
+    session = _FakeSession({
+        "https://doi.example/abc": _FakeResponse(302, {"Location": "http://127.0.0.1:8001/health"}),
+    })
+    destination = tmp_path / "abc.pdf"
+
+    with pytest.raises(url_guard.UnsafeURLError):
+        await papers._download_pdf(session, "https://doi.example/abc", destination, max_mb=5)
+
+    assert session.requested == ["https://doi.example/abc"]
+    assert not destination.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_pdf_gives_up_after_too_many_redirects(tmp_path):
+    session = _FakeSession({
+        "https://loop.example/a": _FakeResponse(301, {"Location": "https://loop.example/a"}),
+    })
+
+    with pytest.raises(ValueError, match="redirect"):
+        await papers._download_pdf(session, "https://loop.example/a", tmp_path / "a.pdf", max_mb=5)
+
+    assert len(session.requested) == papers._MAX_REDIRECTS + 1
+
+
 # ── idea-to-query endpoint ───────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
@@ -273,4 +375,32 @@ def test_fetch_pdf_no_oa_returns_404(client, monkeypatch):
     })
 
     assert response.status_code == 404
-    assert "unduh manual" in response.json()["detail"].lower()
+
+
+@pytest.mark.api
+def test_fetch_pdf_rejects_private_url_with_400(client, monkeypatch):
+    async def must_not_download(session, url, destination, max_mb):
+        raise AssertionError("URL internal tidak boleh diunduh")
+
+    monkeypatch.setattr(papers, "_download_pdf", must_not_download)
+
+    response = client.post("/api/papers/fetch-pdf", json={
+        "title": "Internal", "pdf_url": "http://127.0.0.1:8001/health"
+    })
+
+    assert response.status_code == 400
+    assert "tidak diizinkan" in response.json()["detail"]
+
+
+@pytest.mark.api
+def test_fetch_pdf_rejects_unpaywall_url_resolving_to_private_ip(client, monkeypatch):
+    async def fake_resolve(self, doi):
+        return "https://rebind.example/oa.pdf"
+
+    monkeypatch.setattr(papers.UnpaywallAPI, "resolve_pdf", fake_resolve)
+    monkeypatch.setattr(url_guard, "resolve_host", lambda hostname: ["10.0.0.7"])
+
+    response = client.post("/api/papers/fetch-pdf", json={"title": "Lewat DOI", "doi": "10.1/x"})
+
+    assert response.status_code == 400
+    assert "10.0.0.7" in response.json()["detail"]

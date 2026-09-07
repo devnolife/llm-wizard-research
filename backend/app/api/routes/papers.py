@@ -10,6 +10,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urljoin
 
 import aiohttp
 from fastapi import APIRouter, HTTPException, Response
@@ -30,6 +31,7 @@ from ...services.paper_apis import UnpaywallAPI
 from ...utils.config_loader import get_config
 from ...utils.job_store import record_job_event, save_job
 from ...utils.upload_validation import sanitize_filename
+from ...utils.url_guard import UnsafeURLError, assert_public_http_url
 from ..dependencies import get_vector_store, get_paper_api, get_glm_interface
 
 router = APIRouter()
@@ -39,6 +41,9 @@ _DOWNLOAD_HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) WizardResearch/1.0 (academic research)",
     "Accept": "application/pdf,*/*",
 }
+_MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_UNSAFE_URL_MESSAGE = "URL PDF menunjuk ke alamat internal/tidak diizinkan"
 
 
 def _normalize_pdf_url(url: str | None) -> str | None:
@@ -52,10 +57,30 @@ def _normalize_pdf_url(url: str | None) -> str | None:
     return url
 
 
+async def _get_following_redirects(session: aiohttp.ClientSession, url: str) -> aiohttp.ClientResponse:
+    """GET ``url`` following at most ``_MAX_REDIRECTS`` hops, re-checking the SSRF guard on each.
+
+    aiohttp's built-in redirect handling would happily follow a public URL into
+    ``http://127.0.0.1/...``; the caller owns the returned response.
+    """
+    for _ in range(_MAX_REDIRECTS + 1):
+        assert_public_http_url(url)
+        response = await session.get(url, allow_redirects=False)
+        if response.status not in _REDIRECT_STATUSES:
+            return response
+        location = response.headers.get("Location")
+        response.release()
+        if not location:
+            raise ValueError(f"HTTP {response.status} tanpa header Location")
+        url = urljoin(url, location)
+    raise ValueError(f"lebih dari {_MAX_REDIRECTS} redirect")
+
+
 async def _download_pdf(session: aiohttp.ClientSession, url: str, destination: Path, max_mb: int) -> None:
     """Stream a PDF to disk, enforcing the PDF magic header and a size limit."""
     limit = max_mb * 1024 * 1024
-    async with session.get(url, allow_redirects=True) as response:
+    response = await _get_following_redirects(session, url)
+    async with response:
         if response.status != 200:
             raise ValueError(f"HTTP {response.status}")
         total = 0
@@ -174,6 +199,10 @@ async def fetch_pdf(paper: PaperToDownload):
             detail="Tidak ditemukan PDF open-access legal untuk paper ini — "
                    "unduh manual dari halaman publisher dengan akses kampus Anda.",
         )
+    try:
+        assert_public_http_url(pdf_url)
+    except UnsafeURLError as e:
+        raise HTTPException(status_code=400, detail=f"{_UNSAFE_URL_MESSAGE}: {e}")
 
     # mkstemp returns an open descriptor; close it or every download leaks one.
     fd, tmp_name = tempfile.mkstemp(suffix=".pdf")
@@ -186,6 +215,10 @@ async def fetch_pdf(paper: PaperToDownload):
         data = tmp_path.read_bytes()
     except HTTPException:
         raise
+    except UnsafeURLError as e:
+        # a redirect hop landed on an internal address
+        logger.warning(f"fetch-pdf ditolak ({pdf_url}): {e}")
+        raise HTTPException(status_code=400, detail=f"{_UNSAFE_URL_MESSAGE}: {e}")
     except Exception as e:
         logger.warning(f"fetch-pdf gagal ({pdf_url}): {e}")
         raise HTTPException(status_code=502, detail=f"Gagal mengunduh PDF: {e}")
@@ -235,6 +268,17 @@ async def download_and_analyze(request: DownloadAnalyzeRequest):
                     "title": title,
                     "reason": "Tidak ada PDF open-access — unduh manual dari publisher",
                     "doi": paper.doi,
+                })
+                continue
+            try:
+                assert_public_http_url(pdf_url)
+            except UnsafeURLError as exc:
+                logger.warning(f"URL ditolak untuk '{title}' ({pdf_url}): {exc}")
+                skipped.append({
+                    "title": title,
+                    "reason": f"{_UNSAFE_URL_MESSAGE}: {exc}",
+                    "doi": paper.doi,
+                    "pdf_url": pdf_url,
                 })
                 continue
 
