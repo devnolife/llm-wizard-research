@@ -107,17 +107,14 @@ clean: ## Clean temporary files and caches
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	cd frontend && rm -rf node_modules/.vite
 
-docker-up: ## Start all services with Docker Compose
-	docker-compose up -d
+docker-up: ## Start optional services (GROBID) with Docker Compose
+	docker compose --profile grobid up -d
 
-docker-down: ## Stop all Docker services
-	docker-compose down
+docker-down: ## Stop optional Docker services
+	docker compose --profile grobid --profile neo4j down
 
-docker-build: ## Build Docker images
-	docker-compose build
-
-docker-logs: ## View Docker logs
-	docker-compose logs -f
+docker-logs: ## View Docker logs of optional services
+	docker compose --profile grobid --profile neo4j logs -f
 
 db-stats: ## Show vector store statistics (collection, doc count, model)
 	cd backend && python scripts/vectorstore_cli.py stats

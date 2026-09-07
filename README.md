@@ -81,7 +81,12 @@ wizard-research/
 - Python 3.9+
 - Node.js 18+
 - [Ollama](https://ollama.ai) with `llama3.2:latest` (or any compatible model)
-- Optional: [copilotd](https://github.com/devnolife/copilot-sdk-go) — when `COPILOTD_URL` is set (with `LLM_ENGINE=copilot`), all text generation runs on GitHub Copilot (`COPILOTD_MODEL`, default `claude-opus-4.8-fast`); Ollama then only serves as fallback (`COPILOT_STRICT=0`) or for embeddings
+- Optional: **GitHub Copilot** via the official SDK (`github-copilot-sdk`, CLI bundled). Log in once with
+  `<site-packages>/copilot/bin/copilot --config-dir .copilot-sdk login`; when the SDK is installed and
+  `COPILOT_DISABLED` is not set, all text generation runs on Copilot (`COPILOT_MODEL`, default
+  `claude-opus-4.8-fast`) and Ollama only serves embeddings. `LLM_ENGINE=copilot|ollama` forces an engine;
+  `COPILOT_STRICT=0` allows silent fallback to Ollama when Copilot is unavailable. Other knobs:
+  `COPILOT_CLI_PATH`, `COPILOT_CONFIG_DIR`, `COPILOT_MAX_CONCURRENCY` (see `backend/.env.example`)
 
 ### Installation
 
@@ -175,9 +180,8 @@ Configuration lives under the `OCR_*` env vars (see `.env`): `OCR_ENABLED`,
 `OCR_IMAGE_MODE` (`gundam`/`base`), `OCR_DPI` (0 = server default),
 `OCR_TIMEOUT`, and `OCR_PREFER_TEXT_LAYER`.
 
-> **Note:** the legacy `ocr_service/` folder (raw SGLang setup on port 10000)
-> is **deprecated** — ocrd manages its own GPU runtime. The folder is kept
-> only until you decide to delete it.
+> **Note:** the first-generation `ocr_service/` folder (raw SGLang setup on
+> port 10000) has been removed; ocrd at `~/ocr-service` is the only OCR runtime.
 
 ---
 
@@ -449,13 +453,14 @@ New per-chunk JSONL schema adds: `doi`, `paper_title`, `authors`, `year`,
 
 ## Docker
 
-Docker setup is currently a template, not the primary supported path; for
-development, run the backend and frontend with `make backend` / `make frontend`.
+The backend is not containerised; run it with `make backend`. `docker-compose.yml`
+only provides **optional** services behind profiles:
 
 ```bash
-docker-compose up -d    # Start all services
-docker-compose down     # Stop services
-docker-compose logs -f  # View logs
+docker compose --profile grobid up -d grobid   # PDF metadata + IMRaD sections (GROBID_URL)
+docker compose --profile neo4j  up -d neo4j    # external knowledge-graph store
+docker compose --profile grobid --profile neo4j down
+```
 ```
 
 ---
@@ -495,7 +500,7 @@ ELSEVIER_INSTTOKEN=your_token    # optional, for off-campus full-text
 |-------|------------|
 | **Backend** | Python, FastAPI, LangGraph, ChromaDB |
 | **Frontend** | React 19, Vite 5, TailwindCSS 3.4 (shadcn/ui style) |
-| **LLM** | GitHub Copilot via copilotd (`claude-opus-4.8-fast` default) with Ollama (llama3.2 / gpt-oss) as local engine or fallback |
+| **LLM** | GitHub Copilot via the official SDK (`claude-opus-4.8-fast` default) with Ollama (llama3.2 / gpt-oss) as local engine or fallback |
 | **Embeddings** | Multilingual Sentence-Transformers (paraphrase-multilingual-MiniLM-L12-v2) bi-encoder + cross-encoder reranker (ms-marco-MiniLM) |
 | **Vector DB** | ChromaDB |
 | **APIs** | arXiv, Semantic Scholar, CORE, PubMed, CrossRef, Europe PMC, ScienceDirect |

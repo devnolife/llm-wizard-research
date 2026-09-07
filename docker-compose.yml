@@ -1,27 +1,10 @@
-# NOTE: This compose file is currently NOT functional (no Dockerfile in repo) and is kept as a template. See README Quick Start for the supported way to run.
-
-version: '3.8'
+# Optional services only. The backend itself is not containerised (no Dockerfile);
+# run it with `make backend` (see README Quick Start).
+#
+#   docker compose --profile grobid up -d grobid   # PDF metadata + IMRaD sections
+#   docker compose --profile neo4j  up -d neo4j    # external knowledge-graph store
 
 services:
-  # RAG-LLM API Service
-  api:
-    build: .
-    container_name: rag-llm-api
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./chroma_db:/app/chroma_db
-      - ./backend/config.yaml:/app/config.yaml:ro
-    environment:
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - CHROMA_PERSIST_DIRECTORY=/app/chroma_db
-      - LOG_LEVEL=INFO
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-
   # Neo4j Knowledge Graph (Optional)
   neo4j:
     profiles: ["neo4j"]
@@ -42,8 +25,7 @@ services:
     restart: unless-stopped
 
   # GROBID — high-quality PDF metadata + IMRaD structure (TAHAP 1, optional).
-  # Enable with: docker compose --profile grobid up -d grobid
-  # then set GROBID_URL=http://localhost:8070 for the backend.
+  # Then set GROBID_URL=http://localhost:8070 for the backend.
   grobid:
     profiles: ["grobid"]
     image: lfoppiano/grobid:0.8.1

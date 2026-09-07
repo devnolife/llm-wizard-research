@@ -91,7 +91,7 @@ hasil akhirnya langsung di Streamlit.
    latar belakang, rumusan masalah, tujuan, metodologi bertahap dengan **bagan
    alur (graphviz)**, rencana eksperimen (tabel), kontribusi, risiko, dan kata
    kunci literatur (tombol lompat ke halaman Cari Paper). Engine: GitHub
-   Copilot via copilotd, fallback Ollama.
+   Copilot via SDK resmi, fallback Ollama.
 8. **🧾 Log Event** — riwayat event mentah (metadata-only) per job.
 
 ## Menjalankan
@@ -147,8 +147,8 @@ python -m venv .venv && .venv/bin/pip install streamlit requests pyvis
   paper berbayar dilaporkan `skipped` (unduh manual).
 - `POST /api/papers/idea-to-query` — mengubah ide penelitian (Indonesia/Inggris)
   menjadi kata kunci pencarian akademik Inggris (JSON). Memakai **GitHub
-  Copilot** (via `copilotd`, service Go Copilot SDK — env `COPILOTD_URL` +
-  `COPILOTD_API_KEY`) dan fallback otomatis ke LLM lokal (Ollama) bila mati;
+  Copilot** (SDK resmi `github-copilot-sdk` — env `COPILOT_MODEL`,
+  `COPILOT_DISABLED`, `COPILOT_CONFIG_DIR`) dan fallback otomatis ke LLM lokal (Ollama) bila mati;
   respons menyertakan `engine` yang dipakai.
 - `POST /api/papers/fetch-pdf` — unduh SATU PDF open-access untuk sebuah paper
   (pdf_url / DOI via Unpaywall) dan kirim sebagai berkas `application/pdf` —

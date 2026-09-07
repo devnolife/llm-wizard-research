@@ -21,6 +21,7 @@ def test_data_dir():
 def setup_logging():
     """Use one bounded test log sink instead of adding one per test case."""
     Path("logs").mkdir(exist_ok=True)
-    sink_id = logger.add("logs/test.log", rotation="10 MB", level="WARNING")
+    # retention: tanpa ini setiap rotasi menyisakan test.<timestamp>.log selamanya
+    sink_id = logger.add("logs/test.log", rotation="10 MB", retention=3, level="WARNING")
     yield
     logger.remove(sink_id)
