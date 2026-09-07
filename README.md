@@ -112,6 +112,14 @@ cd tools/process_monitor && .venv/bin/streamlit run app.py
 - **UI:** http://localhost:8501 — see [tools/process_monitor/README.md](tools/process_monitor/README.md)
 - **API Docs:** http://localhost:8001/docs
 
+**Wizard Lite** (`tools/wizard_lite/`) is a deliberately small, step-by-step UI being built
+alongside the full dashboard. Step 1 uploads PDFs and shows the resulting chunks via
+`POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector store):
+
+```bash
+bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process_monitor venv)
+```
+
 ---
 
 ## Usage
@@ -129,6 +137,7 @@ cd tools/process_monitor && .venv/bin/streamlit run app.py
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/upload-and-analyze` | Upload PDFs and run full analysis pipeline |
+| `POST` | `/api/research/chunk-preview` | Upload PDFs, get stage-1 chunks immediately (no job/LLM) |
 | `GET` | `/api/analysis-status/{job_id}` | Check analysis progress |
 | `POST` | `/api/recommend` | Get research recommendations |
 | `POST` | `/api/gaps` | Detect synthesis gap indicators |

@@ -110,6 +110,78 @@ class TestStartEndpoint:
         assert client.post("/api/research/start").status_code == 422
 
 
+class TestChunkPreviewEndpoint:
+    """Tahap 1 tanpa job: process_pdf di-stub agar tes offline dan cepat."""
+
+    def setup_method(self):
+        from app.api.routes import research as research_routes
+        from app.core.pipeline.pipeline import PipelineResult
+        from app.core.pipeline.schema import PaperMeta, PipelineChunk
+
+        self.calls: list = []
+
+        def fake_process_pdf(pdf_path, source=None, **_):
+            self.calls.append((Path(pdf_path).exists(), source))
+            if source == "rusak.pdf":
+                raise RuntimeError("PDF tidak bisa dibaca")
+            meta = PaperMeta(source=source, paper_title="Judul Uji", year=2024, language="id")
+            chunks = [
+                PipelineChunk(source=source, chunk_index=0, text="pendahuluan", token_count=3,
+                              section_normalized="introduction", page_start=1),
+                PipelineChunk(source=source, chunk_index=1, text="metode", token_count=2,
+                              section_normalized="methods", page_start=2),
+                PipelineChunk(source=source, chunk_index=2, text="metode lanjut", token_count=4,
+                              section_normalized="methods", page_start=2),
+            ]
+            return PipelineResult(meta=meta, chunks=chunks, num_pages=2,
+                                  extraction_method="pymupdf_layout")
+
+        self._orig = research_routes.process_pdf
+        research_routes.process_pdf = fake_process_pdf
+
+    def teardown_method(self):
+        from app.api.routes import research as research_routes
+        research_routes.process_pdf = self._orig
+
+    def _post(self, *names):
+        return client.post(
+            "/api/research/chunk-preview",
+            files=[("files", (n, _MINIMAL_PDF, "application/pdf")) for n in names],
+        )
+
+    def test_returns_meta_sections_and_every_chunk(self):
+        body = self._post("uji.pdf").json()
+        (item,) = body["files"]
+        assert item["source"] == "uji.pdf"
+        assert item["meta"]["paper_title"] == "Judul Uji" and item["pages"] == 2
+        assert item["num_chunks"] == 3 and item["token_total"] == 9
+        assert item["sections"] == {"introduction": 1, "methods": 2}
+        assert [c["chunk_index"] for c in item["chunks"]] == [0, 1, 2]
+        assert item["chunks"][0]["text"] == "pendahuluan"
+        assert body["params"]["target_tokens"] > 0
+
+    def test_no_job_is_created_and_temp_file_is_removed(self):
+        before = {j["job_id"] for j in job_store.list_jobs()}
+        self._post("uji.pdf")
+        assert {j["job_id"] for j in job_store.list_jobs()} == before
+        # the stub saw the temp file while processing; the endpoint then deletes the dir
+        assert self.calls == [(True, "uji.pdf")]
+
+    def test_one_broken_pdf_does_not_sink_the_batch(self):
+        body = self._post("rusak.pdf", "baik.pdf").json()
+        assert [f["source"] for f in body["files"]] == ["rusak.pdf", "baik.pdf"]
+        assert "error" in body["files"][0] and body["files"][0]["chunks"] == []
+        assert body["files"][1]["num_chunks"] == 3
+
+    def test_rejects_non_pdf_upload(self):
+        resp = client.post(
+            "/api/research/chunk-preview",
+            files=[("files", ("catatan.txt", b"bukan pdf", "text/plain"))],
+        )
+        assert resp.status_code == 415
+        assert self.calls == []
+
+
 class TestRecordEndpoints:
     """Endpoint yang membaca berkas keluaran penuh, bukan 8 sampel di artefak."""
 

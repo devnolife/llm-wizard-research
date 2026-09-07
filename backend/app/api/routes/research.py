@@ -10,15 +10,24 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 import time
 import uuid
+from collections import Counter
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from loguru import logger
 
 from ...core.pipeline.io import read_jsonl
+from ...core.pipeline.pipeline import PipelineResult, process_pdf
+from ...core.pipeline.token_chunker import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_OVERLAP_RATIO,
+    DEFAULT_TARGET_TOKENS,
+)
 from ...services.analysis_queue import get_analysis_queue
 from ...services.research_pipeline import (
     PIPELINE_CONSTANTS,
@@ -221,4 +230,58 @@ async def start_research(files: List[UploadFile] = File(...)):
         "files_count": len(pdf_paths),
         "stages": [s[0] for s in RESEARCH_STAGES],
         "message": "Pipeline penelitian diantrekan. Pantau lewat /api/analysis-status/{job_id}.",
+    }
+
+
+def _preview_payload(source: str, result: PipelineResult) -> Dict[str, Any]:
+    """Bentuk respons satu PDF untuk chunk-preview: metadata + seluruh chunk."""
+    chunks = [c.to_json_record() for c in result.chunks]
+    return {
+        "source": source,
+        "meta": result.meta.to_dict(),
+        "pages": result.num_pages,
+        "extraction_method": result.extraction_method,
+        "grobid_used": result.grobid_used,
+        "num_chunks": len(chunks),
+        "token_total": sum(c["token_count"] for c in chunks),
+        "sections": dict(Counter(c["section_normalized"] for c in chunks)),
+        "chunks": chunks,
+    }
+
+
+@router.post("/chunk-preview")
+async def chunk_preview(files: List[UploadFile] = File(...)):
+    """TAHAP 1 saja: unggah PDF, kembalikan chunk-nya langsung.
+
+    Tidak membuat job, tidak menyentuh antrean, LLM, maupun vector store —
+    hanya ``process_pdf`` pada berkas sementara yang dihapus setelah selesai.
+    Dipakai UI ringan untuk memperlihatkan hasil pemotongan sebelum analisis.
+    """
+    config = get_config()
+    allowed = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
+    if "pdf" not in allowed:
+        raise HTTPException(status_code=415, detail="Unggahan PDF tidak diaktifkan")
+
+    results: List[Dict[str, Any]] = []
+    with tempfile.TemporaryDirectory(prefix="chunk-preview-") as tmp:
+        for index, file in enumerate(files):
+            source = sanitize_filename(file.filename)
+            target = Path(tmp) / f"{index:02d}_{source}"
+            await write_validated_pdf_upload(file, target, config.data.max_file_size_mb)
+            try:
+                # process_pdf is CPU-bound and synchronous; keep the event loop free
+                result = await run_in_threadpool(process_pdf, str(target), source=source)
+            except Exception as exc:
+                logger.error(f"chunk-preview gagal pada {source}: {exc}")
+                results.append({"source": source, "error": str(exc)[:300], "chunks": []})
+                continue
+            results.append(_preview_payload(source, result))
+
+    return {
+        "files": results,
+        "params": {
+            "target_tokens": DEFAULT_TARGET_TOKENS,
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "overlap_ratio": DEFAULT_OVERLAP_RATIO,
+        },
     }
