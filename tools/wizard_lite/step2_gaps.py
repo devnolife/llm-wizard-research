@@ -42,7 +42,7 @@ REASON_LABELS = {
 
 
 def reset() -> None:
-    for key in ("gap_job_id", "gap_records", "novelty_records"):
+    for key in ("gap_job_id", "gap_records"):
         st.session_state.pop(key, None)
 
 
@@ -259,7 +259,7 @@ def render(api_base: str, uploads, ocr_mode: str, backend_ok: bool, chunks_by_id
         "chunk berfrasa penanda gap, abstrak, awal pendahuluan, dan 2 chunk terakhir). "
         "LLM membaca tiap kandidat beserta chunk tetangganya dan mengutip kalimat gap "
         "**apa adanya**; kalimat yang tidak ditemukan verbatim di teks sumber dibuang, "
-        "lalu duplikat disatukan. Cek kebaruan ke literatur ada di langkah 3."
+        "lalu duplikat disatukan. Semua bukti berasal dari jurnal yang Anda unggah."
     )
 
     job_id = st.session_state.get("gap_job_id")
@@ -291,7 +291,7 @@ def render(api_base: str, uploads, ocr_mode: str, backend_ok: bool, chunks_by_id
     gaps: list = []
     if "gap_mining" in (status.get("stages_done") or []):
         # tahap gap sudah selesai — hasilnya tetap bisa dibaca meski job sedang
-        # melanjutkan tahap berikutnya (langkah 3)
+        # melanjutkan tahap berikutnya
         gaps = _render_results(api_base, job_id, chunks_by_id)
     elif state in TERMINAL_STATUSES:
         st.error(status.get("error") or status.get("message") or f"Job berakhir: {state}")

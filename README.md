@@ -113,21 +113,21 @@ cd tools/process_monitor && .venv/bin/streamlit run app.py
 - **API Docs:** http://localhost:8001/docs
 
 **Wizard Lite** (`tools/wizard_lite/`) is a deliberately small, step-by-step UI being built
-alongside the full dashboard. Step 1 uploads PDFs and shows the resulting chunks via
-`POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector store); step 2
-runs a research job with `until=gap_mining` and shows every candidate chunk, the LLM's
-answer, and the gaps that survived verbatim verification; step 3 continues the *same* job
-(`POST /api/research/{job_id}/continue`) into the OpenAlex novelty check so the gaps the
-user already read are not re-mined:
+alongside the full dashboard and scoped to the **uploaded journals only** (no external
+literature lookup — that is outside the thesis proposal). Step 1 uploads PDFs and shows the
+resulting chunks via `POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector
+store); step 2 runs a research job with `until=gap_mining` and shows every candidate chunk, the
+LLM's answer, and the gaps that survived verbatim verification:
 
 ```bash
 bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process_monitor venv)
 ```
 
-> OpenAlex's free tier is credit-based (≈100 searches/day per IP or `mailto`). When it answers
-> 429 with a long `Retry-After`, the host is put in cooldown and the remaining gaps are stored as
-> `novelty_status="unchecked"` (never silently `"open"`); `novelty_limit` on `/continue` lets you
-> spend the quota deliberately and re-check later (cached hits cost nothing).
+> The full pipeline's novelty stage queries OpenAlex, whose free tier is credit-based (≈100
+> searches/day per IP or `mailto`). When it answers 429 with a long `Retry-After`, the host is put
+> in cooldown and the remaining gaps are stored as `novelty_status="unchecked"` (never silently
+> `"open"`); `novelty_limit` on `/continue` lets you spend the quota deliberately and re-check later
+> (cached hits cost nothing).
 
 ---
 

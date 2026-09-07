@@ -1,8 +1,10 @@
-"""Wizard Lite — UI bertahap di atas pipeline penelitian.
+"""Wizard Lite — UI bertahap di atas pipeline penelitian, fokus pada jurnal yang diunggah.
 
 Langkah 1: unggah PDF → lihat chunk (``POST /api/research/chunk-preview``; tanpa job/LLM).
 Langkah 2: cari research gap dengan LLM (job pipeline ``until=gap_mining``).
-Langkah 3: cek kebaruan tiap gap ke OpenAlex 2024+ (lanjutkan job yang sama).
+
+Pencarian ke literatur luar (OpenAlex) sengaja TIDAK ada di sini — bukan bagian
+proposal; analisis dibatasi pada jurnal yang diunggah pengguna.
 
 Jalankan:  bash tools/wizard_lite/run.sh   (backend harus hidup di :8001)
 """
@@ -17,7 +19,6 @@ import pandas as pd
 import streamlit as st
 
 import step2_gaps
-import step3_novelty
 from wl_common import (
     DEFAULT_API,
     METHOD_LABELS,
@@ -133,7 +134,7 @@ def render_chunks(item: dict, key: str) -> None:
 
 with st.sidebar:
     st.title("📄 Wizard Lite")
-    st.caption("1 chunk → 2 research gap → 3 cek kebaruan")
+    st.caption("1 chunk → 2 research gap · fokus jurnal yang diunggah")
     st.text_input("Alamat backend", key="api_base")
     alive = backend_alive(st.session_state["api_base"])
     st.markdown("Backend: " + ("🟢 hidup" if alive else "🔴 tidak terjangkau"))
@@ -227,9 +228,6 @@ job_id, job_state, gaps = step2_gaps.render(
     backend_ok=alive,
     chunks_by_id=chunks_by_id,
 )
-
-st.divider()
-step3_novelty.render(st.session_state["api_base"], job_id, job_state, gaps)
 
 # Satu polling untuk semua langkah: rerun selama job belum berakhir.
 if job_state and job_state.get("status") not in TERMINAL_STATUSES:

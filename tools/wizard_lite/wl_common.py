@@ -85,14 +85,6 @@ def start_research_job(api_base: str, uploads, ocr_mode: str, until: str) -> dic
     return resp.json()
 
 
-def continue_research_job(api_base: str, job_id: str, until: str, novelty_limit: int = 0) -> dict:
-    """Lanjutkan job yang selesai ke tahap berikutnya memakai keluaran yang sudah ada."""
-    resp = requests.post(f"{api_base}/api/research/{job_id}/continue",
-                         data={"until": until, "novelty_limit": str(novelty_limit)}, timeout=30)
-    _raise_for_status(resp)
-    return resp.json()
-
-
 def job_status(api_base: str, job_id: str) -> dict:
     resp = requests.get(f"{api_base}/api/analysis-status/{job_id}", timeout=15)
     _raise_for_status(resp)
