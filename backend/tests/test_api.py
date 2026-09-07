@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import auto_analysis
 from app.api.routes import analysis, documents, health
 from app.main import app
 from app.utils import job_store
@@ -522,7 +523,7 @@ def test_uploaded_paper_similarity_is_a_scoped_percentage():
 
     papers = [{"content": "paper one"}, {"content": "paper two"}]
 
-    analysis._add_uploaded_paper_similarity(papers, VectorStore())
+    auto_analysis._add_uploaded_paper_similarity(papers, VectorStore())
 
     assert [paper["similarity_percent"] for paper in papers] == [60, 60]
 

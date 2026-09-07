@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
     os.makedirs("logs", exist_ok=True)
 
     # Pre-load critical components
+    from .api import auto_analysis
     from .api.dependencies import get_document_processor, get_vector_store
     from .services import research_pipeline
     from .services.analysis_queue import get_analysis_queue
@@ -61,7 +62,7 @@ async def lifespan(app: FastAPI):
     # Jobs are dispatched by their ``pipeline`` field; the legacy 8-stage
     # analysis is the default for jobs that predate the field.
     queue.register(research_pipeline.PIPELINE_NAME, research_pipeline.run_research_job)
-    queue.start(analysis.process_auto_analysis)
+    queue.start(auto_analysis.process_auto_analysis)
 
     yield
 
