@@ -439,6 +439,38 @@ class TestNoveltyEmbedderCoercion:
         self._assert_json_safe(ranked)
 
 
+class TestNoveltyCorpusCache:
+    """The corpus matrix must be cached by content, not by list identity."""
+
+    class _CountingEmbedder:
+        def __init__(self):
+            self.calls = []
+
+        def encode(self, texts, **kwargs):
+            self.calls.append(list(texts))
+            return [[float(len(t)), 1.0] for t in texts]
+
+    def test_equal_content_in_a_new_list_is_not_re_embedded(self):
+        embedder = self._CountingEmbedder()
+        backend = _Backend(embedder)
+
+        backend.similarities("query one", ["paper a", "paper b"])
+        backend.similarities("query two", ["paper a", "paper b"])  # fresh list, same texts
+
+        corpus_calls = [c for c in embedder.calls if c == ["paper a", "paper b"]]
+        assert len(corpus_calls) == 1
+
+    def test_changed_content_is_re_embedded(self):
+        embedder = self._CountingEmbedder()
+        backend = _Backend(embedder)
+
+        backend.similarities("q", ["paper a"])
+        backend.similarities("q", ["paper a", "paper c"])
+
+        assert ["paper a"] in embedder.calls
+        assert ["paper a", "paper c"] in embedder.calls
+
+
 class TestAspectGroundingSymmetry:
     """Grounding and quote extraction must use the SAME terms.
 

@@ -111,7 +111,7 @@ class _Backend:
 
     def __init__(self, embedder=None):
         self.embedder = embedder
-        self._corpus_ref: Optional[Sequence[str]] = None
+        self._corpus_key: Optional[tuple] = None
         self._corpus_vectors: Optional[List[List[float]]] = None
         self._query_cache: Dict[str, List[float]] = {}
 
@@ -137,10 +137,15 @@ class _Backend:
             logger.debug(f"Novelty batch embedding failed: {exc}")
 
     def _corpus_matrix(self, corpus: Sequence[str]) -> List[List[float]]:
-        """Encode the corpus once per ranking run instead of once per proposal."""
-        if self._corpus_ref is not corpus:
+        """Encode the corpus once per distinct content.
+
+        Keyed by the texts themselves: callers routinely rebuild the corpus list
+        per call, so an identity check would re-embed identical papers each time.
+        """
+        key = tuple(corpus)
+        if self._corpus_key != key:
             self._corpus_vectors = [_as_floats(v) for v in self.embedder.encode(list(corpus))]
-            self._corpus_ref = corpus
+            self._corpus_key = key
         return self._corpus_vectors
 
     def similarities(self, query: str, corpus: Sequence[str]) -> List[float]:
