@@ -52,6 +52,7 @@ from ..core.recommendation.themes import THEME_SIMILARITY_THRESHOLD, build_theme
 from ..utils.config_loader import get_config
 from ..utils.job_store import (
     add_stage_artifact,
+    complete_job,
     get_job,
     is_cancel_requested,
     record_job_event,
@@ -984,7 +985,7 @@ def run_research_pipeline(
                 rec.finish(outcome)
             summary[phase] = outcome.metrics
     except ResearchCancelled:
-        update_job(job_id, status="cancelled",
+        update_job(job_id, status="cancelled", progress=0,
                    message=f"Dibatalkan oleh pengguna saat tahap {phase}")
         raise
     except Exception as exc:
@@ -993,8 +994,12 @@ def run_research_pipeline(
                    message=f"Gagal di tahap {phase}")
         raise
 
-    update_job(job_id, status="completed", progress=100.0,
-               message="Pipeline penelitian selesai", completed_at=time.time())
+    # Atomic with the cancel flag: a cancel that arrived during the last stage
+    # must not be overwritten by "completed".
+    if complete_job(job_id, message="Pipeline penelitian selesai") is None:
+        update_job(job_id, status="cancelled", progress=0,
+                   message=f"Dibatalkan oleh pengguna saat tahap {phase}")
+        raise ResearchCancelled("Pipeline penelitian dibatalkan oleh pengguna")
     return {"job_id": job_id, "stages": summary,
             "outputs": {k: str(v) for k, v in paths.items()}}
 

@@ -20,6 +20,7 @@ from ..core.recommendation.novelty import rank_proposals
 from ..core.pipeline.pipeline import process_pdf_as_document
 from ..utils.job_store import (
     add_stage_artifact,
+    complete_job,
     get_job,
     is_cancel_requested,
     record_job_event,
@@ -974,10 +975,8 @@ JSON:"""
 
         _ensure_job_active(job_id)
         graph_snapshot = analysis_context.graph_snapshot()
-        _set_analysis_job(
+        completed = complete_job(
             job_id,
-            status="completed",
-            progress=100,
             message="Analysis complete!",
             results={
                 "topics": topics,
@@ -1023,6 +1022,9 @@ JSON:"""
             },
             graph_snapshot=graph_snapshot,
         )
+        if completed is None:
+            # cancel landed after the last cooperative check above
+            raise JobCancelled("Analisis dibatalkan oleh pengguna")
         record_job_event(
             job_id,
             "job.completed",
@@ -1036,9 +1038,11 @@ JSON:"""
         )
 
     except JobCancelled:
+        # no usable result is kept, so the bar must not stay at e.g. 95%
         _set_analysis_job(
             job_id,
             status="cancelled",
+            progress=0,
             message="Analisis dibatalkan oleh pengguna",
             error=None,
         )

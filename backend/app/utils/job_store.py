@@ -417,6 +417,39 @@ def update_job(job_id: str, **updates: Any) -> JobRecord | None:
         return deepcopy(job)
 
 
+def complete_job(job_id: str, **updates: Any) -> JobRecord | None:
+    """Mark a job ``completed`` unless cancellation was requested meanwhile.
+
+    Pipelines check ``is_cancel_requested`` between phases; a cancel that lands
+    after the last check would otherwise be overwritten by the final
+    ``status="completed"`` write. The check and the write share one lock and
+    one transaction here. Returns ``None`` when the job is missing or has
+    ``cancel_requested`` set — the caller should then finish as cancelled.
+    """
+    final = {**updates, "status": "completed", "progress": 100}
+    with _LOCK:
+        if _LEGACY_MODE:
+            current = _JOBS.get(job_id)
+            if current is None or current.get("cancel_requested"):
+                return None
+            current = {**current, **final}
+            save_job(job_id, current)
+            return deepcopy(current)
+        target = _ensure_sqlite()
+        with _connect(target) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT cancel_requested FROM jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if row is None or row["cancel_requested"]:
+                conn.rollback()
+                return None
+            job = _persist_job(conn, job_id, final)
+            conn.commit()
+        _JOBS[job_id] = job
+        return deepcopy(job)
+
+
 def delete_job(job_id: str) -> JobRecord | None:
     """Delete one job (events/artifacts cascade) and return the removed record."""
     with _LOCK:

@@ -183,3 +183,34 @@ def test_retry_job_resets_attempt_counter_so_claim_succeeds():
     assert claimed["job_id"] == "job-retry"
     assert claimed["status"] == "running"
     assert claimed["attempt"] == 1
+
+
+def test_complete_job_marks_running_job_completed():
+    job_store.load_jobs(SCRATCH_DIR / "analysis_jobs.sqlite3")
+    job_store.save_job("job-done", {"status": "running", "progress": 95})
+
+    job = job_store.complete_job("job-done", message="selesai", results={"gaps": []})
+
+    assert job is not None
+    assert job["status"] == "completed" and job["progress"] == 100
+    assert job["results"] == {"gaps": []}
+    assert job["completed_at"] is not None
+    assert job_store.get_job("job-done")["status"] == "completed"
+
+
+def test_complete_job_refuses_when_cancel_was_requested():
+    """A cancel that lands after the pipeline's last check must win over 'completed'."""
+    job_store.load_jobs(SCRATCH_DIR / "analysis_jobs.sqlite3")
+    job_store.save_job("job-late-cancel", {"status": "running", "progress": 95})
+    job_store.request_cancel("job-late-cancel")
+
+    assert job_store.complete_job("job-late-cancel", results={"gaps": []}) is None
+
+    job = job_store.get_job("job-late-cancel")
+    assert job["status"] == "running" and job["cancel_requested"] is True
+    assert job.get("results") is None, "hasil tidak boleh ditulis diam-diam"
+
+
+def test_complete_job_returns_none_for_unknown_job():
+    job_store.load_jobs(SCRATCH_DIR / "analysis_jobs.sqlite3")
+    assert job_store.complete_job("job-missing") is None

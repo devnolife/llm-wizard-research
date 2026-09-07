@@ -190,8 +190,33 @@ class TestOrchestratorAsQueueHandler:
 
         job = job_store.get_job("rq-cancel")
         assert job["status"] == "cancelled"
+        assert job["progress"] == 0
         assert "gap_mining" in job["message"], "tahap berikutnya tidak boleh dimulai"
         assert calls == ["stage_chunking"]
+
+    def test_cancel_during_last_stage_is_not_overwritten_by_completed(self, monkeypatch):
+        """No cooperative check runs after the final stage; the completion write
+        itself must refuse when cancel_requested is already set."""
+        calls = self._stub_stages(monkeypatch)
+        pdf = SCRATCH / "d.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        self._queued_job("rq-late", pdf)
+        original = research_pipeline.stage_recommendation
+
+        def recommend_then_cancel(*a, **k):
+            outcome = original(*a, **k)
+            job_store.request_cancel("rq-late")
+            return outcome
+        monkeypatch.setattr(research_pipeline, "stage_recommendation", recommend_then_cancel)
+
+        run_research_job("rq-late")
+
+        job = job_store.get_job("rq-late")
+        assert job["status"] == "cancelled"
+        assert job["progress"] == 0
+        assert len(calls) == 4, "semua tahap sudah berjalan; hanya status akhir yang berubah"
+        types = [e["type"] for e in job_store.get_job_events("rq-late")]
+        assert "job.cancelled" in types and "job.completed" not in types
 
     def test_run_pipeline_raises_cancelled_for_direct_callers(self, monkeypatch):
         self._stub_stages(monkeypatch)
