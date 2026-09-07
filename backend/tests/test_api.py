@@ -43,6 +43,64 @@ def test_health_endpoint_uses_mocked_dependencies(client, monkeypatch):
     assert response.json()["components"] == {"glm": True, "vector_store": True}
 
 
+class _SwitchableGLM:
+    engine = "ollama"
+
+    def __init__(self):
+        self.model = "llama3.2:latest"
+        self.switched_to = []
+
+    def list_available_models(self):
+        return [{"name": "llama3.2:latest"}, {"name": "gpt-oss:latest"}]
+
+    def switch_model(self, name):
+        self.switched_to.append(name)
+        self.model = name
+
+    @property
+    def active_model_name(self):
+        return self.model
+
+
+@pytest.mark.api
+def test_switch_model_refused_while_a_job_is_running(client, monkeypatch):
+    glm = _SwitchableGLM()
+    monkeypatch.setattr(health, "get_glm_interface", lambda: glm)
+    job_store.save_job("busy", {"status": "running", "progress": 40})
+    job_store.save_job("done", {"status": "completed", "progress": 100})
+
+    response = client.post("/api/models/switch", json={"model_name": "gpt-oss:latest"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["running_jobs"] == ["busy"]
+    assert glm.switched_to == [], "model tidak boleh berubah di tengah job"
+
+
+@pytest.mark.api
+def test_switch_model_succeeds_when_idle(client, monkeypatch):
+    glm = _SwitchableGLM()
+    monkeypatch.setattr(health, "get_glm_interface", lambda: glm)
+    job_store.save_job("done", {"status": "completed", "progress": 100})
+
+    response = client.post("/api/models/switch", json={"model_name": "gpt-oss:latest"})
+
+    assert response.status_code == 200
+    assert response.json()["active_model"] == "gpt-oss:latest"
+    assert response.json()["engine"] == "ollama"
+    assert glm.switched_to == ["gpt-oss:latest"]
+
+
+@pytest.mark.api
+def test_switch_model_unknown_name_is_404(client, monkeypatch):
+    glm = _SwitchableGLM()
+    monkeypatch.setattr(health, "get_glm_interface", lambda: glm)
+
+    response = client.post("/api/models/switch", json={"model_name": "nope:latest"})
+
+    assert response.status_code == 404
+    assert glm.switched_to == []
+
+
 @pytest.mark.api
 def test_chat_history_isolated_by_conversation_id(client, monkeypatch):
     class FakeGLM:

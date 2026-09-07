@@ -14,6 +14,7 @@ import time
 import psutil
 
 from ...models.responses import HealthResponse
+from ...utils.job_store import list_jobs
 from ..dependencies import get_glm_interface, get_vector_store
 
 router = APIRouter()
@@ -69,14 +70,34 @@ async def list_models():
 
 @router.post("/api/models/switch")
 async def switch_model(req: ModelSwitchRequest):
-    """Switch the active Ollama model"""
+    """Switch the active Ollama model.
+
+    Refused while an analysis job is running: the GLM is a process-wide
+    singleton, so a mid-job switch would make one result carry two models.
+    """
     glm = get_glm_interface()
+    running = [job["job_id"] for job in list_jobs(statuses=["running"])]
+    if running:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Model tidak bisa diganti saat ada analisis yang berjalan; "
+                           "tunggu selesai atau batalkan dulu.",
+                "running_jobs": running,
+            },
+        )
     available = glm.list_available_models()
     names = [m["name"] for m in available]
     if req.model_name not in names:
         raise HTTPException(status_code=404, detail=f"Model '{req.model_name}' not found. Available: {names}")
     glm.switch_model(req.model_name)
-    return {"status": "ok", "model": req.model_name}
+    return {
+        "status": "ok",
+        "model": req.model_name,
+        # under the copilot engine this only changes the Ollama fallback
+        "engine": getattr(glm, "engine", "ollama"),
+        "active_model": getattr(glm, "active_model_name", req.model_name),
+    }
 
 
 def _int_or(value: str, fallback: int = 0) -> int:

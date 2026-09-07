@@ -150,6 +150,7 @@ class GLMInterface:
         self.config = config or ModelConfig()
         self.client = ollama.Client(host=self.config.base_url, timeout=self.config.timeout)
         self.configure_concurrency(self.config.max_parallel)
+        self._model_lock = threading.Lock()
 
         engine = (self.config.engine or os.getenv("LLM_ENGINE", "")).strip().lower()
         if not engine:
@@ -237,8 +238,10 @@ class GLMInterface:
                 time.sleep(delay)
     
     def switch_model(self, model_name: str):
-        """Switch to a different Ollama model at runtime."""
-        self.config.model_name = model_name
+        """Switch the Ollama model at runtime (shared singleton; callers must
+        ensure no analysis job is mid-flight or its provenance mixes two models)."""
+        with self._model_lock:
+            self.config.model_name = model_name
         logger.info(f"Switched to model: {model_name}")
 
     def list_available_models(self) -> List[Dict[str, Any]]:
