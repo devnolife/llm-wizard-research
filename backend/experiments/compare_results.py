@@ -74,6 +74,7 @@ def table_ablation(reports, model_filter=None):
                 "available": True,
                 "indicators": m.get("total_gap_indicators", 0),
                 "facts": m.get("total_facts_extracted", 0),
+                "unique_triples": m.get("unique_triples_extracted"),
                 "avg_conf": m.get("avg_confidence", 0),
                 "avg_adj_conf": m.get("avg_adjusted_confidence", 0),
                 "pass": m.get("rule_engine_pass_rate"),
@@ -82,18 +83,19 @@ def table_ablation(reports, model_filter=None):
             })
 
     lines = [
-        "| Mode | Model | Indikator | Fakta SPO | Avg Conf | Avg Adj Conf | PASS % | RERR % | Waktu Fase-3 (s) |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Mode | Model | Indikator | Fakta SPO | Triple unik | Avg Conf | Avg Adj Conf | PASS % | RERR % | Waktu Fase-3 (s) |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for x in rows:
         if not x["available"]:
             lines.append(
-                f"| {x['mode']} | {x['model']} | not available | not available "
+                f"| {x['mode']} | {x['model']} | not available | not available | not available "
                 f"| not available | not available | not available | not available | not available |"
             )
             continue
+        unique = x["unique_triples"] if x["unique_triples"] is not None else "—"
         lines.append(
-            f"| {x['mode']} | {x['model']} | {x['indicators']} | {x['facts']} "
+            f"| {x['mode']} | {x['model']} | {x['indicators']} | {x['facts']} | {unique} "
             f"| {fmt(x['avg_conf'])} | {fmt(x['avg_adj_conf'])} "
             f"| {fmt(x['pass'])} | {fmt(x['rerr'])} | {x['time_s']} |"
         )
@@ -109,6 +111,7 @@ def table_model_comparison(reports):
     ]
     metrics = [
         ("Fakta SPO terekstrak", "total_facts_extracted", ""),
+        ("Triple (s,p,o) unik", "unique_triples_extracted", ""),
         ("Indikator gap", "total_gap_indicators", ""),
         ("Rata-rata confidence", "avg_confidence", ""),
         ("Rule Engine PASS", "rule_engine_pass_rate", "%"),

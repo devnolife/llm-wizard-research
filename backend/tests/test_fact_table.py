@@ -357,8 +357,23 @@ class TestBulkAndStats:
         stats = populated_ft.get_statistics()
         assert stats["total_entities"] == 8
         assert stats["total_facts"] == 6
+        assert stats["unique_triples"] == 6
+        assert stats["duplicate_facts"] == 0
         assert stats["papers_indexed"] == 1
         assert "USES_METHOD" in stats["facts_by_predicate"]
+
+    def test_statistics_unique_triples_count_duplicates_once(self, ft):
+        # same (s, p, o) from two papers → two facts, one triple
+        ft.add_fact(Fact(fact_id="a", subject_id="m1", predicate=PredicateType.APPLIES_TO,
+                         object_id="d1", source_paper="paper_001"))
+        ft.add_fact(Fact(fact_id="b", subject_id="m1", predicate=PredicateType.APPLIES_TO,
+                         object_id="d1", source_paper="paper_002"))
+        ft.add_fact(Fact(fact_id="c", subject_id="m1", predicate=PredicateType.IMPROVES,
+                         object_id="d1", source_paper="paper_002"))
+        stats = ft.get_statistics()
+        assert stats["total_facts"] == 3
+        assert stats["unique_triples"] == 2
+        assert stats["duplicate_facts"] == 1
 
     def test_get_all_facts_as_dicts(self, populated_ft):
         dicts = populated_ft.get_all_facts_as_dicts()

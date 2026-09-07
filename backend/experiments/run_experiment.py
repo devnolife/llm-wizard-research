@@ -1136,6 +1136,8 @@ def compile_results(
         "papers_processed": len([p for p in phase1.get("papers", []) if "error" not in p]),
         "total_chunks_ingested": phase1.get("total_chunks", 0),
         "total_facts_extracted": phase2.get("total_facts", 0),
+        # distinct (s, p, o) triples; None for results predating the metric
+        "unique_triples_extracted": phase2.get("fact_table_stats", {}).get("unique_triples"),
         "total_gap_indicators": total_indicators,
         "topics_analyzed": len(main_topics),
         "avg_confidence": round(sum(all_confidences) / len(all_confidences), 3) if all_confidences else 0,

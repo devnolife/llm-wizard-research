@@ -90,6 +90,7 @@ def collect_metrics(model: str, runs: int, modes: list) -> dict:
                 "indicators": m.get("total_gap_indicators", 0),
                 "avg_confidence": m.get("avg_confidence", 0),
                 "facts": m.get("total_facts_extracted", 0),
+                "unique_triples": m.get("unique_triples_extracted"),
                 "rerr": m.get("rule_engine_rejection_rate_RERR"),
                 "confidences": confidences,
                 # Negative-control (None when the run had no TC topic)
@@ -188,12 +189,12 @@ def aggregate(model: str, data: dict) -> str:
 
     # Per-config summary
     lines += [
-        "| Mode | n run | Seeds | Indikator (mean±std) | Avg Conf (mean±std) | Fakta SPO (mean±std) | RERR % (mean±std) |",
-        "|---|---|---|---|---|---|---|",
+        "| Mode | n run | Seeds | Indikator (mean±std) | Avg Conf (mean±std) | Fakta SPO (mean±std) | Triple unik (mean±std) | RERR % (mean±std) |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for mode, runs in data.items():
         if not runs:
-            lines.append(f"| {mode} | 0 | — | — | — | — | — |")
+            lines.append(f"| {mode} | 0 | — | — | — | — | — | — |")
             continue
         seeds = [str(r["seed"]) for r in runs if r.get("seed") is not None]
         lines.append(
@@ -202,6 +203,7 @@ def aggregate(model: str, data: dict) -> str:
             f"| {mean_std([r['indicators'] for r in runs])} "
             f"| {mean_std([r['avg_confidence'] for r in runs])} "
             f"| {mean_std([r['facts'] for r in runs])} "
+            f"| {mean_std([r['unique_triples'] for r in runs if r.get('unique_triples') is not None])} "
             f"| {mean_std([r['rerr'] for r in runs if r['rerr'] is not None])} |"
         )
 

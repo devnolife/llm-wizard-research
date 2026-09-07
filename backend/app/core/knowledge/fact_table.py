@@ -390,10 +390,14 @@ class FactTable:
             predicate_counts[p.value] = len(fids)
 
         inferred_count = sum(1 for f in self._facts.values() if f.is_inferred)
+        # add_fact() keys on fact_id, so the same (s, p, o) may be stored more than once
+        unique_triples = len({(f.subject_id, f.predicate, f.object_id) for f in self._facts.values()})
 
         return {
             "total_entities": len(self._entities),
             "total_facts": len(self._facts),
+            "unique_triples": unique_triples,
+            "duplicate_facts": len(self._facts) - unique_triples,
             "total_inferred_facts": inferred_count,
             "entities_by_type": entity_counts,
             "facts_by_predicate": predicate_counts,
