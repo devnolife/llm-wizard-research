@@ -12,6 +12,40 @@ import requests
 from loguru import logger
 
 _LAST_REQUEST_AT = {}
+# host -> (unix time when requests may resume, reason). Set when a 429 carries a
+# long Retry-After (OpenAlex's daily credit quota answers with ~13 h); retrying
+# before then only burns time, so callers get None immediately.
+_HOST_COOLDOWN = {}
+_LONG_RETRY_AFTER_SECONDS = 60
+
+
+def host_cooldown(host_or_url: str) -> Optional[Dict]:
+    """Return ``{"until": ts, "seconds_left": n, "reason": str}`` while a host is
+    cooling down after a quota-style 429, else ``None``."""
+    host = urlparse(host_or_url).netloc or host_or_url
+    entry = _HOST_COOLDOWN.get(host)
+    if not entry:
+        return None
+    until, reason = entry
+    left = until - time.time()
+    if left <= 0:
+        _HOST_COOLDOWN.pop(host, None)
+        return None
+    return {"until": until, "seconds_left": int(left), "reason": reason}
+
+
+def clear_cooldowns() -> None:
+    _HOST_COOLDOWN.clear()
+
+
+def _retry_after_seconds(response) -> Optional[float]:
+    raw = response.headers.get("Retry-After") if response.headers else None
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def _default_cache_dir() -> Path:
@@ -85,6 +119,8 @@ def get_json(
             logger.warning(f"Failed to read API cache {path}: {exc}")
 
     host = urlparse(url).netloc
+    if host_cooldown(host):
+        return None
 
     for attempt in range(max_retries + 1):
         _rate_limit(host, min_interval)
@@ -112,6 +148,15 @@ def get_json(
             except OSError as exc:
                 logger.warning(f"Failed to write API cache {path}: {exc}")
             return body
+
+        if response.status_code == 429:
+            retry_after = _retry_after_seconds(response)
+            if retry_after is not None and retry_after > _LONG_RETRY_AFTER_SECONDS:
+                reason = (f"HTTP 429 dari {host}, Retry-After {int(retry_after)}s"
+                          f" (kuota harian habis)")
+                _HOST_COOLDOWN[host] = (time.time() + retry_after, reason)
+                logger.warning(f"{reason}; permintaan ke host ini ditunda tanpa retry")
+                return None
 
         if response.status_code == 429 or response.status_code >= 500:
             if attempt >= max_retries:

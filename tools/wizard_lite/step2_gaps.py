@@ -4,12 +4,12 @@ Menjalankan job pipeline penelitian sampai tahap ``gap_mining`` saja (tanpa
 OpenAlex/rekomendasi), memantau progresnya, lalu memperlihatkan dua hal:
 gap final yang lolos verifikasi verbatim, dan jejak tiap kandidat chunk
 (apa yang dibaca LLM, apa jawabannya, gap mana yang gugur dan mengapa).
+Polling status dilakukan oleh ``app.py`` (satu untuk semua langkah).
 """
 
 from __future__ import annotations
 
 import json
-import time
 
 import streamlit as st
 
@@ -26,7 +26,6 @@ from wl_common import (
     start_research_job,
 )
 
-POLL_SECONDS = 2
 GAP_TYPE_LABELS = {
     "explicit_future_work": "Saran penelitian lanjutan",
     "stated_limitation": "Keterbatasan yang dinyatakan",
@@ -43,7 +42,7 @@ REASON_LABELS = {
 
 
 def reset() -> None:
-    for key in ("gap_job_id", "gap_records"):
+    for key in ("gap_job_id", "gap_records", "novelty_records"):
         st.session_state.pop(key, None)
 
 
@@ -205,7 +204,7 @@ def _render_candidates(cands: list, chunks_by_id: dict) -> None:
     render_view_switch(cands, "cands", row, lambda i: _render_candidate_card(cands[i], chunks_by_id))
 
 
-def _render_results(api_base: str, job_id: str, chunks_by_id: dict) -> None:
+def _render_results(api_base: str, job_id: str, chunks_by_id: dict) -> list:
     cache = st.session_state.get("gap_records") or {}
     if cache.get("job_id") != job_id:
         with st.spinner("Mengambil hasil…"):
@@ -246,18 +245,21 @@ def _render_results(api_base: str, job_id: str, chunks_by_id: dict) -> None:
             _render_candidates(cands, chunks_by_id)
         else:
             st.info("Tidak ada chunk yang memenuhi syarat kandidat.")
+    return gaps
 
 
 # ── Entri ──────────────────────────────────────────────────────────────────
 
-def render(api_base: str, uploads, ocr_mode: str, backend_ok: bool, chunks_by_id: dict) -> None:
+def render(api_base: str, uploads, ocr_mode: str, backend_ok: bool, chunks_by_id: dict):
+    """Gambar langkah 2. Mengembalikan ``(job_id, status, gaps)``: ``status`` None bila
+    belum ada job; ``gaps`` terisi bila tahap gap_mining sudah selesai."""
     st.header("Langkah 2 — cari research gap dengan LLM")
     st.write(
         "Dari chunk di atas, sistem memilih **kandidat** (bagian Kesimpulan/Pembahasan, "
         "chunk berfrasa penanda gap, abstrak, awal pendahuluan, dan 2 chunk terakhir). "
         "LLM membaca tiap kandidat beserta chunk tetangganya dan mengutip kalimat gap "
         "**apa adanya**; kalimat yang tidak ditemukan verbatim di teks sumber dibuang, "
-        "lalu duplikat disatukan. Belum ada cek kebaruan (OpenAlex) di langkah ini."
+        "lalu duplikat disatukan. Cek kebaruan ke literatur ada di langkah 3."
     )
 
     job_id = st.session_state.get("gap_job_id")
@@ -273,7 +275,7 @@ def render(api_base: str, uploads, ocr_mode: str, backend_ok: bool, chunks_by_id
         else:
             st.caption("PDF yang sama dikirim ulang ke pipeline; tahap chunking diulang di server "
                        "lalu berhenti setelah penambangan gap.")
-        return
+        return None, None, []
 
     try:
         status = job_status(api_base, job_id)
@@ -282,14 +284,15 @@ def render(api_base: str, uploads, ocr_mode: str, backend_ok: bool, chunks_by_id
         if st.button("🔁 Mulai dari awal", key="gap-reset-err"):
             reset()
             st.rerun()
-        return
+        return job_id, None, []
 
     _render_progress(api_base, job_id, status)
     state = status.get("status")
-    if state not in TERMINAL_STATUSES:
-        time.sleep(POLL_SECONDS)
-        st.rerun()
-    elif state == "completed":
-        _render_results(api_base, job_id, chunks_by_id)
-    else:
+    gaps: list = []
+    if "gap_mining" in (status.get("stages_done") or []):
+        # tahap gap sudah selesai — hasilnya tetap bisa dibaca meski job sedang
+        # melanjutkan tahap berikutnya (langkah 3)
+        gaps = _render_results(api_base, job_id, chunks_by_id)
+    elif state in TERMINAL_STATUSES:
         st.error(status.get("error") or status.get("message") or f"Job berakhir: {state}")
+    return job_id, status, gaps

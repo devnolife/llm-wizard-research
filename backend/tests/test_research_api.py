@@ -130,6 +130,85 @@ class TestStartEndpoint:
         assert client.post("/api/research/start").status_code == 422
 
 
+class TestContinueEndpoint:
+    """Melanjutkan job langkah 2 ke tahap berikutnya tanpa mengulang LLM."""
+
+    def setup_method(self):
+        from app.api.routes import research as research_routes
+        from app.services import analysis_queue
+
+        self.notified: list = []
+        queue = analysis_queue.AnalysisJobQueue(max_workers=1)
+        queue.notify = lambda: self.notified.append(True)  # type: ignore[method-assign]
+        self._orig = research_routes.get_analysis_queue
+        research_routes.get_analysis_queue = lambda: queue
+
+    def teardown_method(self):
+        from app.api.routes import research as research_routes
+        research_routes.get_analysis_queue = self._orig
+
+    def _done_job(self, job_id, stages_done, status="completed"):
+        job_store.save_job(job_id, {
+            "job_id": job_id, "status": status, "progress": 100, "pipeline": "research",
+            "stages_done": stages_done, "attempt": 2, "max_attempts": 2,
+            "payload": {"pdf_paths": ["/tmp/x.pdf"], "output_dir": "/tmp/out",
+                        "until": "gap_mining", "ocr_mode": "force"},
+        })
+
+    def test_continue_requeues_from_next_stage_and_keeps_payload(self):
+        self._done_job("rc-1", ["chunking", "gap_mining"])
+        resp = client.post("/api/research/rc-1/continue",
+                           data={"until": "novelty", "novelty_limit": "40"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["start_from"] == "novelty" and body["stages"] == ["novelty"]
+
+        job = job_store.get_job("rc-1")
+        assert job["status"] == "queued" and job["attempt"] == 0
+        assert job["payload"]["start_from"] == "novelty"
+        assert job["payload"]["until"] == "novelty"
+        assert job["payload"]["novelty_limit"] == 40
+        assert job["payload"]["ocr_mode"] == "force", "payload lama dipertahankan"
+        assert self.notified == [True]
+        assert any(e["type"] == "job.continued" for e in job_store.get_job_events("rc-1"))
+
+    def test_continue_defaults_to_all_remaining_stages(self):
+        self._done_job("rc-2", ["chunking", "gap_mining"])
+        body = client.post("/api/research/rc-2/continue").json()
+        assert body["stages"] == ["novelty", "recommendation"]
+
+    def test_continue_rejects_running_job_and_finished_pipeline(self):
+        self._done_job("rc-3", ["chunking"], status="running")
+        assert client.post("/api/research/rc-3/continue").status_code == 409
+        self._done_job("rc-4", ["chunking", "gap_mining", "novelty", "recommendation"])
+        assert client.post("/api/research/rc-4/continue").status_code == 409
+
+    def test_continue_rejects_until_before_next_stage(self):
+        self._done_job("rc-5", ["chunking", "gap_mining"])
+        assert client.post("/api/research/rc-5/continue",
+                           data={"until": "gap_mining"}).status_code == 422
+
+    def test_continue_can_rerun_a_finished_stage(self):
+        """Cek ulang kebaruan setelah kuota OpenAlex pulih."""
+        self._done_job("rc-6", ["chunking", "gap_mining", "novelty"])
+        body = client.post("/api/research/rc-6/continue",
+                           data={"start_from": "novelty", "until": "novelty"}).json()
+        assert body["start_from"] == "novelty" and body["stages"] == ["novelty"]
+        assert job_store.get_job("rc-6")["payload"]["start_from"] == "novelty"
+
+    def test_continue_rejects_rerunning_chunking_or_skipping_ahead(self):
+        self._done_job("rc-7", ["chunking", "gap_mining"])
+        assert client.post("/api/research/rc-7/continue",
+                           data={"start_from": "chunking"}).status_code == 422
+        assert client.post("/api/research/rc-7/continue",
+                           data={"start_from": "recommendation"}).status_code == 422
+
+    def test_continue_unknown_or_legacy_job_is_404(self):
+        assert client.post("/api/research/tidak-ada/continue").status_code == 404
+        job_store.save_job("legacy-1", {"job_id": "legacy-1", "status": "completed"})
+        assert client.post("/api/research/legacy-1/continue").status_code == 404
+
+
 class TestChunkPreviewEndpoint:
     """Tahap 1 tanpa job: process_pdf di-stub agar tes offline dan cepat."""
 

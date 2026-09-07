@@ -37,7 +37,13 @@ from ...services.research_pipeline import (
     stage_source,
 )
 from ...utils.config_loader import get_config
-from ...utils.job_store import get_stage_artifacts, record_job_event, save_job
+from ...utils.job_store import (
+    get_job,
+    get_stage_artifacts,
+    record_job_event,
+    save_job,
+    update_job,
+)
 from ...utils.upload_validation import sanitize_filename, write_validated_pdf_upload
 
 router = APIRouter()
@@ -247,6 +253,77 @@ async def start_research(
         "files_count": len(pdf_paths),
         "stages": planned,
         "message": "Pipeline penelitian diantrekan. Pantau lewat /api/analysis-status/{job_id}.",
+    }
+
+
+@router.post("/{job_id}/continue")
+async def continue_research(job_id: str, until: str = Form(""), novelty_limit: int = Form(0),
+                            start_from: str = Form("")):
+    """Lanjutkan job penelitian yang selesai ke tahap berikutnya.
+
+    Job yang berhenti di ``gap_mining`` (UI bertahap) dilanjutkan ke ``novelty``
+    atau ``recommendation`` memakai berkas keluaran yang sudah ada — gap mining
+    (LLM, non-deterministik) tidak diulang, sehingga gap yang sudah dilihat
+    pengguna tetap sama. ``novelty_limit`` > 0 membatasi jumlah gap yang dikirim
+    ke OpenAlex (kuota gratis ≈ 100 pencarian/hari). ``start_from`` opsional boleh
+    menunjuk tahap yang SUDAH selesai untuk mengulangnya (mis. cek ulang kebaruan
+    setelah kuota pulih; hasil OpenAlex yang sudah ada dibaca dari cache).
+    """
+    stage_keys = [s[0] for s in RESEARCH_STAGES]
+    job = get_job(job_id)
+    if job is None or job.get("pipeline") != PIPELINE_NAME:
+        raise HTTPException(status_code=404, detail="Job penelitian tidak ditemukan")
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=409, detail=f"Job belum selesai (status: {job.get('status')})")
+    done = [s for s in (job.get("stages_done") or []) if s in stage_keys]
+    if not done:
+        raise HTTPException(status_code=409, detail="Job ini tidak mencatat tahap yang selesai; jalankan ulang dari awal")
+    next_index = max(stage_keys.index(s) for s in done) + 1
+    if start_from:
+        if start_from not in stage_keys or stage_keys.index(start_from) > next_index:
+            raise HTTPException(
+                status_code=422,
+                detail=f"start_from harus tahap yang sudah selesai atau {stage_keys[next_index] if next_index < len(stage_keys) else 'tidak ada'}")
+        if start_from == "chunking":
+            raise HTTPException(status_code=422, detail="Mengulang chunking berarti job baru; unggah ulang PDF")
+        first_index = stage_keys.index(start_from)
+    else:
+        if next_index >= len(stage_keys):
+            raise HTTPException(status_code=409, detail="Semua tahap sudah selesai")
+        first_index = next_index
+    start_from = stage_keys[first_index]
+    until = until or stage_keys[-1]
+    if until not in stage_keys or stage_keys.index(until) < first_index:
+        raise HTTPException(
+            status_code=422,
+            detail=f"until harus salah satu dari {stage_keys[first_index:]}")
+
+    config = get_config()
+    payload = dict(job.get("payload") or {})
+    payload.update({"start_from": start_from, "until": until,
+                    "novelty_limit": max(0, int(novelty_limit))})
+    update_job(
+        job_id,
+        status="queued",
+        progress=0.0,
+        error=None,
+        cancel_requested=False,
+        attempt=0,  # manual action: fresh retry budget
+        max_attempts=config.queue.max_attempts,
+        available_at=time.time(),
+        message=f"Menunggu worker untuk melanjutkan dari tahap {start_from}...",
+        payload=payload,
+    )
+    record_job_event(job_id, "job.continued", status="queued",
+                     data={"start_from": start_from, "until": until,
+                           "novelty_limit": payload["novelty_limit"]})
+    get_analysis_queue().notify()
+    return {
+        "success": True,
+        "job_id": job_id,
+        "start_from": start_from,
+        "stages": stage_keys[first_index: stage_keys.index(until) + 1],
+        "message": "Job dilanjutkan. Pantau lewat /api/analysis-status/{job_id}.",
     }
 
 

@@ -5,6 +5,12 @@ still ``open``, ``partially_addressed``, or ``addressed``. OpenAlex is the
 primary source (reachable, no key); Semantic Scholar is queried best-effort and
 skipped on failure. Responses are cached on disk (via ``http_cache``) so re-runs
 do not re-query, and requests are rate-limited with backoff.
+
+When the literature source cannot be queried at all (quota 429, network down)
+the gap is labelled ``unchecked`` — never ``open`` — so an outage does not read
+as "every gap is novel". OpenAlex's free tier is credit-based (~100 searches per
+day per IP/mailto); a 429 with a long Retry-After puts the host in cooldown and
+the remaining gaps are marked ``unchecked`` immediately.
 """
 
 from __future__ import annotations
@@ -15,7 +21,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from loguru import logger
 
+from ...services.paper_apis import http_cache
 from ...services.paper_apis.openalex import OpenAlexAPI
+
+NOVELTY_STATUSES = ("open", "partially_addressed", "addressed", "unchecked")
 
 # A recent paper "strongly" matches a gap when at least this share of the gap's
 # keywords appears in its title+abstract. 3+ strong matches => addressed,
@@ -84,17 +93,31 @@ def classify_novelty(
     openalex = openalex or OpenAlexAPI()
     query = build_keywords(gap)
 
-    papers: List[Any] = []
+    papers: Optional[List[Any]] = None
     try:
         papers = openalex.search_recent(query, from_date=from_date, max_results=max_results)
     except Exception as e:  # pragma: no cover - network
         logger.warning(f"OpenAlex query failed: {e}")
 
+    s2_papers: Optional[List[Any]] = None
     if s2_search_fn is not None:
         try:
-            papers = papers + (s2_search_fn(query) or [])
+            s2_papers = list(s2_search_fn(query) or [])
         except Exception as e:  # pragma: no cover
             logger.debug(f"Semantic Scholar skipped: {e}")
+
+    checked_at = datetime.now().isoformat(timespec="seconds")
+    if papers is None and s2_papers is None:
+        cooldown = http_cache.host_cooldown(openalex.BASE_URL)
+        reason = cooldown["reason"] if cooldown else "sumber literatur tidak dapat dihubungi"
+        return {
+            "novelty_status": "unchecked",
+            "novelty_query": query,
+            "novelty_error": reason,
+            "related_recent_papers": [],
+            "checked_at": checked_at,
+        }
+    papers = (papers or []) + (s2_papers or [])
 
     scored = sorted(
         ((p, _overlap_score(query, p)) for p in papers),
@@ -122,7 +145,7 @@ def classify_novelty(
         "novelty_status": status,
         "novelty_query": query,
         "related_recent_papers": related,
-        "checked_at": datetime.now().isoformat(timespec="seconds"),
+        "checked_at": checked_at,
     }
 
 
@@ -134,12 +157,14 @@ def annotate_gaps(
     min_interval: float = 1.0,
     max_retries: int = 4,
     on_progress: Optional[Callable[[int, int], None]] = None,
+    limit: int = 0,
 ) -> List[Dict[str, Any]]:
     """Attach novelty fields to every gap (100% coverage — TAHAP 3 kriteria #1).
 
-    Note: when OpenAlex is unreachable/hard-throttled a gap simply gets no recent
-    matches and is conservatively classified ``open`` — so coverage stays 100%
-    even under rate limiting.
+    Gaps whose lookup failed are ``unchecked`` (see module docstring). ``limit``
+    > 0 checks only the first ``limit`` gaps and marks the rest ``unchecked``
+    with ``novelty_error="di luar batas cek"`` — a way to spend the daily
+    OpenAlex quota deliberately.
 
     ``on_progress(done, total)`` is called after each gap so a caller can
     surface live progress; the CLI leaves it ``None``.
@@ -148,8 +173,17 @@ def annotate_gaps(
     out = []
     for i, gap in enumerate(gaps, 1):
         enriched = dict(gap)
-        enriched.update(classify_novelty(gap, openalex=openalex, from_date=from_date,
-                                         s2_search_fn=s2_search_fn))
+        if limit and i > limit:
+            enriched.update({
+                "novelty_status": "unchecked",
+                "novelty_query": build_keywords(gap),
+                "novelty_error": "di luar batas cek",
+                "related_recent_papers": [],
+                "checked_at": datetime.now().isoformat(timespec="seconds"),
+            })
+        else:
+            enriched.update(classify_novelty(gap, openalex=openalex, from_date=from_date,
+                                             s2_search_fn=s2_search_fn))
         out.append(enriched)
         if on_progress is not None:
             on_progress(i, len(gaps))

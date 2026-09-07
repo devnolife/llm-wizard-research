@@ -25,6 +25,7 @@ from app.core.pipeline.token_chunker import (
     split_sentences,
 )
 from app.core.pipeline.dedup import deduplicate_chunks
+from app.core.pipeline.layout import join_spans
 from app.core.pipeline.pipeline import _is_false_header
 from app.core.pipeline.schema import PaperMeta, PipelineChunk
 from app.core.pipeline.metadata_resolver import (
@@ -102,6 +103,30 @@ class TestSectionNormalizer:
     def test_prose_not_reference(self):
         prose = "Digital forensics is the process of recovering evidence from devices."
         assert not classify_reference("introduction", prose)
+
+
+class TestLayoutSpanJoin:
+    """PyMuPDF ``dict`` mode drops the spaces between spans; joining span texts
+    directly glued whole sentences ('Weproposeanewsimplenetworkarchitecture')."""
+
+    @staticmethod
+    def _span(text, x0, x1, size=10.0):
+        return {"text": text, "bbox": (x0, 0.0, x1, 10.0), "size": size}
+
+    def test_words_positioned_as_separate_spans_get_a_space(self):
+        spans = [self._span("We", 0, 12), self._span("propose", 15, 50), self._span("a", 53, 58)]
+        assert join_spans(spans) == "We propose a"
+
+    def test_kerning_gap_inside_a_word_is_not_a_space(self):
+        spans = [self._span("Trans", 0, 25), self._span("former", 25.3, 55)]
+        assert join_spans(spans) == "Transformer"
+
+    def test_existing_whitespace_is_not_doubled(self):
+        spans = [self._span("We ", 0, 14), self._span("propose", 20, 50)]
+        assert join_spans(spans) == "We propose"
+
+    def test_empty_spans_are_skipped(self):
+        assert join_spans([self._span("", 0, 0), self._span("x", 5, 8)]) == "x"
 
 
 class TestFalseHeaderRejection:

@@ -116,11 +116,18 @@ cd tools/process_monitor && .venv/bin/streamlit run app.py
 alongside the full dashboard. Step 1 uploads PDFs and shows the resulting chunks via
 `POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector store); step 2
 runs a research job with `until=gap_mining` and shows every candidate chunk, the LLM's
-answer, and the gaps that survived verbatim verification:
+answer, and the gaps that survived verbatim verification; step 3 continues the *same* job
+(`POST /api/research/{job_id}/continue`) into the OpenAlex novelty check so the gaps the
+user already read are not re-mined:
 
 ```bash
 bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process_monitor venv)
 ```
+
+> OpenAlex's free tier is credit-based (≈100 searches/day per IP or `mailto`). When it answers
+> 429 with a long `Retry-After`, the host is put in cooldown and the remaining gaps are stored as
+> `novelty_status="unchecked"` (never silently `"open"`); `novelty_limit` on `/continue` lets you
+> spend the quota deliberately and re-check later (cached hits cost nothing).
 
 ---
 
@@ -141,6 +148,7 @@ bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process
 | `POST` | `/api/upload-and-analyze` | Upload PDFs and run full analysis pipeline |
 | `POST` | `/api/research/chunk-preview` | Upload PDFs, get stage-1 chunks immediately (no job/LLM); form field `ocr_mode=auto\|force` (force = read via ocrd) |
 | `POST` | `/api/research/start` | Queue the research pipeline; optional form fields `until=<stage>` (stop after that stage) and `ocr_mode` |
+| `POST` | `/api/research/{job_id}/continue` | Resume a completed research job into its next stage(s) using the existing outputs; `until`, `novelty_limit`, optional `start_from` to re-run a finished stage |
 | `GET` | `/api/analysis-status/{job_id}` | Check analysis progress |
 | `POST` | `/api/recommend` | Get research recommendations |
 | `POST` | `/api/gaps` | Detect synthesis gap indicators |

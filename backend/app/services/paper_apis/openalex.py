@@ -38,8 +38,13 @@ class OpenAlexAPI:
         keywords: str,
         from_date: str = "2024-01-01",
         max_results: int = 5,
-    ) -> List[PaperMetadata]:
-        """Search recent OpenAlex works."""
+    ) -> Optional[List[PaperMetadata]]:
+        """Search recent OpenAlex works.
+
+        Returns ``None`` when OpenAlex could not be queried (network error,
+        quota 429, host cooling down) so callers can tell "unknown" apart from
+        an empty-but-valid result (``[]``).
+        """
         params = {
             "search": keywords,
             "filter": f"from_publication_date:{from_date}",
@@ -52,8 +57,8 @@ class OpenAlexAPI:
             self.BASE_URL, params=params, cache_dir=self.cache_dir,
             min_interval=self.min_interval, max_retries=self.max_retries,
         )
-        if not data:
-            return []
+        if data is None:
+            return None
 
         papers = []
         for work in data.get("results", []):
@@ -117,5 +122,5 @@ class OpenAlexAPI:
 if __name__ == "__main__":
     for paper in OpenAlexAPI().search_recent(
         "digital forensics image tampering detection", max_results=3
-    ):
+    ) or []:
         print(paper.year, paper.title)

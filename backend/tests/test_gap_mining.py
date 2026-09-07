@@ -133,3 +133,78 @@ class TestNovelty:
         out = classify_novelty(gap, openalex=FakeOA())
         assert out["novelty_status"] in ("addressed", "partially_addressed")
         assert len(out["related_recent_papers"]) >= 1
+
+    def test_unavailable_source_is_unchecked_not_open(self):
+        """Kuota/429/jaringan mati tidak boleh terbaca sebagai 'semua gap baru'."""
+        class DownOA:
+            BASE_URL = "https://api.openalex.org/works"
+
+            def search_recent(self, q, from_date="2024-01-01", max_results=8):
+                return None
+
+        gap = {"gap_statement": "x forensic gap statement here", "topic": "tools"}
+        out = classify_novelty(gap, openalex=DownOA())
+        assert out["novelty_status"] == "unchecked"
+        assert out["novelty_error"] and out["related_recent_papers"] == []
+
+    def test_annotate_limit_marks_the_rest_unchecked(self):
+        from app.core.gap_mining.novelty import annotate_gaps
+
+        class NoHits:
+            BASE_URL = "https://api.openalex.org/works"
+            calls = 0
+
+            def search_recent(self, q, from_date="2024-01-01", max_results=8):
+                NoHits.calls += 1
+                return []
+
+        gaps = [{"gap_statement": f"gap statement number {i} forensic"} for i in range(5)]
+        out = annotate_gaps(gaps, openalex=NoHits(), limit=2)
+        assert [g["novelty_status"] for g in out] == ["open", "open"] + ["unchecked"] * 3
+        assert all(g["novelty_error"] == "di luar batas cek" for g in out[2:])
+        assert NoHits.calls == 2, "gap di luar batas tidak boleh menghabiskan kuota"
+
+
+class TestHttpCacheQuotaCooldown:
+    """OpenAlex menjawab kuota habis dengan 429 + Retry-After ~13 jam."""
+
+    def setup_method(self):
+        from app.services.paper_apis import http_cache
+        http_cache.clear_cooldowns()
+
+    def test_long_retry_after_sets_cooldown_and_skips_retries(self, monkeypatch, tmp_path):
+        from app.services.paper_apis import http_cache
+
+        class Resp:
+            status_code = 429
+            headers = {"Retry-After": "46748"}
+
+        calls = []
+        monkeypatch.setattr(http_cache.requests, "get", lambda *a, **k: calls.append(a) or Resp())
+        monkeypatch.setattr(http_cache.time, "sleep", lambda s: None)
+
+        url = "https://api.openalex.org/works"
+        assert http_cache.get_json(url, {"search": "a"}, cache_dir=tmp_path, min_interval=0) is None
+        assert len(calls) == 1, "tidak boleh retry pada kuota habis"
+        cooldown = http_cache.host_cooldown(url)
+        assert cooldown and cooldown["seconds_left"] > 46000 and "kuota" in cooldown["reason"]
+
+        # permintaan berikutnya ke host yang sama tidak menyentuh jaringan
+        assert http_cache.get_json(url, {"search": "b"}, cache_dir=tmp_path, min_interval=0) is None
+        assert len(calls) == 1
+
+    def test_short_429_still_retries_with_backoff(self, monkeypatch, tmp_path):
+        from app.services.paper_apis import http_cache
+
+        class Resp:
+            status_code = 429
+            headers = {"Retry-After": "2"}
+
+        calls = []
+        monkeypatch.setattr(http_cache.requests, "get", lambda *a, **k: calls.append(a) or Resp())
+        monkeypatch.setattr(http_cache.time, "sleep", lambda s: None)
+
+        assert http_cache.get_json("https://api.openalex.org/works", {"search": "a"},
+                                   cache_dir=tmp_path, min_interval=0, max_retries=2) is None
+        assert len(calls) == 3
+        assert http_cache.host_cooldown("api.openalex.org") is None

@@ -705,6 +705,100 @@ class TestNoveltyProgress:
         assert done["data"]["masuk"] == 10 and done["data"]["keluar"] == 7
         assert done["data"]["addressed"] == 3
 
+    def test_stage_reports_unchecked_gaps_separately_from_open(self, monkeypatch):
+        """Kuota OpenAlex habis di tengah jalan: sisa gap 'unchecked', catatan jujur."""
+        job_store.save_job("nvq", {"status": "running", "progress": 0})
+        write_jsonl(str(SCRATCH / "gaps_q.jsonl"), [
+            {"record": "meta"},
+            *[{"source": "a.pdf", "gap_statement": f"gap {i}", "gap_type": "implicit_gap"}
+              for i in range(4)],
+        ])
+
+        def fake_annotate(gaps, on_progress=None, limit=0, **_):
+            out = []
+            for i, g in enumerate(gaps, 1):
+                if i <= 2:
+                    out.append({**g, "novelty_status": "open", "novelty_query": "q",
+                                "related_recent_papers": []})
+                else:
+                    out.append({**g, "novelty_status": "unchecked", "novelty_query": "q",
+                                "novelty_error": "HTTP 429 dari api.openalex.org, Retry-After 46748s (kuota harian habis)",
+                                "related_recent_papers": []})
+            return out
+        monkeypatch.setattr(research_pipeline, "annotate_gaps", fake_annotate)
+
+        out = stage_novelty("nvq", SCRATCH / "gaps_q.jsonl", SCRATCH / "nov_q.jsonl")
+
+        assert out.metrics["gap_dicek"] == 2 and out.metrics["unchecked"] == 2
+        assert out.metrics["open"] == 2
+        assert len(out.substep_samples["contoh_unchecked"]) == 2
+        assert any("TIDAK dicek" in n and "kuota" in n for n in out.notes)
+
+    def test_novelty_limit_is_forwarded_to_annotate(self, monkeypatch):
+        job_store.save_job("nvl", {"status": "running", "progress": 0})
+        write_jsonl(str(SCRATCH / "gaps_l.jsonl"), [
+            {"record": "meta"}, {"source": "a.pdf", "gap_statement": "g", "gap_type": "implicit_gap"}])
+        seen = {}
+
+        def fake_annotate(gaps, on_progress=None, limit=0, **_):
+            seen["limit"] = limit
+            return [{**g, "novelty_status": "open", "related_recent_papers": []} for g in gaps]
+        monkeypatch.setattr(research_pipeline, "annotate_gaps", fake_annotate)
+        out = stage_novelty("nvl", SCRATCH / "gaps_l.jsonl", SCRATCH / "nov_l.jsonl", limit=25)
+        assert seen == {"limit": 25} and out.params["batas_cek"] == 25
+
+
+class TestContinueFromStage:
+    """Langkah 3 UI melanjutkan job langkah 2: gap mining (LLM) tidak boleh diulang."""
+
+    def _stub(self, monkeypatch):
+        calls = []
+
+        def make(name):
+            def stage(*_a, **_k):
+                calls.append(name)
+                return StageOutcome(metrics={"ok": 1})
+            return stage
+        for name in ("stage_chunking", "stage_gap_mining", "stage_novelty",
+                     "stage_recommendation"):
+            monkeypatch.setattr(research_pipeline, name, make(name))
+        monkeypatch.setattr(research_pipeline, "_shared_embedder", lambda: None)
+        return calls
+
+    def test_start_from_novelty_uses_existing_gaps_file(self, monkeypatch):
+        calls = self._stub(monkeypatch)
+        out_dir = SCRATCH / "cont"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "gaps_rq-cont.jsonl").write_text('{"record":"meta"}\n', encoding="utf-8")
+        job_store.save_job("rq-cont", {
+            "status": "queued", "progress": 0, "pipeline": "research",
+            "stages_done": ["chunking", "gap_mining"],
+            "payload": {"pdf_paths": [str(SCRATCH / "sudah-dihapus.pdf")],
+                        "output_dir": str(out_dir), "start_from": "novelty",
+                        "until": "novelty", "novelty_limit": 30},
+        })
+
+        run_research_job("rq-cont")  # PDF asli tidak ada → tetap jalan karena tidak dibaca
+
+        job = job_store.get_job("rq-cont")
+        assert calls == ["stage_novelty"], "chunking & gap mining tidak boleh diulang"
+        assert job["status"] == "completed"
+        assert job["stages_done"] == ["chunking", "gap_mining", "novelty"]
+
+    def test_start_from_without_prerequisite_file_fails_clearly(self, monkeypatch):
+        calls = self._stub(monkeypatch)
+        job_store.save_job("rq-nofile", {"status": "running", "progress": 0})
+        with pytest.raises(FileNotFoundError, match="gaps_"):
+            run_research_pipeline("rq-nofile", [], SCRATCH / "kosong", start_from="novelty")
+        assert calls == []
+
+    def test_start_after_until_is_rejected(self, monkeypatch):
+        self._stub(monkeypatch)
+        job_store.save_job("rq-order", {"status": "running", "progress": 0})
+        with pytest.raises(ValueError, match="setelah"):
+            run_research_pipeline("rq-order", [], SCRATCH / "x", start_from="novelty",
+                                  until="gap_mining")
+
 
 class TestScoreBreakdownIsPersisted:
     def test_proposal_records_carry_the_three_terms_that_sum_to_priority(self):
@@ -735,3 +829,24 @@ class TestScoreBreakdownIsPersisted:
         assert out.metrics["gap_bukan_open"] == 1
         assert out.substep_samples["dibuang_bukan_open"][0]["novelty_status"] == "addressed"
         assert out.substep_samples["tema_terbesar"][0]["size"] >= 1
+
+    def test_unchecked_gaps_are_kept_but_counted(self):
+        """Perilaku lama melabeli gap gagal-cek sebagai 'open'; kini 'unchecked' tetap
+        ikut ke rekomendasi agar cakupan tidak menyusut diam-diam, tapi terhitung."""
+        job_store.save_job("sbu", {"status": "running", "progress": 0})
+        write_jsonl(str(SCRATCH / "nov_u.jsonl"), [
+            {"record": "meta"},
+            {"source": "a.pdf", "gap_statement": "Protokol pengujian alat forensik belum ada.",
+             "gap_type": "stated_limitation", "topic": "tools", "grounding_score": 0.9,
+             "novelty_status": "unchecked", "novelty_error": "kuota"},
+        ])
+        write_jsonl(str(SCRATCH / "chunks_u.jsonl"), [
+            {"record": "meta"},
+            {"record": "chunk", "source": "a.pdf", "paper_title": "A", "text": "Alat forensik."},
+        ])
+        out = stage_recommendation("sbu", SCRATCH / "nov_u.jsonl", SCRATCH / "chunks_u.jsonl",
+                                   SCRATCH / "rek_u.md")
+        assert out.metrics["gap_open"] == 1 and out.metrics["gap_bukan_open"] == 0
+        done = next(e for e in job_store.get_job_events("sbu")
+                    if e["type"] == "substep.completed" and e["data"]["substep"] == "filter_open")
+        assert done["data"]["unchecked_ikut"] == 1

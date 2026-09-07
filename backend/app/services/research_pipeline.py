@@ -190,9 +190,10 @@ SUBSTEPS: Dict[str, List[Dict[str, Any]]] = {
     ],
     "recommendation": [
         _sub("filter_open", "Meneruskan hanya gap yang masih terbuka",
-             "novelty_status == 'open'",
+             "novelty_status in ('open', 'unchecked')",
              "Gap yang sudah dijawab literatur tidak layak jadi topik baru, jadi "
-             "hanya yang 'open' yang diteruskan.",
+             "hanya yang 'open' yang diteruskan; gap yang gagal dicek (unchecked) "
+             "ikut diteruskan tetapi ditandai.",
              masuk="gap_dicek", keluar="gap_open", dibuang="gap_bukan_open",
              contoh="dibuang_bukan_open"),
         _sub("skor_prioritas", "Menghitung skor prioritas tiap gap",
@@ -710,6 +711,7 @@ def stage_novelty(
     from_date: str = "2024-01-01",
     min_interval: float = 1.0,
     max_retries: int = 4,
+    limit: int = 0,
 ) -> StageOutcome:
     rows = list(read_jsonl(str(gaps_path)))
     meta = next((r for r in rows if r.get("record") == "meta"), {})
@@ -723,16 +725,20 @@ def stage_novelty(
             _progress(job_id, 62 + 18 * done / max(1, total),
                       f"Cek OpenAlex {done}/{total} gap")
 
-    _progress(job_id, 62, f"Cek kebaruan {len(gaps)} gap ke OpenAlex")
+    _progress(job_id, 62, f"Cek kebaruan {len(gaps)} gap ke OpenAlex"
+              + (f" (maks {limit})" if limit else ""))
     with _substep(job_id, "novelty", "cek_kebaruan", masuk=len(gaps)) as sub:
         enriched = annotate_gaps(gaps, from_date=from_date, min_interval=min_interval,
-                                 max_retries=max_retries, on_progress=_tick)
+                                 max_retries=max_retries, on_progress=_tick, limit=limit)
         counts: Dict[str, int] = defaultdict(int)
         for g in enriched:
             counts[g.get("novelty_status", "?")] += 1
         sub.done(keluar=counts.get("open", 0), **{k: v for k, v in counts.items()
                                                   if k != "open"})
     with_matches = sum(1 for g in enriched if g.get("related_recent_papers"))
+    unchecked = [g for g in enriched if g.get("novelty_status") == "unchecked"]
+    quota_hit = sorted({g.get("novelty_error") for g in unchecked
+                        if g.get("novelty_error") and g.get("novelty_error") != "di luar batas cek"})
 
     out_meta = dict(meta)
     out_meta.update({
@@ -754,14 +760,16 @@ def stage_novelty(
     return StageOutcome(
         params={"from_date": from_date, "min_interval": min_interval,
                 "max_retries": max_retries, "sumber": "OpenAlex",
-                "ambang_strong_match": STRONG_MATCH_THRESHOLD},
+                "ambang_strong_match": STRONG_MATCH_THRESHOLD,
+                "batas_cek": limit or "semua"},
         metrics={
-            "gap_dicek": len(enriched),
+            "gap_dicek": len(enriched) - len(unchecked),
             "open": counts.get("open", 0),
             "partially_addressed": counts.get("partially_addressed", 0),
             "addressed": counts.get("addressed", 0),
+            "unchecked": len(unchecked),
             "punya_match_literatur": with_matches,
-            "tanpa_match_literatur": len(enriched) - with_matches,
+            "tanpa_match_literatur": len(enriched) - len(unchecked) - with_matches,
         },
         samples=[
             {"source": g.get("source"), "novelty_status": g.get("novelty_status"),
@@ -779,10 +787,20 @@ def stage_novelty(
                                  if g.get("novelty_status") == "addressed"][:SAMPLE_ROWS],
             "contoh_open": [_nov_row(g) for g in enriched
                             if g.get("novelty_status") == "open"][:SAMPLE_ROWS],
+            "contoh_unchecked": [_nov_row(g) for g in unchecked][:SAMPLE_ROWS],
         },
-        notes=["Saat OpenAlex tak terjangkau atau kena throttle, gap tetap "
-               "dihitung 'open' secara konservatif — cakupan 100% tapi bisa "
-               "terlalu optimistis."],
+        notes=(
+            [f"{len(unchecked)} gap TIDAK dicek ({'; '.join(quota_hit)}). Statusnya "
+             "'unchecked', bukan 'open' — jalankan ulang tahap ini setelah kuota pulih."]
+            if quota_hit else []
+        ) + (
+            [f"{sum(1 for g in unchecked if g.get('novelty_error') == 'di luar batas cek')} gap "
+             f"di luar batas cek ({limit}) sengaja tidak dikirim ke OpenAlex."]
+            if limit and any(g.get("novelty_error") == "di luar batas cek" for g in unchecked) else []
+        ) + [
+            "Kuota gratis OpenAlex ≈ 100 pencarian/hari per IP; gap yang gagal dicek "
+            "berstatus 'unchecked' agar gangguan layanan tidak terbaca sebagai 'semua gap baru'.",
+        ],
     )
 
 
@@ -799,9 +817,12 @@ def stage_recommendation(
     gaps = [g for g in read_jsonl(str(gaps_novelty_path)) if "gap_statement" in g]
     _progress(job_id, 82, f"Menyaring gap open dari {len(gaps)} gap")
     with _substep(job_id, "recommendation", "filter_open", masuk=len(gaps)) as sub:
-        open_gaps = [g for g in gaps if g.get("novelty_status") == "open"]
-        not_open = [g for g in gaps if g.get("novelty_status") != "open"]
-        sub.done(keluar=len(open_gaps), dibuang=len(not_open))
+        # 'unchecked' (kuota/gangguan OpenAlex) ikut diteruskan seperti perilaku
+        # lama yang melabelinya 'open', tetapi dihitung terpisah agar terlihat.
+        open_gaps = [g for g in gaps if g.get("novelty_status") in ("open", "unchecked")]
+        not_open = [g for g in gaps if g.get("novelty_status") not in ("open", "unchecked")]
+        unchecked_kept = sum(1 for g in open_gaps if g.get("novelty_status") == "unchecked")
+        sub.done(keluar=len(open_gaps), dibuang=len(not_open), unchecked_ikut=unchecked_kept)
     chunks = [c for c in read_jsonl(str(chunks_path)) if c.get("record") == "chunk"]
 
     # Bentuk korpus & confidence harus sama persis dengan experiments/recommend_topics.py,
@@ -897,7 +918,7 @@ def stage_recommendation(
 
     return StageOutcome(
         params={"rumus": "0.5*gap_confidence + 0.3*novelty + 0.2*actionability",
-                "filter": "novelty_status == open",
+                "filter": "novelty_status in (open, unchecked)",
                 "pemecah_seri": "jarak novelty ke tengah sweet spot",
                 "embedder": "multilingual-MiniLM" if embedder is not None else "leksikal",
                 "top": top},
@@ -945,6 +966,15 @@ def stage_recommendation(
 
 # ── Orkestrator ────────────────────────────────────────────────────────────
 
+# Berkas keluaran yang harus sudah ada bila pipeline dilanjutkan dari sebuah tahap.
+_STAGE_INPUTS = {
+    "chunking": [],
+    "gap_mining": ["chunks"],
+    "novelty": ["gaps"],
+    "recommendation": ["novelty", "chunks"],
+}
+
+
 def run_research_pipeline(
     job_id: str,
     pdf_paths: Sequence[Path],
@@ -954,15 +984,24 @@ def run_research_pipeline(
     from_date: str = "2024-01-01",
     until: Optional[str] = None,
     ocr_mode: str = "auto",
+    start_from: Optional[str] = None,
+    novelty_limit: int = 0,
+    stages_done: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     """Jalankan tahap-tahap berurutan, merekam progres dan hasil detailnya.
 
     ``until`` menghentikan pipeline setelah tahap itu selesai (mis. ``"gap_mining"``
     untuk UI bertahap yang belum ingin memanggil OpenAlex); bawaan = semua tahap.
+    ``start_from`` melanjutkan dari sebuah tahap memakai berkas keluaran tahap
+    sebelumnya di ``out_dir`` — gap mining (LLM) tidak diulang sehingga gap yang
+    sudah dilihat pengguna tetap sama. ``stages_done`` = tahap yang sudah selesai
+    pada run sebelumnya, diakumulasi ke job.
     """
     stage_keys = [s[0] for s in RESEARCH_STAGES]
     if until is not None and until not in stage_keys:
         raise ValueError(f"until harus salah satu dari {stage_keys}, bukan {until!r}")
+    if start_from is not None and start_from not in stage_keys:
+        raise ValueError(f"start_from harus salah satu dari {stage_keys}, bukan {start_from!r}")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     short = job_id[:8]
@@ -978,16 +1017,26 @@ def run_research_pipeline(
         ("gap_mining", lambda: stage_gap_mining(
             job_id, paths["chunks"], paths["gaps"], limit=limit)),
         ("novelty", lambda: stage_novelty(
-            job_id, paths["gaps"], paths["novelty"], from_date=from_date)),
+            job_id, paths["gaps"], paths["novelty"], from_date=from_date, limit=novelty_limit)),
         ("recommendation", lambda: stage_recommendation(
             job_id, paths["novelty"], paths["chunks"], paths["rekomendasi"],
             embedder=embedder)),
     ]
-    if until is not None:
-        stages = stages[: stage_keys.index(until) + 1]
+    first = stage_keys.index(start_from) if start_from else 0
+    last = stage_keys.index(until) + 1 if until else len(stage_keys)
+    if first >= last:
+        raise ValueError(f"start_from={start_from!r} berada setelah until={until!r}")
+    stages = stages[first:last]
+    if start_from:
+        missing = [k for k in _STAGE_INPUTS[start_from] if not paths[k].exists()]
+        if missing:
+            raise FileNotFoundError(
+                f"Tidak bisa melanjutkan dari {start_from}: berkas tahap sebelumnya hilang "
+                f"({', '.join(paths[k].name for k in missing)})")
 
     update_job(job_id, status="running", progress=1.0,
-               message="Memulai pipeline penelitian")
+               message=("Memulai pipeline penelitian" if not start_from
+                        else f"Melanjutkan pipeline dari tahap {start_from}"))
     summary: Dict[str, Any] = {}
     phase = "persiapan"
     try:
@@ -1009,9 +1058,10 @@ def run_research_pipeline(
 
     done_message = ("Pipeline penelitian selesai" if until is None
                     else f"Selesai sampai tahap {until}")
+    all_done = list(stages_done or []) + [s[0] for s in stages if s[0] not in (stages_done or [])]
     # Atomic with the cancel flag: a cancel that arrived during the last stage
     # must not be overwritten by "completed".
-    if complete_job(job_id, message=done_message, stages_done=[s[0] for s in stages]) is None:
+    if complete_job(job_id, message=done_message, stages_done=all_done) is None:
         update_job(job_id, status="cancelled", progress=0,
                    message=f"Dibatalkan oleh pengguna saat tahap {phase}")
         raise ResearchCancelled("Pipeline penelitian dibatalkan oleh pengguna")
@@ -1045,14 +1095,19 @@ def run_research_job(job_id: str) -> None:
         raise RuntimeError(f"Job penelitian tidak ditemukan: {job_id}")
     payload = job.get("payload") or {}
     pdf_paths = [Path(p) for p in payload.get("pdf_paths") or []]
-    if not pdf_paths or any(not p.exists() for p in pdf_paths):
+    start_from = payload.get("start_from") or None
+    # Saat melanjutkan, PDF asli tidak dibaca lagi; berkas chunk/gap-lah yang dipakai.
+    if not start_from and (not pdf_paths or any(not p.exists() for p in pdf_paths)):
         raise FileNotFoundError("PDF masukan job penelitian ini sudah tidak tersedia")
     out_dir = payload.get("output_dir") or str(
         Path(get_config().data.processed_path) / "research" / job_id)
     try:
         run_research_pipeline(job_id, pdf_paths, Path(out_dir), embedder=_shared_embedder(),
                               until=payload.get("until") or None,
-                              ocr_mode=payload.get("ocr_mode") or "auto")
+                              ocr_mode=payload.get("ocr_mode") or "auto",
+                              start_from=start_from,
+                              novelty_limit=int(payload.get("novelty_limit") or 0),
+                              stages_done=job.get("stages_done") or [])
     except ResearchCancelled:
         logger.info(f"Pipeline penelitian {job_id} dibatalkan")
         record_job_event(job_id, "job.cancelled", status="cancelled")
