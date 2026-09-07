@@ -513,19 +513,34 @@ def _ocr_pages(pdf_path: str) -> Optional[Tuple[List[str], str]]:
     return pages, ("ocrd_text_layer" if result.from_text_layer else "ocrd_ocr")
 
 
+OCR_MODES = ("auto", "force")
+
+
 def process_pdf(
     pdf_path: str,
     source: Optional[str] = None,
     target_tokens: int = DEFAULT_TARGET_TOKENS,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     overlap_ratio: float = DEFAULT_OVERLAP_RATIO,
+    ocr_mode: str = "auto",
 ) -> PipelineResult:
-    """Process a single PDF into (metadata, token-aware chunks)."""
+    """Process a single PDF into (metadata, token-aware chunks).
+
+    ``ocr_mode``: ``"auto"`` reads locally with PyMuPDF and only calls ocrd when
+    the text quality is poor (scanned PDFs); ``"force"`` sends the PDF to ocrd
+    first and falls back to PyMuPDF when the service is unavailable.
+    """
+    if ocr_mode not in OCR_MODES:
+        raise ValueError(f"ocr_mode harus salah satu dari {OCR_MODES}, bukan {ocr_mode!r}")
     source = source or Path(pdf_path).name
 
     layout_lines = extract_layout_lines(pdf_path)
     use_layout = bool(layout_lines) and has_font_variation(layout_lines)
-    if use_layout:
+    recovered = _ocr_pages(pdf_path) if ocr_mode == "force" else None
+    if recovered:
+        raw_pages, method = recovered
+        use_layout = False  # OCR output has no font sizes to detect headings from
+    elif use_layout:
         raw_pages = _pages_from_lines(layout_lines)
         method = "pymupdf_layout"
     else:
@@ -535,7 +550,7 @@ def process_pdf(
     full_text, page_ends = _build_page_index(cleaned_pages)
 
     quality = assess_quality(full_text)
-    if quality == "poor":
+    if quality == "poor" and not recovered:
         logger.warning(f"{source}: poor extraction quality (method={method})")
         recovered = _ocr_pages(pdf_path)
         if recovered:

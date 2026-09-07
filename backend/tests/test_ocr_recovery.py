@@ -1,5 +1,7 @@
 """Tests for the ocrd recovery path in the upgraded pipeline."""
 
+import pytest
+
 import app.core.pipeline.pipeline as pipeline_mod
 from app.core.pipeline.pipeline import _ocr_pages
 
@@ -117,3 +119,38 @@ class TestGoodPdfNeverCallsOcr:
         assert seen.get("path") == pdf, "PDF buruk harus dikirim ke ocrd"
         assert result.extraction_method == "ocrd_ocr"
         assert "pemulihan OCR" in result.full_text
+
+
+class TestForcedOcrMode:
+    def _sample_pdf(self):
+        return TestGoodPdfNeverCallsOcr._sample_pdf(self)
+
+    def test_force_reads_via_ocrd_even_for_a_healthy_pdf(self, monkeypatch):
+        pdf = self._sample_pdf()
+        if not pdf:
+            return
+        calls = []
+
+        def _fake_ocr(path):
+            calls.append(path)
+            return (["Teks lapisan ocrd. " * 40], "ocrd_text_layer")
+
+        monkeypatch.setattr(pipeline_mod, "_ocr_pages", _fake_ocr)
+        result = pipeline_mod.process_pdf(pdf, ocr_mode="force")
+        assert calls == [pdf], "ocrd harus dipanggil sekali, sebelum PyMuPDF dipakai"
+        assert result.extraction_method == "ocrd_text_layer"
+        assert "lapisan ocrd" in result.full_text
+
+    def test_force_falls_back_to_pymupdf_when_service_is_down(self, monkeypatch):
+        pdf = self._sample_pdf()
+        if not pdf:
+            return
+        monkeypatch.setattr(pipeline_mod, "_ocr_pages", lambda path: None)
+        monkeypatch.setattr(pipeline_mod, "assess_quality", lambda text: "good")
+        result = pipeline_mod.process_pdf(pdf, ocr_mode="force")
+        assert result.extraction_method.startswith("pymupdf")
+        assert result.chunks
+
+    def test_unknown_mode_is_rejected(self):
+        with pytest.raises(ValueError):
+            pipeline_mod.process_pdf("/tmp/x.pdf", ocr_mode="gpu")

@@ -17,12 +17,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from loguru import logger
 
 from ...core.pipeline.io import read_jsonl
-from ...core.pipeline.pipeline import PipelineResult, process_pdf
+from ...core.pipeline.pipeline import OCR_MODES, PipelineResult, process_pdf
 from ...core.pipeline.token_chunker import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_OVERLAP_RATIO,
@@ -250,13 +250,17 @@ def _preview_payload(source: str, result: PipelineResult) -> Dict[str, Any]:
 
 
 @router.post("/chunk-preview")
-async def chunk_preview(files: List[UploadFile] = File(...)):
+async def chunk_preview(files: List[UploadFile] = File(...), ocr_mode: str = Form("auto")):
     """TAHAP 1 saja: unggah PDF, kembalikan chunk-nya langsung.
 
     Tidak membuat job, tidak menyentuh antrean, LLM, maupun vector store —
     hanya ``process_pdf`` pada berkas sementara yang dihapus setelah selesai.
     Dipakai UI ringan untuk memperlihatkan hasil pemotongan sebelum analisis.
+    ``ocr_mode=force`` memaksa pembacaan lewat ocrd (bawaan ``auto``: ocrd hanya
+    untuk PDF yang teksnya buruk/hasil pindaian).
     """
+    if ocr_mode not in OCR_MODES:
+        raise HTTPException(status_code=422, detail=f"ocr_mode harus salah satu dari {list(OCR_MODES)}")
     config = get_config()
     allowed = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
     if "pdf" not in allowed:
@@ -270,7 +274,9 @@ async def chunk_preview(files: List[UploadFile] = File(...)):
             await write_validated_pdf_upload(file, target, config.data.max_file_size_mb)
             try:
                 # process_pdf is CPU-bound and synchronous; keep the event loop free
-                result = await run_in_threadpool(process_pdf, str(target), source=source)
+                result = await run_in_threadpool(
+                    process_pdf, str(target), source=source, ocr_mode=ocr_mode
+                )
             except Exception as exc:
                 logger.error(f"chunk-preview gagal pada {source}: {exc}")
                 results.append({"source": source, "error": str(exc)[:300], "chunks": []})
@@ -283,5 +289,6 @@ async def chunk_preview(files: List[UploadFile] = File(...)):
             "target_tokens": DEFAULT_TARGET_TOKENS,
             "max_tokens": DEFAULT_MAX_TOKENS,
             "overlap_ratio": DEFAULT_OVERLAP_RATIO,
+            "ocr_mode": ocr_mode,
         },
     }

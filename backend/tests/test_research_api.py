@@ -119,9 +119,11 @@ class TestChunkPreviewEndpoint:
         from app.core.pipeline.schema import PaperMeta, PipelineChunk
 
         self.calls: list = []
+        self.modes: list = []
 
-        def fake_process_pdf(pdf_path, source=None, **_):
+        def fake_process_pdf(pdf_path, source=None, **kwargs):
             self.calls.append((Path(pdf_path).exists(), source))
+            self.modes.append(kwargs.get("ocr_mode"))
             if source == "rusak.pdf":
                 raise RuntimeError("PDF tidak bisa dibaca")
             meta = PaperMeta(source=source, paper_title="Judul Uji", year=2024, language="id")
@@ -143,10 +145,11 @@ class TestChunkPreviewEndpoint:
         from app.api.routes import research as research_routes
         research_routes.process_pdf = self._orig
 
-    def _post(self, *names):
+    def _post(self, *names, data=None):
         return client.post(
             "/api/research/chunk-preview",
             files=[("files", (n, _MINIMAL_PDF, "application/pdf")) for n in names],
+            data=data,
         )
 
     def test_returns_meta_sections_and_every_chunk(self):
@@ -159,6 +162,15 @@ class TestChunkPreviewEndpoint:
         assert [c["chunk_index"] for c in item["chunks"]] == [0, 1, 2]
         assert item["chunks"][0]["text"] == "pendahuluan"
         assert body["params"]["target_tokens"] > 0
+        assert body["params"]["ocr_mode"] == "auto" and self.modes == ["auto"]
+
+    def test_force_ocr_mode_is_forwarded_to_the_pipeline(self):
+        body = self._post("uji.pdf", data={"ocr_mode": "force"}).json()
+        assert body["params"]["ocr_mode"] == "force" and self.modes == ["force"]
+
+    def test_unknown_ocr_mode_is_422(self):
+        assert self._post("uji.pdf", data={"ocr_mode": "gpu"}).status_code == 422
+        assert self.calls == []
 
     def test_no_job_is_created_and_temp_file_is_removed(self):
         before = {j["job_id"] for j in job_store.list_jobs()}
