@@ -18,10 +18,13 @@ from .dependencies import (
 )
 from ..core.recommendation.novelty import rank_proposals
 from ..core.pipeline.pipeline import process_pdf_as_document
+from ..core.pipeline.io import read_jsonl
+from ..core.gap_detection.paper_profiles import build_profiles
 from ..utils.job_store import (
     add_stage_artifact,
     complete_job,
     get_job,
+    get_stage_artifacts,
     is_cancel_requested,
     record_job_event,
     save_job,
@@ -57,6 +60,37 @@ def _get_analysis_job(job_id: str):
 
 class JobCancelled(Exception):
     """Raised between analysis phases after a user requests cancellation."""
+
+
+def _load_author_gaps(gap_job_id: str) -> tuple[list[dict], str]:
+    """Gap-mining records of a research job, reduced to author statements.
+
+    Returns ``(records, note)``; ``records`` is empty and ``note`` explains why
+    when the job never finished gap mining or its JSONL file is gone. The path
+    comes from a server-written artifact, never from the request.
+    """
+    for art in reversed(get_stage_artifacts(gap_job_id, "gap_mining")):
+        if art.get("kind") != "result":
+            continue
+        raw = ((art.get("payload") or {}).get("outputs") or {}).get("gaps_jsonl")
+        if not raw or not Path(raw).exists():
+            return [], f"job gap mining {gap_job_id[:8]} tidak menyimpan berkas gaps_jsonl"
+        records = []
+        for rec in read_jsonl(str(raw)):
+            if rec.get("record") == "meta" or not rec.get("gap_statement"):
+                continue
+            evidence = rec.get("evidence_chunk_ids") or []
+            records.append({
+                "source": rec.get("source"),
+                "statement": rec.get("gap_statement"),
+                "paraphrase": rec.get("gap_paraphrase"),
+                "kind": rec.get("gap_type"),
+                "chunk_id": evidence[0] if evidence else None,
+                "grounding_score": rec.get("grounding_score"),
+                "topic": rec.get("topic"),
+            })
+        return records, ""
+    return [], f"job gap mining {gap_job_id[:8]} belum menyelesaikan tahap gap_mining"
 
 
 def _ensure_job_active(job_id: str) -> None:
@@ -460,6 +494,32 @@ Topik:"""
             except Exception as weak_err:
                 logger.warning(f"Paper weakness analysis failed: {weak_err}")
 
+        # Per-journal side-channel for the gap analyzer: the coordinator only
+        # hands it RAG passages, so author-stated weaknesses would otherwise
+        # never reach the indicators as corroborating evidence.
+        author_gaps: list[dict] = []
+        gap_note = ""
+        gap_job_id = str((job.get("payload") or {}).get("gap_job_id") or "")
+        if gap_job_id:
+            author_gaps, gap_note = _load_author_gaps(gap_job_id)
+        paper_profiles = build_profiles(
+            paper_contents, weaknesses=paper_weaknesses, author_gaps=author_gaps,
+        )
+        matched_gaps = sum(len(prof.author_gaps) for prof in paper_profiles.values())
+        if gap_job_id and author_gaps and not matched_gaps:
+            gap_note = "tidak ada jurnal job gap mining yang cocok dengan jurnal job ini"
+        if gap_note:
+            logger.warning(f"Author gaps from {gap_job_id[:8]} not attached: {gap_note}")
+        profile_summary = [
+            {
+                "source": prof.source,
+                "tersurat": len(prof.weaknesses.get("tersurat") or []),
+                "tersirat": len(prof.weaknesses.get("tersirat") or []),
+                "author_gaps": len(prof.author_gaps),
+            }
+            for prof in paper_profiles.values()
+        ]
+
         record_job_event(
             job_id,
             "phase.completed",
@@ -470,6 +530,7 @@ Topik:"""
                 "groups": len(paper_groups),
                 "weaknesses": len(paper_weaknesses),
                 "common_keywords": len(paper_similarity.get("common_keywords", [])),
+                "profiles": len(paper_profiles),
             },
         )
         _save_stage_artifact(
@@ -480,6 +541,13 @@ Topik:"""
                 "groups": paper_groups,
                 "similarity": paper_similarity,
                 "weaknesses": paper_weaknesses,
+                "profiles": profile_summary,
+                "author_gaps": {
+                    "gap_job_id": gap_job_id or None,
+                    "loaded": len(author_gaps),
+                    "matched": matched_gaps,
+                    "note": gap_note,
+                },
             },
         )
 
@@ -512,6 +580,7 @@ Topik:"""
                     "topics": topics,
                     "paper_contents": paper_contents,
                     "total_chunks": total_chunks,
+                    "paper_profiles": {k: v.to_dict() for k, v in paper_profiles.items()},
                 },
             )
 
@@ -658,6 +727,9 @@ Ringkasan:"""
                         str(rp).strip() for rp in (gi.get("related_papers") or [])
                         if str(rp).strip()
                     ],
+                    "detection_method": gi.get("detection_method", ""),
+                    "supporting_quotes": gi.get("supporting_quotes", []),
+                    "sub_indicators": gi.get("sub_indicators", []),
                 })
         else:
             # LLM fallback — generate structured gaps then validate via Rule Engine

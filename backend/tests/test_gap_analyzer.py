@@ -388,3 +388,130 @@ class TestPaperReferences:
         joined = " ".join(frag[0].related_papers)
         assert "01_exp.pdf" in joined
         assert "03_dl.pdf" in joined
+
+
+# ===================================================================
+# Author-stated corroboration (per-journal side-channel)
+# ===================================================================
+
+class TestAuthorCorroboration:
+    """Author limitations / future work are EVIDENCE for an indicator, never a gap."""
+
+    PAPER_CONTENTS = [{"source": s, "title": s} for s in ("h1", "h2", "h3")]
+
+    @staticmethod
+    def _weakness(source, kind="tersurat"):
+        point = {
+            "poin": "Alternative methodological approaches are absent",
+            "dasar": "Only deep learning is evaluated",
+            "verification_status": "terverifikasi" if kind == "tersurat" else "inferensi",
+            "confidence": 0.9,
+        }
+        if kind == "tersurat":
+            point["kutipan"] = "we evaluated a single deep learning approach only"
+        return {"title": source, "source": source,
+                "tersurat": [point] if kind == "tersurat" else [],
+                "tersirat": [point] if kind == "tersirat" else []}
+
+    def _methodology_indicator(self, indicators):
+        meth = [i for i in indicators if i.detection_method == "methodology_coverage"]
+        assert len(meth) == 1
+        return meth[0]
+
+    def _corroboration(self, indicator):
+        found = [s["author_corroboration"] for s in indicator.sub_indicators
+                 if "author_corroboration" in s]
+        return found[0] if found else None
+
+    def test_explicit_statement_becomes_evidence_and_verbatim_quote(self, homogeneous_papers):
+        from app.core.gap_detection.paper_profiles import build_profiles
+
+        profiles = build_profiles(self.PAPER_CONTENTS, weaknesses=[self._weakness("h1")])
+        ga = GapAnalyzer()
+        before = self._methodology_indicator(
+            ga.analyze_gaps("test topic", homogeneous_papers, depth="quick"))
+        after = self._methodology_indicator(ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles={k: v.to_dict() for k, v in profiles.items()}))
+
+        hits = self._corroboration(after)
+        assert hits and hits[0]["source"] == "h1" and hits[0]["kind"] == "tersurat"
+        quotes = [q for q in after.supporting_quotes if q.get("origin") == "author_stated"]
+        assert len(quotes) == 1
+        assert quotes[0]["quote"] == "we evaluated a single deep learning approach only"
+        assert quotes[0]["source_paper"] == "h1" and quotes[0]["kind"] == "tersurat"
+        assert any(e.startswith("Korroborasi penulis: 1 pernyataan dari 1 jurnal")
+                   for e in after.evidence)
+        # Evidence only: the score is exactly what the profile-less run produced.
+        assert after.confidence == pytest.approx(before.confidence)
+        assert after.description == before.description
+
+    def test_implicit_statement_is_traceable_but_never_quoted(self, homogeneous_papers):
+        from app.core.gap_detection.paper_profiles import build_profiles
+
+        profiles = build_profiles(self.PAPER_CONTENTS,
+                                  weaknesses=[self._weakness("h2", kind="tersirat")])
+        ga = GapAnalyzer()
+        ind = self._methodology_indicator(ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles={k: v.to_dict() for k, v in profiles.items()}))
+
+        hits = self._corroboration(ind)
+        assert hits and hits[0]["kind"] == "tersirat" and hits[0]["quote"] is None
+        assert [q for q in ind.supporting_quotes if q.get("origin") == "author_stated"] == []
+
+    def test_gap_mining_statement_is_quoted_with_its_kind(self, homogeneous_papers):
+        from app.core.gap_detection.paper_profiles import build_profiles
+
+        profiles = build_profiles(self.PAPER_CONTENTS, author_gaps=[{
+            "source": "07_h3",  # job-dir prefix from the gap-mining run
+            "statement": "Future work should apply alternative methodological approaches.",
+            "paraphrase": "Perlu pendekatan metodologis alternatif.",
+            "kind": "explicit_future_work",
+            "chunk_id": "h3::4::abc",
+            "grounding_score": 1.0,
+        }])
+        ga = GapAnalyzer()
+        ind = self._methodology_indicator(ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles={k: v.to_dict() for k, v in profiles.items()}))
+
+        quotes = [q for q in ind.supporting_quotes if q.get("origin") == "author_stated"]
+        assert len(quotes) == 1 and quotes[0]["kind"] == "explicit_future_work"
+        assert quotes[0]["quote"].startswith("Future work should apply")
+        assert self._corroboration(ind)[0]["chunk_id"] == "h3::4::abc"
+
+    def test_unrelated_journal_is_not_searched_when_related_ones_exist(self, homogeneous_papers):
+        from app.core.gap_detection.paper_profiles import build_profiles
+
+        profiles = build_profiles(
+            self.PAPER_CONTENTS + [{"source": "zz", "title": "zz"}],
+            weaknesses=[self._weakness("zz")],
+        )
+        ga = GapAnalyzer()
+        ind = self._methodology_indicator(ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles={k: v.to_dict() for k, v in profiles.items()}))
+        assert self._corroboration(ind) is None
+
+    def test_falls_back_to_all_profiles_when_none_are_related(self, homogeneous_papers):
+        from app.core.gap_detection.paper_profiles import build_profiles
+
+        profiles = build_profiles([{"source": "zz", "title": "zz"}],
+                                  weaknesses=[self._weakness("zz")])
+        ga = GapAnalyzer()
+        ind = self._methodology_indicator(ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles={k: v.to_dict() for k, v in profiles.items()}))
+        assert self._corroboration(ind)[0]["source"] == "zz"
+
+    def test_without_profiles_output_is_unchanged(self, homogeneous_papers):
+        ga = GapAnalyzer()
+        plain = [i.to_dict() for i in ga.analyze_gaps("test topic", homogeneous_papers, depth="quick")]
+        empty = [i.to_dict() for i in ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick", paper_profiles={})]
+        assert plain == empty
+        assert all("author_corroboration" not in s
+                   for ind in plain for s in ind["sub_indicators"])
+        assert all(q.get("origin") is None
+                   for ind in plain for q in ind["supporting_quotes"])

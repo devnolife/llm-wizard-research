@@ -304,6 +304,111 @@ def test_reanalyze_unknown_job_is_404(client, reanalyze_env):
     assert response.status_code == 404
 
 
+@pytest.fixture
+def upload_env(tmp_path, monkeypatch):
+    """Isolated config + queue for /api/upload-and-analyze."""
+    from types import SimpleNamespace
+
+    config = SimpleNamespace(
+        data=SimpleNamespace(
+            raw_path=str(tmp_path / "raw"),
+            processed_path=str(tmp_path / "processed"),
+            allowed_file_types=["pdf"],
+            max_file_size_mb=5,
+        ),
+        queue=SimpleNamespace(max_attempts=1),
+    )
+    queue = Mock()
+    monkeypatch.setattr(analysis, "get_config", lambda: config)
+    monkeypatch.setattr(analysis, "get_analysis_queue", lambda: queue)
+    return tmp_path, queue
+
+
+_PDF_UPLOAD = ("files", ("paper.pdf", b"%PDF-1.4 test", "application/pdf"))
+
+
+@pytest.mark.api
+def test_upload_rejects_malformed_gap_job_id(client, upload_env):
+    response = client.post("/api/upload-and-analyze", files=[_PDF_UPLOAD],
+                           data={"gap_job_id": "../etc/passwd"})
+
+    assert response.status_code == 400
+    assert job_store.list_jobs() == []
+
+
+@pytest.mark.api
+def test_upload_rejects_unknown_gap_job_id(client, upload_env):
+    response = client.post("/api/upload-and-analyze", files=[_PDF_UPLOAD],
+                           data={"gap_job_id": "11111111-2222-3333-4444-555555555555"})
+
+    assert response.status_code == 404
+    assert job_store.list_jobs() == []
+
+
+@pytest.mark.api
+def test_upload_persists_gap_job_id_in_payload(client, upload_env):
+    _, queue = upload_env
+    job_store.save_job("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                       {"status": "completed", "pipeline": "research"})
+
+    response = client.post("/api/upload-and-analyze", files=[_PDF_UPLOAD],
+                           data={"gap_job_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})
+
+    assert response.status_code == 200
+    new_job = job_store.get_job(response.json()["job_id"])
+    assert new_job["payload"]["gap_job_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    queue.notify.assert_called_once()
+
+
+@pytest.mark.api
+def test_upload_without_gap_job_id_stores_none(client, upload_env):
+    response = client.post("/api/upload-and-analyze", files=[_PDF_UPLOAD])
+
+    assert response.status_code == 200
+    assert job_store.get_job(response.json()["job_id"])["payload"]["gap_job_id"] is None
+
+
+def test_load_author_gaps_reads_gap_mining_artifact(tmp_path):
+    """The worker turns the gap-mining JSONL of a research job into statements."""
+    gaps_path = tmp_path / "gaps_abc.jsonl"
+    gaps_path.write_text(
+        '{"record": "meta", "jumlah_gap": 1}\n'
+        '{"source": "paper.pdf", "gap_statement": "Future work should test X.", '
+        '"gap_paraphrase": "Perlu uji X.", "gap_type": "explicit_future_work", '
+        '"evidence_chunk_ids": ["paper::3::h"], "grounding_score": 0.97, "topic": "tools"}\n'
+        '{"source": "paper.pdf", "gap_statement": ""}\n',
+        encoding="utf-8",
+    )
+    job_store.save_job("gapjob", {"status": "completed", "pipeline": "research"})
+    job_store.add_stage_artifact("gapjob", "gap_mining", "llm", "kandidat 1", {"prompt": "p"})
+    job_store.add_stage_artifact("gapjob", "gap_mining", "result", "gap_mining",
+                                 {"outputs": {"gaps_jsonl": str(gaps_path)}})
+
+    records, note = auto_analysis._load_author_gaps("gapjob")
+
+    assert note == ""
+    assert records == [{
+        "source": "paper.pdf",
+        "statement": "Future work should test X.",
+        "paraphrase": "Perlu uji X.",
+        "kind": "explicit_future_work",
+        "chunk_id": "paper::3::h",
+        "grounding_score": 0.97,
+        "topic": "tools",
+    }]
+
+
+def test_load_author_gaps_explains_missing_stage_and_file(tmp_path):
+    job_store.save_job("nogaps", {"status": "completed", "pipeline": "research"})
+    records, note = auto_analysis._load_author_gaps("nogaps")
+    assert records == [] and "belum menyelesaikan" in note
+
+    job_store.add_stage_artifact("nogaps", "gap_mining", "result", "gap_mining",
+                                 {"outputs": {"gaps_jsonl": str(tmp_path / "gone.jsonl")}})
+    records, note = auto_analysis._load_author_gaps("nogaps")
+    assert records == [] and "gaps_jsonl" in note
+
+
 @pytest.mark.api
 def test_reanalyze_keeps_research_pipeline_and_gives_fresh_output_dir(client, reanalyze_env):
     """The dashboard's 🔁 button is shown for research jobs too; without the

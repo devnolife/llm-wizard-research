@@ -128,6 +128,11 @@ class GapIndicatorModel(BaseModel):
     )
     supporting_papers: List[str] = Field(default_factory=list)
     suggested_directions: List[str] = Field(default_factory=list)
+    sub_indicators: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Traceability detail per detection method (clusters, "
+                    "coverage matrix, author corroboration, stage matrix).",
+    )
 
 
 class ReasoningStep(BaseModel):

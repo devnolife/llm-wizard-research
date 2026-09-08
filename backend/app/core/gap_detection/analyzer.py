@@ -58,6 +58,7 @@ from .graph_metrics import (
     rank_bridges,
     rescue_singletons,
 )
+from .paper_profiles import PaperProfile, normalize_source, profiles_from_context
 
 # Re-export for backward compatibility
 GapIndicatorType = IndicatorType
@@ -173,6 +174,7 @@ class GapIndicator:
             "requires_human_validation": self.requires_human_validation,
             "rule_engine_verdict": self.rule_engine_verdict.value if self.rule_engine_verdict else None,
             "detection_method": self.detection_method,
+            "sub_indicators": self.sub_indicators,
         }
 
     def to_model(self) -> GapIndicatorModel:
@@ -195,6 +197,7 @@ class GapIndicator:
             evidence_subgraph=self.evidence_subgraph[:10],
             supporting_papers=self.related_papers,
             suggested_directions=self.suggested_directions,
+            sub_indicators=self.sub_indicators,
         )
 
 
@@ -235,6 +238,8 @@ class GapAnalyzer:
         # Post-hoc calibration (P9). Stays an identity map until enough expert
         # labels exist, so confidences are never silently rescaled.
         self.calibrator = load_calibrator()
+        # Per-journal side-channel for the current analyze_gaps() call only.
+        self._profiles: Dict[str, PaperProfile] = {}
         
         logger.info("GapAnalyzer initialized (Cooper/Booth 3-indicator model)")
     
@@ -242,7 +247,8 @@ class GapAnalyzer:
         self,
         topic: str,
         papers: List[Dict[str, Any]],
-        depth: str = "standard"
+        depth: str = "standard",
+        paper_profiles: Optional[Dict[str, Any]] = None,
     ) -> List[GapIndicator]:
         """
         Comprehensive gap analysis using 3 mainstream indicators.
@@ -251,11 +257,16 @@ class GapAnalyzer:
             topic: Research topic/domain
             papers: List of papers to analyze
             depth: Analysis depth ('quick', 'standard', 'comprehensive')
+            paper_profiles: Optional per-journal side-channel (see
+                ``paper_profiles.build_profiles``): author-stated weaknesses,
+                gap-mining records, workflow stages, references. ``None`` keeps
+                the behaviour identical to a profile-less run.
             
         Returns:
             List of GapIndicator objects (NOT final gaps — indicators only)
         """
         logger.info(f"Analyzing synthesis gap indicators for: {topic} (depth: {depth})")
+        self._profiles = profiles_from_context(paper_profiles)
         
         indicators: List[GapIndicator] = []
         
@@ -272,6 +283,12 @@ class GapAnalyzer:
         # Indicator 4: Evidence-support gap (retrieval failure)
         if depth in ["standard", "comprehensive"]:
             indicators.extend(self._detect_support_gap(topic, papers))
+        
+        # Author-stated limitations / future work as corroborating EVIDENCE.
+        # Runs before the symbolic layer so the quotes it attaches take part in
+        # the provenance chain; it never touches confidence or the claim.
+        if self._profiles:
+            self._corroborate_with_author_statements(indicators)
         
         # Validate through Rule Engine (if available)
         if self.rule_engine:
@@ -293,9 +310,10 @@ class GapAnalyzer:
         topic: str,
         papers: List[Dict[str, Any]],
         depth: str = "standard",
+        paper_profiles: Optional[Dict[str, Any]] = None,
     ) -> List[GapIndicatorModel]:
         """Run gap analysis and return API-ready GapIndicatorModel list."""
-        indicators = self.analyze_gaps(topic, papers, depth)
+        indicators = self.analyze_gaps(topic, papers, depth, paper_profiles=paper_profiles)
         return [ind.to_model() for ind in indicators]
     
     # -------------------------------------------------------------------
@@ -919,6 +937,136 @@ class GapAnalyzer:
     # Rule Engine Validation
     # -------------------------------------------------------------------
     
+    # -------------------------------------------------------------------
+    # Author-stated corroboration (per-journal side-channel)
+    # -------------------------------------------------------------------
+
+    # Most corroborations kept per indicator; the rest only inflate the payload.
+    MAX_CORROBORATIONS = 6
+    # Verbatim author quotes appended to supporting_quotes per indicator.
+    MAX_CORROBORATION_QUOTES = 3
+
+    def _corroborate_with_author_statements(
+        self,
+        indicators: List[GapIndicator],
+    ) -> None:
+        """Attach what the authors themselves wrote as corroborating evidence.
+
+        A synthesis-gap indicator is a cross-paper claim; a limitation or
+        future-work sentence is a single author's statement, so by design
+        (BAB II 2.2.2) it is *not* a gap. It is, however, evidence that the
+        indicator names a real problem, which is why matches are recorded in
+        ``sub_indicators`` (all kinds) and ``supporting_quotes`` (verbatim text
+        only). Confidence, the Rule Engine claim and calibration inputs are
+        left untouched.
+        """
+        matcher = SemanticMatcher.from_vector_store(self.vector_store)
+        for indicator in indicators:
+            pool = self._profiles_for_indicator(indicator)
+            statements = [s for profile in pool for s in profile.statements()]
+            needles = self._indicator_needles(indicator)
+            if not statements or not needles:
+                continue
+
+            hits: List[Dict[str, Any]] = []
+            for statement in statements:
+                # Best phrasing wins: a point and its basis (or a statement and
+                # its paraphrase) are matched separately, never concatenated.
+                match = None
+                for text in statement.get("texts") or [statement["text"]]:
+                    candidate = matcher.best_match(text, needles)
+                    if match is None or candidate.score > match.score:
+                        match = candidate
+                if match is None or not match.covered:
+                    continue
+                hits.append({
+                    "source": statement["source"],
+                    "kind": statement["kind"],
+                    "text": statement["text"][:400],
+                    "quote": statement.get("quote"),
+                    "matched_term": match.best_match,
+                    "score": round(match.score, 3),
+                    "method": match.method,
+                    "chunk_id": statement.get("chunk_id"),
+                })
+            if not hits:
+                continue
+
+            hits.sort(key=lambda h: h["score"], reverse=True)
+            hits = hits[: self.MAX_CORROBORATIONS]
+            indicator.sub_indicators.append({"author_corroboration": hits})
+
+            quotes_added = 0
+            for hit in hits:
+                if not hit["quote"] or quotes_added >= self.MAX_CORROBORATION_QUOTES:
+                    continue
+                indicator.supporting_quotes.append({
+                    "quote": hit["quote"],
+                    "source_paper": hit["source"],
+                    # Verbatim by construction: explicit weaknesses keep only
+                    # quotes verified against the paper, gap-mining statements
+                    # are copied from the chunk and re-verified upstream.
+                    "match_score": 1.0,
+                    "relevance": hit["score"],
+                    "origin": "author_stated",
+                    "kind": hit["kind"],
+                })
+                quotes_added += 1
+
+            kinds = {}
+            for hit in hits:
+                kinds[hit["kind"]] = kinds.get(hit["kind"], 0) + 1
+            sources = {hit["source"] for hit in hits}
+            indicator.evidence.append(
+                f"Korroborasi penulis: {len(hits)} pernyataan dari {len(sources)} jurnal ("
+                + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
+                + ") sejalan dengan indikator ini; dipakai sebagai bukti, bukan skor."
+            )
+
+    def _profiles_for_indicator(self, indicator: GapIndicator) -> List[PaperProfile]:
+        """Profiles of the journals an indicator names, else every profile.
+
+        Cluster-based indicators name papers by whatever id the passage
+        carried, which may not resolve to a journal; the fallback keeps the
+        corroboration search alive instead of silently skipping it.
+        """
+        wanted = {normalize_source(ref) for ref in indicator.related_papers} - {""}
+        related = [p for key, p in self._profiles.items() if key in wanted]
+        return related or list(self._profiles.values())
+
+    @staticmethod
+    def _indicator_needles(indicator: GapIndicator) -> List[str]:
+        """Short phrases that describe what the indicator is about.
+
+        Aspects, bridge entities and homogeneous stages are the specific
+        things a statement can agree with; the description is kept as a
+        coarse fallback for methods that carry no structured detail.
+        """
+        needles: List[str] = list(indicator.suggested_directions)
+        for sub in indicator.sub_indicators:
+            for match in sub.get("aspect_matches") or []:
+                if match.get("aspect"):
+                    needles.append(str(match["aspect"]))
+            for bridge in sub.get("bridge_candidates") or []:
+                for end in (bridge.get("source"), bridge.get("target")):
+                    if end:
+                        needles.append(str(end))
+            for stage in (sub.get("stage_matrix") or {}).get("homogeneous") or []:
+                label = stage.get("label") or stage.get("stage")
+                value = stage.get("value")
+                if label:
+                    needles.append(f"{label} {value or ''}".strip())
+        if indicator.description:
+            needles.append(indicator.description)
+        seen: Set[str] = set()
+        unique: List[str] = []
+        for needle in needles:
+            key = needle.strip().lower()
+            if key and key not in seen:
+                seen.add(key)
+                unique.append(needle.strip())
+        return unique
+
     def _validate_with_rule_engine(
         self,
         indicators: List[GapIndicator],

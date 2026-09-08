@@ -702,6 +702,49 @@ def _render_gap_lenses(gap: dict, papers_info: list) -> None:
         st.caption(f"📅 Basis literatur gap ini: {rng} (median {med}){note}")
 
 
+# Jenis pernyataan penulis yang dipakai sebagai bukti pendukung indikator.
+AUTHOR_KIND_LABELS = {
+    "tersurat": "kekurangan tersurat (kutipan terverifikasi)",
+    "tersirat": "kekurangan tersirat (inferensi)",
+    "explicit_future_work": "future work eksplisit (gap mining)",
+    "stated_limitation": "keterbatasan yang dinyatakan (gap mining)",
+    "implicit_gap": "gap implisit (gap mining)",
+}
+
+
+def render_author_corroboration(gap: dict) -> None:
+    """Pernyataan penulis yang sejalan dengan gap kolektif — bukti, bukan skor.
+
+    Explicit gap satu penulis tetap bukan synthesis gap (BAB II 2.2.2); di sini
+    ia menunjukkan bahwa indikator lintas-jurnal menamai masalah yang penulis
+    sendiri akui. Keyakinan gap tidak berubah karenanya.
+    """
+    hits = []
+    for sub in gap.get("sub_indicators") or []:
+        if isinstance(sub, dict) and sub.get("author_corroboration"):
+            hits = list(sub["author_corroboration"])
+            break
+    if not hits:
+        return
+    sources = {h.get("source") for h in hits if h.get("source")}
+    # Tanpa st.expander: renderer ini bisa dipanggil di dalam expander tahap.
+    st.markdown(
+        f"**✍️ Dikuatkan pernyataan penulis** — {len(hits)} pernyataan dari {len(sources)} jurnal "
+        "(bukti pendukung, tidak mengubah keyakinan)"
+    )
+    for h in hits[:4]:
+        label = AUTHOR_KIND_LABELS.get(h.get("kind"), str(h.get("kind") or ""))
+        score = h.get("score")
+        score_txt = f" · kemiripan {float(score):.2f}" if score is not None else ""
+        st.markdown(f"- 📄 **{h.get('source') or '?'}** — {label}{score_txt}  \n"
+                    f"  {h.get('text', '')}"
+                    + (f"  \n  ↳ cocok dengan: _{h['matched_term']}_" if h.get("matched_term") else ""))
+        if h.get("quote"):
+            st.markdown(f"  > {h['quote']}")
+    if len(hits) > 4:
+        st.caption(f"…dan {len(hits) - 4} pernyataan lain (lihat detail JSON).")
+
+
 def _render_gaps_result(payload: dict) -> None:
     gaps = payload.get("gaps") or []
     papers_info = payload.get("papers_info") or []
@@ -746,6 +789,7 @@ def _render_gaps_result(payload: dict) -> None:
 
         for ev in (gap.get("evidence") or [])[:5]:
             st.caption(f"🔎 Bukti: {ev}")
+        render_author_corroboration(gap)
         directions = gap.get("suggested_directions") or []
         if directions:
             st.markdown("*Arah riset yang disarankan:*")

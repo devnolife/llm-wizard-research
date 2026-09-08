@@ -65,6 +65,15 @@ DETECTION_LABELS = {
     "methodology_coverage": "keragaman metodologi",
     "evidence_support": "dukungan bukti primer (leave-one-out)",
 }
+# Jenis pernyataan penulis yang dipakai sebagai bukti pendukung (bukan skor):
+# dua dari telaah kekurangan per jurnal, tiga dari gap mining langkah 2.
+AUTHOR_KIND_LABELS = {
+    "tersurat": "kekurangan tersurat (kutipan terverifikasi)",
+    "tersirat": "kekurangan tersirat (inferensi, tanpa kutipan)",
+    "explicit_future_work": "future work eksplisit (gap mining)",
+    "stated_limitation": "keterbatasan yang dinyatakan (gap mining)",
+    "implicit_gap": "gap implisit (gap mining)",
+}
 TRACE_LABELS = {
     "observe": "👁️ Observe — ambil passage, ekstrak fakta, bangun graf",
     "think": "🧠 Think — deteksi indikator, cek NLI",
@@ -274,8 +283,11 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
             st.markdown("**Kutipan verbatim dari jurnal**")
             for i, q in enumerate(quotes):
                 quote = q.get("quote", "")
+                origin = (" · ✍️ pernyataan penulis: "
+                          + AUTHOR_KIND_LABELS.get(q.get("kind"), str(q.get("kind") or ""))
+                          if q.get("origin") == "author_stated" else "")
                 st.markdown(f"> {quote}\n>\n> — *{q.get('source_paper') or '?'}*"
-                            + (f" · {q['context']}" if q.get("context") else ""))
+                            + (f" · {q['context']}" if q.get("context") else "") + origin)
                 chunk, span = _find_quote(quote, chunks_by_id)
                 if chunk:
                     with st.expander(f"Lihat di chunk #{chunk['chunk_index']} · "
@@ -290,6 +302,8 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
         if related:
             st.caption("Jurnal terkait: " + ", ".join(short_name(p, 40) for p in related[:12])
                        + (f" … (+{len(related) - 12})" if len(related) > 12 else ""))
+
+        _render_author_corroboration(g)
 
         directions = g.get("suggested_directions") or []
         if directions:
@@ -320,6 +334,35 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
 
         with st.expander("Detail mentah (JSON)"):
             st.json(g, expanded=False)
+
+
+def _author_corroboration(g: dict) -> list:
+    for sub in g.get("sub_indicators") or []:
+        if isinstance(sub, dict) and sub.get("author_corroboration"):
+            return list(sub["author_corroboration"])
+    return []
+
+
+def _render_author_corroboration(g: dict) -> None:
+    """Pernyataan penulis (kekurangan / future work) yang sejalan dengan indikator.
+
+    Ini bukti pendukung, bukan definisi gap: saran future work satu penulis
+    tetap bukan synthesis gap (BAB II 2.2.2), tetapi menunjukkan indikator
+    lintas-jurnal ini menamai masalah yang penulis sendiri akui.
+    """
+    hits = _author_corroboration(g)
+    if not hits:
+        return
+    sources = {h.get("source") for h in hits if h.get("source")}
+    st.markdown(f"**✍️ Dikuatkan pernyataan penulis** · {len(hits)} pernyataan dari "
+                f"{len(sources)} jurnal — bukti pendukung, tidak mengubah keyakinan")
+    for h in hits:
+        label = AUTHOR_KIND_LABELS.get(h.get("kind"), str(h.get("kind") or ""))
+        score = h.get("score")
+        score_txt = f" · kemiripan {float(score):.2f} ({h.get('method', '')})" if score is not None else ""
+        st.markdown(f"- *{short_name(str(h.get('source') or '?'), 40)}* — {label}{score_txt}"
+                    f"  \n  {h.get('text', '')}"
+                    + (f"  \n  ↳ cocok dengan: _{h['matched_term']}_" if h.get("matched_term") else ""))
 
 
 def _render_indicators(indicators: list, chunks_by_id: dict) -> None:
@@ -523,17 +566,22 @@ def render(api_base: str, uploads, backend_ok: bool, chunks_by_id: dict):
 
     job_id = st.session_state.get("ns_job_id")
     if not job_id:
+        gap_job_id = st.session_state.get("gap_job_id")
         if st.button("🧠 Jalankan analisis neuro-symbolic", type="primary",
                      disabled=not uploads or not backend_ok, key="ns-start"):
             try:
-                body = start_legacy_analysis(api_base, uploads)
+                body = start_legacy_analysis(api_base, uploads, gap_job_id=gap_job_id)
                 st.session_state["ns_job_id"] = body["job_id"]
                 st.rerun()
             except Exception as exc:
                 st.error(f"Gagal memulai: {exc}")
         else:
             st.caption("PDF yang sama dikirim ke pipeline analisis 8 tahap (puluhan panggilan LLM; "
-                       "biasanya beberapa menit). Hasil tahap neuro-symbolic tampil lebih dulu.")
+                       "biasanya beberapa menit). Hasil tahap neuro-symbolic tampil lebih dulu."
+                       + (" Gap per jurnal dari langkah 2 ikut dikirim sebagai bukti pendukung "
+                          "indikator." if gap_job_id else
+                          " Jalankan langkah 2 dulu bila ingin gap per jurnal ikut menjadi bukti "
+                          "pendukung indikator."))
         return None, None
 
     try:

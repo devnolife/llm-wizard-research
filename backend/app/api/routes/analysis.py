@@ -8,7 +8,7 @@ Updated to support:
 - Agent reasoning trace
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from loguru import logger
 from typing import List
@@ -527,11 +527,16 @@ async def analyze_selection(request: MarkedPapersRequest):
 
 @router.post("/upload-and-analyze")
 async def upload_and_analyze(
-    files: List[UploadFile] = File(...)
+    files: List[UploadFile] = File(...),
+    gap_job_id: str = Form(""),
 ):
     """
     Upload PDFs and automatically analyze them.
     Returns job_id to track progress.
+
+    ``gap_job_id`` (optional) names a finished research/gap-mining job on the
+    same PDFs; its author-stated gap records are then attached to the
+    synthesis-gap indicators as corroborating evidence.
     """
     input_paths: list[Path] = []
     job_dir: Path | None = None
@@ -540,6 +545,14 @@ async def upload_and_analyze(
         allowed_types = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
         if "pdf" not in allowed_types:
             raise HTTPException(status_code=415, detail="PDF uploads are not enabled")
+        gap_job_id = (gap_job_id or "").strip()
+        if gap_job_id:
+            try:
+                gap_job_id = str(uuid.UUID(gap_job_id))
+            except ValueError:
+                raise HTTPException(status_code=400, detail="gap_job_id bukan UUID yang valid")
+            if get_job(gap_job_id) is None:
+                raise HTTPException(status_code=404, detail="Job gap mining tidak ditemukan")
         job_id = str(uuid.uuid4())
         job_dir = Path(config.data.raw_path) / "analysis_jobs" / job_id
         job_dir.mkdir(parents=True, exist_ok=False)
@@ -569,6 +582,7 @@ async def upload_and_analyze(
                 "pdf_paths": [str(path) for path in input_paths],
                 "input_dir": str(job_dir),
                 "files": files_metadata,
+                "gap_job_id": gap_job_id or None,
             },
         )
         record_job_event(job_id, "job.created", status="queued", data={"file_count": len(input_paths)})

@@ -142,6 +142,9 @@ class GapDetectorAgent:
                     topic=query,
                     papers=papers,
                     depth="standard",
+                    # Per-journal side-channel built by the job (weaknesses,
+                    # gap-mining records, ...); passages alone cannot carry it.
+                    paper_profiles=(context or {}).get("paper_profiles"),
                 )
                 
                 for indicator in indicators:

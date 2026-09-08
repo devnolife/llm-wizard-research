@@ -117,10 +117,15 @@ def stage_records(api_base: str, job_id: str, phase: str) -> list:
             return records
 
 
-def start_legacy_analysis(api_base: str, uploads) -> dict:
-    """Job pipeline 8 tahap (neuro-symbolic): ``POST /api/upload-and-analyze``."""
+def start_legacy_analysis(api_base: str, uploads, gap_job_id: str | None = None) -> dict:
+    """Job pipeline 8 tahap (neuro-symbolic): ``POST /api/upload-and-analyze``.
+
+    ``gap_job_id`` = job gap mining langkah 2 pada PDF yang sama; pernyataan gap
+    penulisnya dipakai backend sebagai bukti pendukung indikator (bukan skor).
+    """
+    data = {"gap_job_id": gap_job_id} if gap_job_id else None
     resp = requests.post(f"{api_base}/api/upload-and-analyze", files=_upload_files(uploads),
-                         timeout=TIMEOUT_SECONDS)
+                         data=data, timeout=TIMEOUT_SECONDS)
     _raise_for_status(resp)
     return resp.json()
 
