@@ -78,9 +78,11 @@ def request_chunks(api_base: str, uploads, ocr_mode: str) -> dict:
     return resp.json()
 
 
-def start_research_job(api_base: str, uploads, ocr_mode: str, until: str) -> dict:
+def start_research_job(api_base: str, uploads, ocr_mode: str, until: str,
+                       gap_runs: int = 1) -> dict:
     resp = requests.post(f"{api_base}/api/research/start", files=_upload_files(uploads),
-                         data={"ocr_mode": ocr_mode, "until": until}, timeout=TIMEOUT_SECONDS)
+                         data={"ocr_mode": ocr_mode, "until": until, "gap_runs": int(gap_runs)},
+                         timeout=TIMEOUT_SECONDS)
     _raise_for_status(resp)
     return resp.json()
 

@@ -71,6 +71,9 @@ DEFAULT_LLM_TRACE_LIMIT = 15
 # 12 kandidat terukur 135,4 dtk (1 worker) vs 47,7 dtk (4 worker).
 DEFAULT_EXTRACT_WORKERS = 4
 SAMPLE_ROWS = 8
+# Batas atas run gap mining per job: tiap run = satu lintasan LLM penuh atas
+# kandidat yang sama, jadi biayanya linear.
+MAX_GAP_RUNS = 5
 
 # Urutan tahap penelitian; dipakai UI untuk menggambar timeline.
 RESEARCH_STAGES = [
@@ -163,6 +166,15 @@ SUBSTEPS: Dict[str, List[Dict[str, Any]]] = {
              "kali dari satu jurnal. Duplikat dibuang.",
              masuk="lolos_verifikasi_verbatim", keluar="gap_final_setelah_dedup",
              dibuang="duplikat_dibuang", contoh="dedup_dibuang"),
+        _sub("konsensus_run", "Menghitung kemunculan gap lintas run (k/n)",
+             "_merge_runs: gap stabil bila run_hits >= min_run_hits (bawaan ceil(2n/3)); "
+             "kunci gabungan sama dengan dedup",
+             "LLM tidak deterministik: dua run pada chunk identik hanya ~75% tumpang "
+             "tindih. Bila job dijalankan n run, tiap gap dicatat muncul di k run; "
+             "yang di bawah ambang ditandai tidak stabil dan tidak diteruskan ke "
+             "tahap kebaruan. Dengan 1 run semua gap dianggap stabil.",
+             masuk="gap_final_setelah_dedup", keluar="gap_stabil",
+             dibuang="gap_tidak_stabil", contoh="tidak_stabil"),
     ],
     "novelty": [
         _sub("cek_kebaruan", "Mengecek tiap gap ke literatur terbaru",
@@ -220,7 +232,9 @@ PIPELINE_CONSTANTS: Dict[str, Dict[str, Any]] = {
                  "overlap_ratio": DEFAULT_OVERLAP_RATIO},
     "gap_mining": {"quote_match_threshold": QUOTE_MATCH_THRESHOLD,
                    "llm_temperature": "tidak dapat diatur (Copilot)",
-                   "workers": DEFAULT_EXTRACT_WORKERS},
+                   "workers": DEFAULT_EXTRACT_WORKERS,
+                   "max_runs": MAX_GAP_RUNS,
+                   "default_min_run_hits": "ceil(2n/3)"},
     "novelty": {"strong_match_threshold": STRONG_MATCH_THRESHOLD,
                 "addressed_min_strong": 3, "partially_min_strong": 1,
                 "from_date": "2024-01-01", "max_results": 8},
@@ -268,6 +282,115 @@ def _split_duplicates(
 
 def _dedup_gaps(gaps: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return _split_duplicates(gaps)[0]
+
+
+def _gap_digest(gap: Dict[str, Any]) -> str:
+    key = (gap.get("source"), (gap.get("gap_statement") or "").strip().lower())
+    return hashlib.sha1(str(key).encode()).hexdigest()
+
+
+def default_min_run_hits(runs: int) -> int:
+    """Ambang bawaan 'stabil': muncul di >= 2/3 run (1 run -> 1, 3 run -> 2, 5 run -> 4)."""
+    runs = max(1, int(runs))
+    return max(1, -(-2 * runs // 3))
+
+
+def _merge_runs(
+    gaps: Sequence[Dict[str, Any]],
+    runs: int,
+    min_run_hits: int,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    """Gabungkan gap dari beberapa run menjadi union beranotasi k/n.
+
+    Kunci gabungan sama dengan ``_split_duplicates``. Kemunculan kedua dalam
+    run yang SAMA adalah duplikat biasa; kemunculan di run LAIN adalah bukti
+    stabilitas dan dihitung ke ``run_hits``. Mengembalikan
+    ``(unik, duplikat_dalam_run, gabungan_lintas_run, konsensus)``; tiap gap unik
+    membawa ``run_hits``, ``run_total``, ``run_ids`` (1-based) dan ``stable``.
+    Dengan ``runs == 1`` hasilnya identik dengan dedup lama plus anotasi itu.
+    """
+    groups: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    duplicates: List[Dict[str, Any]] = []
+    merged: List[Dict[str, Any]] = []
+    per_run: Dict[int, set] = defaultdict(set)
+    for gap in gaps:
+        run = int(gap.pop("_run", 0))
+        digest = _gap_digest(gap)
+        per_run[run].add(digest)
+        group = groups.get(digest)
+        if group is None:
+            groups[digest] = {"gap": gap, "runs": {run}}
+            order.append(digest)
+        elif run in group["runs"]:
+            duplicates.append(gap)
+        else:
+            group["runs"].add(run)
+            merged.append(gap)
+            kept = group["gap"]
+            kept["grounding_score"] = max(
+                float(kept.get("grounding_score") or 0.0),
+                float(gap.get("grounding_score") or 0.0),
+            )
+
+    unique: List[Dict[str, Any]] = []
+    hits_distribution: Dict[int, int] = defaultdict(int)
+    for digest in order:
+        gap, seen = groups[digest]["gap"], groups[digest]["runs"]
+        gap["run_hits"] = len(seen)
+        gap["run_total"] = runs
+        gap["run_ids"] = sorted(r + 1 for r in seen)
+        gap["stable"] = len(seen) >= min_run_hits
+        hits_distribution[len(seen)] += 1
+        unique.append(gap)
+
+    jaccards: List[float] = []
+    run_keys = list(range(runs))
+    for i, a in enumerate(run_keys):
+        for b in run_keys[i + 1:]:
+            union = per_run[a] | per_run[b]
+            if union:
+                jaccards.append(len(per_run[a] & per_run[b]) / len(union))
+    consensus = {
+        "runs": runs,
+        "min_run_hits": min_run_hits,
+        "stable": sum(1 for g in unique if g["stable"]),
+        "unstable": sum(1 for g in unique if not g["stable"]),
+        "hits_distribution": {str(k): v for k, v in sorted(hits_distribution.items())},
+        "jaccard_between_runs": round(sum(jaccards) / len(jaccards), 3) if jaccards else None,
+    }
+    return unique, duplicates, merged, consensus
+
+
+def merge_gap_runs(
+    gap_runs: Sequence[Sequence[Dict[str, Any]]],
+    min_run_hits: int = 0,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Gabungkan gap dari beberapa run TERPISAH (mis. berkas gaps_*.jsonl) menjadi
+    union beranotasi k/n memakai kunci yang sama dengan tahap gap_mining.
+
+    ``min_run_hits`` <= 0 memakai ambang bawaan ceil(2n/3). Mengembalikan
+    ``(gap_unik, konsensus)``; ``experiments/consensus_gaps.py`` memanggil ini agar
+    angka k/n dari CLI dan dari job identik.
+    """
+    runs = len(gap_runs)
+    if runs == 0:
+        return [], {"runs": 0, "min_run_hits": 0, "stable": 0, "unstable": 0,
+                    "hits_distribution": {}, "jaccard_between_runs": None}
+    threshold = int(min_run_hits or 0)
+    if threshold <= 0:
+        threshold = default_min_run_hits(runs)
+    threshold = max(1, min(threshold, runs))
+    tagged: List[Dict[str, Any]] = []
+    for idx, gaps in enumerate(gap_runs):
+        for gap in gaps:
+            if not gap.get("gap_statement"):
+                continue
+            row = dict(gap)
+            row["_run"] = idx
+            tagged.append(row)
+    unique, _dups, _merged, consensus = _merge_runs(tagged, runs, threshold)
+    return unique, consensus
 
 
 def _median(values: Sequence[int]) -> int:
@@ -499,7 +622,17 @@ def stage_gap_mining(
     limit: int = 0,
     llm_trace_limit: int = DEFAULT_LLM_TRACE_LIMIT,
     workers: int = DEFAULT_EXTRACT_WORKERS,
+    runs: int = 1,
+    min_run_hits: int = 0,
 ) -> StageOutcome:
+    """TAHAP 2. ``runs`` > 1 mengulang lintasan LLM atas kandidat yang sama dan
+    menandai tiap gap dengan k/n kemunculannya; ``min_run_hits`` <= 0 memakai
+    ambang bawaan ``default_min_run_hits`` (ceil(2n/3))."""
+    runs = max(1, min(int(runs or 1), MAX_GAP_RUNS))
+    min_run_hits = int(min_run_hits or 0)
+    if min_run_hits <= 0:
+        min_run_hits = default_min_run_hits(runs)
+    min_run_hits = max(1, min(min_run_hits, runs))
     chunks = [c for c in read_jsonl(str(chunks_path)) if c.get("record") == "chunk"]
     by_source: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for c in chunks:
@@ -522,7 +655,7 @@ def stage_gap_mining(
     # hanya menyimpan prompt/balasan 15 pertama).
     cand_trace: List[Dict[str, Any]] = []
 
-    def _work(cand: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _work(cand: Dict[str, Any], run_idx: int = 0) -> List[Dict[str, Any]]:
         captured: Dict[str, Any] = {"response": None, "model": ""}
 
         def _generate(prompt: str, system: str) -> Optional[str]:
@@ -546,11 +679,14 @@ def stage_gap_mining(
                     "source": cand.get("source"),
                     "chunk_id": cand.get("chunk_id"),
                     "candidate_reason": cand.get("candidate_reason"),
+                    "run": run_idx + 1,
                 })
             return text
 
         context = with_context(cand, by_source)
         gaps = extract_gaps_from_candidate(cand, context, generate_fn=_generate)
+        for g in gaps:
+            g["_run"] = run_idx  # dilepas _merge_runs menjadi run_ids
         with trace_lock:
             cand_trace.append({
                 "source": cand.get("source"),
@@ -562,6 +698,7 @@ def stage_gap_mining(
                 "candidate_reason": cand.get("candidate_reason"),
                 "matched_phrases": cand.get("matched_phrases") or [],
                 "context_chars": len(context),
+                "run": run_idx + 1,
                 "llm_answered": bool(captured["response"]),
                 "model": captured["model"],
                 "response": captured["response"] or "",
@@ -571,9 +708,10 @@ def stage_gap_mining(
 
     raw_gaps: List[Dict[str, Any]] = []
     done = 0
+    total_calls = len(candidates) * runs
     with _substep(job_id, "gap_mining", "ekstrak_llm", masuk=len(candidates)) as sub, \
             ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(_work, c) for c in candidates]
+        futures = [pool.submit(_work, c, r) for r in range(runs) for c in candidates]
         try:
             for fut in as_completed(futures):
                 done += 1
@@ -581,17 +719,18 @@ def stage_gap_mining(
                     raw_gaps.extend(fut.result())
                 except Exception as exc:
                     logger.warning(f"kandidat gagal: {exc}")
-                if done % 10 == 0 or done == len(candidates):
+                if done % 10 == 0 or done == total_calls:
                     _ensure_active(job_id)
-                    _progress(job_id, 30 + 26 * done / max(1, len(candidates)),
-                              f"Ekstraksi gap {done}/{len(candidates)} kandidat")
+                    _progress(job_id, 30 + 26 * done / max(1, total_calls),
+                              f"Ekstraksi gap {done}/{total_calls} kandidat"
+                              + (f" ({runs} run)" if runs > 1 else ""))
         except ResearchCancelled:
             # Kandidat yang belum mulai dibuang; yang sedang berjalan dibiarkan
             # selesai oleh ``with`` agar tidak ada thread yatim.
             for fut in futures:
                 fut.cancel()
             raise
-        sub.done(keluar=len(raw_gaps), llm_tanpa_jawaban=traced["empty"])
+        sub.done(keluar=len(raw_gaps), llm_tanpa_jawaban=traced["empty"], run=runs)
 
     # LLM mati/tidak terautentikasi tidak melempar galat: generate() mengembalikan
     # None dan ekstraksi diam-diam menghasilkan 0 gap. Tanpa peringatan ini,
@@ -621,14 +760,20 @@ def stage_gap_mining(
 
     _progress(job_id, 59, f"Menghapus duplikat dari {len(grounded)} gap")
     with _substep(job_id, "gap_mining", "dedup", masuk=len(grounded)) as sub:
-        gaps, duplicates = _split_duplicates(grounded)
-        sub.done(keluar=len(gaps), dibuang=len(duplicates))
-    journals = len({g["source"] for g in gaps})
+        gaps, duplicates, merged, consensus = _merge_runs(grounded, runs, min_run_hits)
+        sub.done(keluar=len(gaps), dibuang=len(duplicates), gabungan_lintas_run=len(merged))
+    with _substep(job_id, "gap_mining", "konsensus_run", masuk=len(gaps)) as sub:
+        stable_gaps = [g for g in gaps if g["stable"]]
+        unstable_gaps = [g for g in gaps if not g["stable"]]
+        sub.done(keluar=len(stable_gaps), dibuang=len(unstable_gaps), run=runs,
+                 min_run_hits=min_run_hits)
+    journals = len({g["source"] for g in stable_gaps})
 
     # Anotasi jejak kandidat dengan nasib tiap gap-nya. verify_gaps menulis
     # grounding_score in-place, jadi objek gap yang sama sudah membawa skornya.
-    dup_ids = {id(g) for g in duplicates}
-    cand_trace.sort(key=lambda t: (str(t.get("source")), t.get("chunk_index") or 0))
+    dup_ids = {id(g) for g in duplicates} | {id(g) for g in merged}
+    cand_trace.sort(key=lambda t: (str(t.get("source")), t.get("chunk_index") or 0,
+                                   t.get("run") or 0))
     for seq, trace in enumerate(cand_trace, 1):
         trace["seq"] = seq
         gap_rows = []
@@ -653,21 +798,28 @@ def stage_gap_mining(
     meta = {
         "record": "meta", "job_id": job_id,
         "diekspor_pada": datetime.now().isoformat(timespec="seconds"),
-        "jumlah_gap": len(gaps), "jumlah_jurnal_bergap": journals,
+        "jumlah_gap": len(gaps), "jumlah_gap_stabil": len(stable_gaps),
+        "jumlah_jurnal_bergap": journals,
         "jumlah_kandidat": len(candidates),
-        "catatan": "Gap terstruktur; gap_statement diverifikasi verbatim di chunk sumber.",
+        "konsensus": consensus,
+        "catatan": "Gap terstruktur; gap_statement diverifikasi verbatim di chunk sumber. "
+                   "run_hits/run_total = kemunculan lintas run; stable=false tidak "
+                   "diteruskan ke tahap kebaruan.",
     }
     write_jsonl(str(out_path), [meta] + gaps)
 
     def _gap_row(g: Dict[str, Any]) -> Dict[str, Any]:
         return {"source": g.get("source"), "gap_type": g.get("gap_type"),
                 "topic": g.get("topic"), "grounding_score": g.get("grounding_score"),
+                "run_hits": g.get("run_hits"), "run_total": g.get("run_total"),
+                "stable": g.get("stable"),
                 "gap_statement": (g.get("gap_statement") or "")[:300],
                 "gap_paraphrase": (g.get("gap_paraphrase") or "")[:200]}
 
     return StageOutcome(
         params={"limit": limit or "semua", "llm_trace_limit": llm_trace_limit,
                 "workers": workers, "temperature": "tidak dapat diatur (Copilot)",
+                "runs": runs, "min_run_hits": min_run_hits,
                 "seksi_sasaran": "conclusion + discussion",
                 "aturan_cadangan": "abstract, 2 chunk introduction, 2 chunk terakhir"},
         metrics={
@@ -680,10 +832,16 @@ def stage_gap_mining(
             "lolos_verifikasi_verbatim": len(grounded),
             "gugur_di_verifikasi": len(rejected),
             "duplikat_dibuang": len(duplicates),
+            "gabungan_lintas_run": len(merged),
             "gap_final_setelah_dedup": len(gaps),
+            "run_total": runs,
+            "min_run_hits": min_run_hits,
+            "gap_stabil": len(stable_gaps),
+            "gap_tidak_stabil": len(unstable_gaps),
+            "jaccard_antar_run": consensus["jaccard_between_runs"],
             "jurnal_bergap": journals,
         },
-        samples=[_gap_row(g) for g in gaps[:SAMPLE_ROWS]],
+        samples=[_gap_row(g) for g in stable_gaps[:SAMPLE_ROWS]],
         outputs={"gaps_jsonl": str(out_path), "gaps_raw_jsonl": raw_path,
                  "candidates_jsonl": str(candidates_path)},
         substep_samples={
@@ -693,12 +851,20 @@ def stage_gap_mining(
                     rejected, key=lambda g: g.get("grounding_score") or 0.0)[:SAMPLE_ROWS]
             ],
             "dedup_dibuang": [_gap_row(g) for g in duplicates[:SAMPLE_ROWS]],
+            "tidak_stabil": [_gap_row(g) for g in unstable_gaps[:SAMPLE_ROWS]],
         },
         notes=llm_notes + [
                "Tiap gap_statement wajib muncul verbatim di chunk sumbernya; "
                "yang di bawah ambang grounding dibuang sebagai dugaan halusinasi.",
                "Cakupan gap tidak reproducible penuh: dua run pada chunk identik "
-               "hanya ~75% tumpang tindih."],
+               "hanya ~75% tumpang tindih."] + (
+               [f"{runs} run pada kandidat yang sama (Jaccard antar-run "
+                f"{consensus['jaccard_between_runs']}); gap dianggap stabil bila muncul di "
+                f">= {min_run_hits} run: {len(stable_gaps)} stabil, {len(unstable_gaps)} tidak "
+                "stabil (ditandai stable=false, tidak diteruskan ke tahap kebaruan)."]
+               if runs > 1 else
+               ["Hanya 1 run: k/n belum informatif; jalankan dengan gap_runs=3 untuk "
+                "mengukur stabilitas tiap gap."]),
     )
 
 
@@ -715,7 +881,11 @@ def stage_novelty(
 ) -> StageOutcome:
     rows = list(read_jsonl(str(gaps_path)))
     meta = next((r for r in rows if r.get("record") == "meta"), {})
-    gaps = [r for r in rows if "gap_statement" in r]
+    all_gaps = [r for r in rows if "gap_statement" in r]
+    # Gap yang tidak stabil lintas run (stable=false) tidak dikirim ke OpenAlex:
+    # menghemat kuota dan mencegah gap satu-undian dilaporkan sebagai kebaruan.
+    gaps = [g for g in all_gaps if g.get("stable", True)]
+    skipped_unstable = len(all_gaps) - len(gaps)
 
     def _tick(done: int, total: int) -> None:
         # OpenAlex dibatasi ~1 permintaan/dtk, jadi tahap ini lambat dan tanpa
@@ -770,6 +940,7 @@ def stage_novelty(
             "unchecked": len(unchecked),
             "punya_match_literatur": with_matches,
             "tanpa_match_literatur": len(enriched) - len(unchecked) - with_matches,
+            "gap_tidak_stabil_dilewati": skipped_unstable,
         },
         samples=[
             {"source": g.get("source"), "novelty_status": g.get("novelty_status"),
@@ -790,6 +961,10 @@ def stage_novelty(
             "contoh_unchecked": [_nov_row(g) for g in unchecked][:SAMPLE_ROWS],
         },
         notes=(
+            [f"{skipped_unstable} gap tidak stabil lintas run (stable=false) tidak dicek "
+             "kebaruannya dan tidak diteruskan ke rekomendasi."]
+            if skipped_unstable else []
+        ) + (
             [f"{len(unchecked)} gap TIDAK dicek ({'; '.join(quota_hit)}). Statusnya "
              "'unchecked', bukan 'open' — jalankan ulang tahap ini setelah kuota pulih."]
             if quota_hit else []
@@ -987,6 +1162,8 @@ def run_research_pipeline(
     start_from: Optional[str] = None,
     novelty_limit: int = 0,
     stages_done: Optional[Sequence[str]] = None,
+    gap_runs: int = 1,
+    min_run_hits: int = 0,
 ) -> Dict[str, Any]:
     """Jalankan tahap-tahap berurutan, merekam progres dan hasil detailnya.
 
@@ -995,7 +1172,8 @@ def run_research_pipeline(
     ``start_from`` melanjutkan dari sebuah tahap memakai berkas keluaran tahap
     sebelumnya di ``out_dir`` — gap mining (LLM) tidak diulang sehingga gap yang
     sudah dilihat pengguna tetap sama. ``stages_done`` = tahap yang sudah selesai
-    pada run sebelumnya, diakumulasi ke job.
+    pada run sebelumnya, diakumulasi ke job. ``gap_runs`` > 1 mengulang gap mining
+    dan menandai k/n kemunculan tiap gap (``min_run_hits`` 0 = ceil(2n/3)).
     """
     stage_keys = [s[0] for s in RESEARCH_STAGES]
     if until is not None and until not in stage_keys:
@@ -1015,7 +1193,8 @@ def run_research_pipeline(
         ("chunking", lambda: stage_chunking(
             job_id, pdf_paths, paths["chunks"], embedder=embedder, ocr_mode=ocr_mode)),
         ("gap_mining", lambda: stage_gap_mining(
-            job_id, paths["chunks"], paths["gaps"], limit=limit)),
+            job_id, paths["chunks"], paths["gaps"], limit=limit,
+            runs=gap_runs, min_run_hits=min_run_hits)),
         ("novelty", lambda: stage_novelty(
             job_id, paths["gaps"], paths["novelty"], from_date=from_date, limit=novelty_limit)),
         ("recommendation", lambda: stage_recommendation(
@@ -1107,7 +1286,9 @@ def run_research_job(job_id: str) -> None:
                               ocr_mode=payload.get("ocr_mode") or "auto",
                               start_from=start_from,
                               novelty_limit=int(payload.get("novelty_limit") or 0),
-                              stages_done=job.get("stages_done") or [])
+                              stages_done=job.get("stages_done") or [],
+                              gap_runs=int(payload.get("gap_runs") or 1),
+                              min_run_hits=int(payload.get("min_run_hits") or 0))
     except ResearchCancelled:
         logger.info(f"Pipeline penelitian {job_id} dibatalkan")
         record_job_event(job_id, "job.cancelled", status="cancelled")

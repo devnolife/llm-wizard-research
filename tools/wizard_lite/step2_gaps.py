@@ -40,6 +40,9 @@ REASON_LABELS = {
     "introduction": "pendahuluan (2 chunk awal)",
     "tail": "2 chunk terakhir",
 }
+# Pilihan jumlah run LLM: 1 = cepat (k/n tidak informatif), 3 = ukur stabilitas
+# (gap dianggap stabil bila muncul di >= 2 dari 3 run). Biaya waktu linear.
+RUN_CHOICES = {1: "1 run (cepat)", 3: "3 run (ukur stabilitas k/n, ~3× lebih lama)"}
 
 
 def reset() -> None:
@@ -49,6 +52,20 @@ def reset() -> None:
 
 def _reason_text(reason: str) -> str:
     return ", ".join(REASON_LABELS.get(r, r) for r in (reason or "").split(",") if r)
+
+
+def _multi_run(gaps: list) -> bool:
+    return any(int(g.get("run_total") or 1) > 1 for g in gaps)
+
+
+def _kn_badge(g: dict) -> str:
+    """'✅ stabil 3/3 run' / '⚠️ tidak stabil 1/3 run'; kosong untuk job 1 run."""
+    total = int(g.get("run_total") or 1)
+    if total <= 1:
+        return ""
+    hits = g.get("run_hits")
+    return (f"✅ stabil {hits}/{total} run" if g.get("stable", True)
+            else f"⚠️ tidak stabil {hits}/{total} run")
 
 
 _short = short_name
@@ -103,9 +120,11 @@ def _render_progress(api_base: str, job_id: str, status: dict) -> None:
 
 def _render_gap_card(g: dict, chunks_by_id: dict) -> None:
     with st.container(border=True):
+        badge = _kn_badge(g)
         st.markdown(
             f"**{GAP_TYPE_LABELS.get(g.get('gap_type'), g.get('gap_type'))}** · "
             f"{g.get('source')} · kecocokan verbatim {g.get('grounding_score', 0):.2f}"
+            + (f" · {badge}" if badge else "")
         )
         render_reading_text(g.get("gap_statement", ""))
         if g.get("gap_paraphrase"):
@@ -125,26 +144,41 @@ def _render_gap_card(g: dict, chunks_by_id: dict) -> None:
 def _render_gaps(gaps: list, chunks_by_id: dict) -> None:
     sources = sorted({g.get("source") for g in gaps})
     types = [t for t in GAP_TYPE_LABELS if any(g.get("gap_type") == t for g in gaps)]
-    f1, f2 = st.columns(2)
+    multi = _multi_run(gaps)
+    f1, f2, f3 = st.columns([2, 2, 1])
     src_sel = f1.multiselect("Jurnal", sources, default=sources, key="gap-src",
                              format_func=_short)
     type_sel = f2.multiselect("Jenis gap", types, default=types, key="gap-type",
                               format_func=lambda t: GAP_TYPE_LABELS.get(t, t))
-    shown = [g for g in gaps if g.get("source") in src_sel and g.get("gap_type") in type_sel]
+    stable_only = f3.toggle("Hanya gap stabil", value=True, key="gap-stable",
+                            disabled=not multi,
+                            help="Gap yang muncul di cukup banyak run LLM (k/n). Nonaktif "
+                                 "bila job hanya 1 run.") if multi else False
+    shown = [g for g in gaps if g.get("source") in src_sel and g.get("gap_type") in type_sel
+             and (not stable_only or g.get("stable", True))]
+    if multi and stable_only:
+        hidden = sum(1 for g in gaps if not g.get("stable", True))
+        if hidden:
+            st.caption(f"{hidden} gap tidak stabil (muncul di terlalu sedikit run) disembunyikan; "
+                       "matikan toggle untuk melihatnya.")
 
     def row(g: dict) -> dict:
-        return {
+        r = {
             "Jurnal": _short(g.get("source", "")),
             "Jenis": GAP_TYPE_LABELS.get(g.get("gap_type"), g.get("gap_type")),
             "Verbatim": g.get("grounding_score"),
-            "Parafrase (ID)": g.get("gap_paraphrase", ""),
-            "Kalimat asli": g.get("gap_statement", ""),
         }
+        if multi:
+            r["Run k/n"] = f"{g.get('run_hits')}/{g.get('run_total')}"
+        r["Parafrase (ID)"] = g.get("gap_paraphrase", "")
+        r["Kalimat asli"] = g.get("gap_statement", "")
+        return r
 
     render_view_switch(
         shown, "gaps", row, lambda i: _render_gap_card(shown[i], chunks_by_id),
         column_config={
             "Verbatim": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "Run k/n": st.column_config.TextColumn(width="small"),
             "Kalimat asli": st.column_config.TextColumn(width="large"),
             "Parafrase (ID)": st.column_config.TextColumn(width="medium"),
         },
@@ -217,13 +251,20 @@ def _render_results(api_base: str, job_id: str, chunks_by_id: dict) -> list:
     gaps, cands = cache["gaps"], cache["candidates"]
 
     answered = sum(1 for c in cands if c.get("llm_answered"))
-    m = st.columns(6)
+    multi = _multi_run(gaps)
+    m = st.columns(7 if multi else 6)
     m[0].metric("Kandidat chunk", len(cands))
     m[1].metric("LLM menjawab", f"{answered}/{len(cands)}")
     m[2].metric("Gap mentah", sum(c.get("gap_mentah", 0) for c in cands))
     m[3].metric("Lolos verbatim", sum(c.get("gap_lolos", 0) for c in cands))
     m[4].metric("Gap final", len(gaps))
     m[5].metric("Jurnal bergap", len({g.get("source") for g in gaps}))
+    if multi:
+        stable = sum(1 for g in gaps if g.get("stable", True))
+        runs = max(int(g.get("run_total") or 1) for g in gaps)
+        m[6].metric("Gap stabil", f"{stable}/{len(gaps)}",
+                    help=f"Muncul di cukup banyak dari {runs} run LLM (k/n). Gap tidak stabil "
+                         "tetap tersimpan tetapi tidak diteruskan ke tahap berikutnya.")
 
     if cands and answered == 0:
         st.error(
@@ -264,10 +305,17 @@ def render(api_base: str, uploads, ocr_mode: str, backend_ok: bool, chunks_by_id
 
     job_id = st.session_state.get("gap_job_id")
     if not job_id:
-        if st.button("🔎 Mulai cari gap", type="primary", disabled=not uploads or not backend_ok,
+        c1, c2 = st.columns([1, 2])
+        gap_runs = c1.selectbox("Jumlah run LLM", list(RUN_CHOICES), key="gap-runs",
+                                format_func=RUN_CHOICES.get,
+                                help="LLM tidak deterministik: dua run pada chunk yang sama hanya "
+                                     "~75% tumpang tindih. Dengan 3 run tiap gap diberi label k/n "
+                                     "dan yang muncul di < 2 run ditandai tidak stabil.")
+        if c2.button("🔎 Mulai cari gap", type="primary", disabled=not uploads or not backend_ok,
                      key="gap-start"):
             try:
-                body = start_research_job(api_base, uploads, ocr_mode, until="gap_mining")
+                body = start_research_job(api_base, uploads, ocr_mode, until="gap_mining",
+                                          gap_runs=gap_runs)
                 st.session_state["gap_job_id"] = body["job_id"]
                 st.rerun()
             except Exception as exc:

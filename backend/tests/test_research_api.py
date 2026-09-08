@@ -129,6 +129,25 @@ class TestStartEndpoint:
     def test_rejects_request_without_files(self):
         assert client.post("/api/research/start").status_code == 422
 
+    def test_gap_runs_is_stored_in_payload_with_single_run_default(self):
+        from app.utils.job_store import get_job
+
+        default_payload = get_job(self._start().json()["job_id"])["payload"]
+        assert (default_payload["gap_runs"], default_payload["min_run_hits"]) == (1, 0)
+
+        body = self._start(data={"until": "gap_mining", "gap_runs": "3",
+                                 "min_run_hits": "2"}).json()
+        payload = get_job(body["job_id"])["payload"]
+        assert (payload["gap_runs"], payload["min_run_hits"]) == (3, 2)
+
+    def test_gap_runs_out_of_range_is_422(self):
+        from app.services.research_pipeline import MAX_GAP_RUNS
+
+        assert self._start(data={"gap_runs": "0"}).status_code == 422
+        assert self._start(data={"gap_runs": str(MAX_GAP_RUNS + 1)}).status_code == 422
+        assert self._start(data={"gap_runs": "3", "min_run_hits": "4"}).status_code == 422
+        assert self.notified == [], "job tidak boleh dibuat bila parameter salah"
+
 
 class TestContinueEndpoint:
     """Melanjutkan job langkah 2 ke tahap berikutnya tanpa mengulang LLM."""
@@ -207,6 +226,32 @@ class TestContinueEndpoint:
         assert client.post("/api/research/tidak-ada/continue").status_code == 404
         job_store.save_job("legacy-1", {"job_id": "legacy-1", "status": "completed"})
         assert client.post("/api/research/legacy-1/continue").status_code == 404
+
+    def test_continue_gap_runs_only_when_rerunning_gap_mining(self):
+        """Mengulang penambangan 3 run untuk mengukur k/n; di tahap lain parameternya
+        tidak bermakna dan ditolak agar tidak diam-diam diabaikan."""
+        self._done_job("rc-8", ["chunking", "gap_mining"])
+        assert client.post("/api/research/rc-8/continue",
+                           data={"gap_runs": "3"}).status_code == 422
+        assert client.post("/api/research/rc-8/continue",
+                           data={"start_from": "gap_mining", "gap_runs": "9"}).status_code == 422
+
+        resp = client.post("/api/research/rc-8/continue",
+                           data={"start_from": "gap_mining", "until": "gap_mining",
+                                 "gap_runs": "3"})
+        assert resp.status_code == 200, resp.text
+        payload = job_store.get_job("rc-8")["payload"]
+        assert (payload["gap_runs"], payload["min_run_hits"]) == (3, 0)
+        assert payload["start_from"] == "gap_mining"
+
+    def test_continue_without_gap_runs_keeps_previous_value(self):
+        self._done_job("rc-9", ["chunking", "gap_mining"])
+        job = job_store.get_job("rc-9")
+        job["payload"]["gap_runs"] = 3
+        job_store.save_job("rc-9", job)
+        assert client.post("/api/research/rc-9/continue",
+                           data={"until": "novelty"}).status_code == 200
+        assert job_store.get_job("rc-9")["payload"]["gap_runs"] == 3
 
 
 class TestChunkPreviewEndpoint:

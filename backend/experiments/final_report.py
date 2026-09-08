@@ -88,6 +88,33 @@ def _novelty_section(gaps: List[Dict]) -> List[str]:
     return lines
 
 
+def _stability_section(gaps: List[Dict], meta: Optional[Dict]) -> List[str]:
+    """Stabilitas lintas-run (k/n) — hanya bila gap membawa anotasi run_hits."""
+    annotated = [g for g in gaps if g.get("run_total")]
+    if not annotated:
+        return ["## Stabilitas lintas-run", "",
+                "_Gap berasal dari 1 run: k/n belum informatif. Jalankan "
+                "`experiments.consensus_gaps` pada ≥2 berkas run, atau job dengan "
+                "`gap_runs=3`, untuk mengukur stabilitas tiap gap._", ""]
+    runs = max(int(g.get("run_total") or 1) for g in annotated)
+    dist = Counter(int(g.get("run_hits") or 0) for g in annotated)
+    stable = sum(1 for g in annotated if g.get("stable"))
+    consensus = (meta or {}).get("konsensus") or {}
+    lines = ["## Stabilitas lintas-run", "",
+             f"- Run: **{runs}** · gap union: **{len(annotated)}** · stabil "
+             f"(≥{consensus.get('min_run_hits', '?')} run): **{stable}** "
+             f"({100 * stable / max(1, len(annotated)):.0f}%)",
+             f"- Jaccard antar-run (rata-rata pasangan): "
+             f"{consensus.get('jaccard_between_runs', 'n/a')}",
+             "", "| Muncul di k run | Gap | % |", "|---|---:|---:|"]
+    for k in range(runs, 0, -1):
+        n = dist.get(k, 0)
+        lines.append(f"| {k}/{runs} | {n} | {100 * n / max(1, len(annotated)):.1f}% |")
+    lines += ["", "Angka satu run adalah satu undian LLM; laporkan k/n, bukan hitungan "
+              "tunggal.", ""]
+    return lines
+
+
 def _open_gaps_per_topic(gaps: List[Dict]) -> List[str]:
     open_gaps = [g for g in gaps if g.get("novelty_status") == "open"]
     by_topic: Dict[str, List[Dict]] = defaultdict(list)
@@ -164,7 +191,9 @@ def main(argv=None):
 
     new = audit(args.chunks_new)
     old = audit(args.chunks_old) if args.chunks_old else None
-    gaps = [g for g in read_jsonl(args.gaps) if g.get("record") != "meta"]
+    rows = list(read_jsonl(args.gaps))
+    gaps = [g for g in rows if g.get("record") != "meta"]
+    gaps_meta = next((r for r in rows if r.get("record") == "meta"), None)
 
     lines = [
         f"# Laporan Akhir — Pipeline Gap Penelitian",
@@ -172,6 +201,7 @@ def main(argv=None):
     ]
     lines += _chunking_section(new, old)
     lines += _gaps_section(gaps)
+    lines += _stability_section(gaps, gaps_meta)
     lines += _mendeley_section(args.mendeley)
     lines += _novelty_section(gaps)
     open_lines, by_topic = _open_gaps_per_topic(gaps)

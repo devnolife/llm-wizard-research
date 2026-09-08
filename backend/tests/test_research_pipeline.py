@@ -640,6 +640,208 @@ class TestSilentLLMOutageIsNotAFinding:
         assert done["data"]["llm_tanpa_jawaban"] == done["data"]["masuk"]
 
 
+# ── Konsensus multi-run (k/n) ─────────────────────────────────────────────────
+
+from app.services.research_pipeline import (  # noqa: E402
+    MAX_GAP_RUNS,
+    _merge_runs,
+    default_min_run_hits,
+    merge_gap_runs,
+)
+
+_STMT_A = ("Penelitian ini masih terbatas pada satu institusi sehingga generalisasi "
+           "hasil perlu diuji ulang pada konteks yang berbeda.")
+_STMT_B = "Studi lanjutan disarankan."
+
+
+def _gap(source, stmt, run=None, **extra):
+    g = {"source": source, "gap_statement": stmt, "gap_type": "stated_limitation",
+         "topic": "other", "grounding_score": 1.0, **extra}
+    if run is not None:
+        g["_run"] = run
+    return g
+
+
+class TestMergeRuns:
+    def test_default_threshold_is_two_thirds_of_runs(self):
+        assert [default_min_run_hits(n) for n in (1, 2, 3, 4, 5)] == [1, 2, 2, 3, 4]
+
+    def test_single_run_matches_old_dedup_plus_annotation(self):
+        gaps = [_gap("a.pdf", _STMT_A, 0), _gap("a.pdf", _STMT_A.upper(), 0, topic="legal"),
+                _gap("b.pdf", _STMT_A, 0)]
+        unique, dups, merged, consensus = _merge_runs(gaps, runs=1, min_run_hits=1)
+        assert [g["source"] for g in unique] == ["a.pdf", "b.pdf"]
+        assert len(dups) == 1 and dups[0]["topic"] == "legal" and merged == []
+        assert all(g["run_hits"] == 1 and g["run_total"] == 1 and g["stable"] for g in unique)
+        assert all(g["run_ids"] == [1] for g in unique)
+        assert consensus["stable"] == 2 and consensus["jaccard_between_runs"] is None
+        assert "_run" not in unique[0], "penanda internal tidak boleh bocor ke keluaran"
+
+    def test_cross_run_hits_are_counted_not_discarded_as_duplicates(self):
+        gaps = [_gap("a.pdf", _STMT_A, 0, grounding_score=0.9),
+                _gap("a.pdf", _STMT_B, 0),
+                _gap("a.pdf", _STMT_A, 1, grounding_score=1.0),
+                _gap("a.pdf", _STMT_A, 2, grounding_score=0.85),
+                _gap("a.pdf", _STMT_A, 2)]  # duplikat DALAM run 3
+        unique, dups, merged, consensus = _merge_runs(gaps, runs=3, min_run_hits=2)
+        by_stmt = {g["gap_statement"]: g for g in unique}
+        a, b = by_stmt[_STMT_A], by_stmt[_STMT_B]
+        assert (a["run_hits"], a["run_total"], a["run_ids"], a["stable"]) == (3, 3, [1, 2, 3], True)
+        assert a["grounding_score"] == 1.0, "skor grounding diambil maksimum lintas run"
+        assert (b["run_hits"], b["stable"]) == (1, False)
+        assert len(dups) == 1 and len(merged) == 2
+        assert consensus["hits_distribution"] == {"1": 1, "3": 1}
+        assert consensus["stable"] == 1 and consensus["unstable"] == 1
+        # Jaccard: run1={A,B} run2={A} run3={A} → (1/2 + 1/2 + 1) / 3
+        assert consensus["jaccard_between_runs"] == round((0.5 + 0.5 + 1.0) / 3, 3)
+
+    def test_public_wrapper_tags_runs_and_uses_default_threshold(self):
+        runs = [[_gap("a.pdf", _STMT_A), _gap("a.pdf", _STMT_B)],
+                [_gap("a.pdf", _STMT_A)],
+                [_gap("a.pdf", _STMT_A), {"record": "meta"}]]
+        unique, consensus = merge_gap_runs(runs)
+        assert consensus["runs"] == 3 and consensus["min_run_hits"] == 2
+        assert {g["gap_statement"]: g["stable"] for g in unique} == {_STMT_A: True, _STMT_B: False}
+        assert all("_run" not in g for g in runs[0]), "masukan pemanggil tidak dimutasi"
+        assert merge_gap_runs([]) == ([], {"runs": 0, "min_run_hits": 0, "stable": 0,
+                                            "unstable": 0, "hits_distribution": {},
+                                            "jaccard_between_runs": None})
+
+
+class TestMultiRunGapMining:
+    """3 run pada kandidat yang sama: gap yang hanya muncul di 1 run ditandai tidak
+    stabil dan tidak diteruskan; 1 run = perilaku lama plus anotasi."""
+
+    def _sequenced_llm(self, replies):
+        calls = {"n": 0}
+
+        def generate(prompt, system=None, json_mode=False, temperature=None):
+            reply = replies[min(calls["n"], len(replies) - 1)]
+            calls["n"] += 1
+            return reply, "model-uji"
+        return generate, calls
+
+    @staticmethod
+    def _reply(*stmts):
+        import json as _json
+        return _json.dumps([{"gap_type": "stated_limitation", "gap_statement": s,
+                             "topic": "other"} for s in stmts])
+
+    def test_three_runs_annotate_k_of_n_and_hold_back_unstable(self, monkeypatch):
+        job_store.save_job("mr", {"status": "running", "progress": 0})
+        generate, calls = self._sequenced_llm([
+            self._reply(_STMT_A), self._reply(_STMT_A, _STMT_B), self._reply(_STMT_A)])
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", generate)
+
+        out = stage_gap_mining("mr", _chunks_file(SCRATCH / "chunks.jsonl"),
+                               SCRATCH / "gaps.jsonl", workers=1, runs=3)
+
+        assert calls["n"] == 3, "1 kandidat × 3 run = 3 panggilan LLM"
+        m = out.metrics
+        assert (m["run_total"], m["min_run_hits"]) == (3, 2)
+        assert (m["gap_final_setelah_dedup"], m["gap_stabil"], m["gap_tidak_stabil"]) == (2, 1, 1)
+        assert m["gabungan_lintas_run"] == 2 and m["duplikat_dibuang"] == 0
+        assert m["jaccard_antar_run"] is not None
+        assert out.params["runs"] == 3
+        unstable = out.substep_samples["tidak_stabil"]
+        assert len(unstable) == 1 and unstable[0]["gap_statement"] == _STMT_B
+        assert unstable[0]["run_hits"] == 1 and unstable[0]["stable"] is False
+        assert [s["gap_statement"] for s in out.samples] == [_STMT_A], "contoh = gap stabil saja"
+        assert any("3 run" in n and "1 tidak" in n for n in out.notes)
+
+        rows = read_jsonl(out.outputs["gaps_jsonl"])
+        meta = next(r for r in rows if r.get("record") == "meta")
+        assert meta["jumlah_gap"] == 2 and meta["jumlah_gap_stabil"] == 1
+        assert meta["konsensus"]["runs"] == 3
+        gaps = {r["gap_statement"]: r for r in rows if r.get("gap_statement")}
+        assert gaps[_STMT_A]["run_ids"] == [1, 2, 3] and gaps[_STMT_A]["stable"] is True
+        assert gaps[_STMT_B]["run_ids"] == [2] and gaps[_STMT_B]["stable"] is False
+        assert "_run" not in gaps[_STMT_A]
+
+    def test_candidate_trace_records_the_run_of_each_call(self, monkeypatch):
+        job_store.save_job("mr2", {"status": "running", "progress": 0})
+        generate, _ = self._sequenced_llm([self._reply(_STMT_A)])
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", generate)
+        out = stage_gap_mining("mr2", _chunks_file(SCRATCH / "chunks.jsonl"),
+                               SCRATCH / "gaps.jsonl", workers=1, runs=2)
+        rows = read_jsonl(out.outputs["candidates_jsonl"])
+        assert [r["run"] for r in rows] == [1, 2]
+        # gap yang sama di run kedua dihitung sebagai gabungan (bukan final baru)
+        assert [r["gap_final"] for r in rows] == [1, 0]
+
+    def test_single_run_keeps_every_gap_stable(self, monkeypatch):
+        job_store.save_job("mr1", {"status": "running", "progress": 0})
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate",
+                            _llm_stub(self._reply(_STMT_A, _STMT_B)))
+        out = stage_gap_mining("mr1", _chunks_file(SCRATCH / "chunks.jsonl"),
+                               SCRATCH / "gaps.jsonl", workers=1)
+        m = out.metrics
+        assert (m["run_total"], m["gap_stabil"], m["gap_tidak_stabil"]) == (1, 2, 0)
+        assert out.substep_samples["tidak_stabil"] == []
+        assert any("Hanya 1 run" in n for n in out.notes)
+        assert all(r["stable"] and r["run_total"] == 1
+                   for r in read_jsonl(out.outputs["gaps_jsonl"]) if r.get("gap_statement"))
+
+    def test_runs_are_clamped_to_the_documented_maximum(self, monkeypatch):
+        job_store.save_job("mr9", {"status": "running", "progress": 0})
+        generate, calls = self._sequenced_llm(["[]"])
+        monkeypatch.setattr(research_pipeline.copilot_client, "generate", generate)
+        out = stage_gap_mining("mr9", _chunks_file(SCRATCH / "chunks.jsonl"),
+                               SCRATCH / "gaps.jsonl", workers=1, runs=99, min_run_hits=50)
+        assert calls["n"] == MAX_GAP_RUNS
+        assert out.params["runs"] == MAX_GAP_RUNS
+        assert out.params["min_run_hits"] == MAX_GAP_RUNS, "ambang dipangkas ke jumlah run"
+
+    def test_novelty_skips_unstable_gaps_and_reports_it(self, monkeypatch):
+        job_store.save_job("mr-nov", {"status": "running", "progress": 0})
+        gaps_path = SCRATCH / "gaps_multi.jsonl"
+        write_jsonl(str(gaps_path), [
+            {"record": "meta", "job_id": "mr-nov", "konsensus": {"runs": 3}},
+            {**_gap("a.pdf", _STMT_A), "run_hits": 3, "run_total": 3, "stable": True},
+            {**_gap("a.pdf", _STMT_B), "run_hits": 1, "run_total": 3, "stable": False},
+            _gap("b.pdf", _STMT_A),  # gap lama tanpa anotasi → dianggap stabil
+        ])
+        seen = []
+
+        def fake_annotate(gaps, on_progress=None, **_):
+            seen.extend(g["gap_statement"] for g in gaps)
+            return [{**g, "novelty_status": "open", "related_recent_papers": []} for g in gaps]
+        monkeypatch.setattr(research_pipeline, "annotate_gaps", fake_annotate)
+
+        out = stage_novelty("mr-nov", gaps_path, SCRATCH / "gaps_multi_nov.jsonl")
+
+        assert seen == [_STMT_A, _STMT_A], "gap tidak stabil tidak dikirim ke OpenAlex"
+        assert out.metrics["gap_tidak_stabil_dilewati"] == 1
+        assert any("1 gap tidak stabil" in n for n in out.notes)
+        written = [r for r in read_jsonl(str(SCRATCH / "gaps_multi_nov.jsonl"))
+                   if r.get("gap_statement")]
+        assert len(written) == 2 and all(r.get("stable", True) for r in written)
+
+    def test_gap_runs_from_payload_reach_stage_gap_mining(self, monkeypatch):
+        seen = {}
+
+        def mining(job_id, chunks_path, out_path, **kwargs):
+            seen.update(kwargs)
+            return StageOutcome(metrics={"ok": 1})
+        for name in ("stage_chunking", "stage_novelty", "stage_recommendation"):
+            monkeypatch.setattr(research_pipeline, name,
+                                lambda *a, **k: StageOutcome(metrics={"ok": 1}))
+        monkeypatch.setattr(research_pipeline, "stage_gap_mining", mining)
+        monkeypatch.setattr(research_pipeline, "_shared_embedder", lambda: None)
+        pdf = SCRATCH / "r.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+        job_store.save_job("rq-runs", {
+            "status": "running", "progress": 0, "pipeline": "research",
+            "payload": {"pdf_paths": [str(pdf)], "output_dir": str(SCRATCH / "out-r"),
+                        "until": "gap_mining", "gap_runs": 3, "min_run_hits": 2},
+        })
+
+        run_research_job("rq-runs")
+
+        assert (seen["runs"], seen["min_run_hits"]) == (3, 2)
+        assert job_store.get_job("rq-runs")["status"] == "completed"
+
+
 class TestSplitDuplicates:
     def test_returns_unique_and_duplicates_separately(self):
         gaps = [{"source": "a", "gap_statement": "X"}, {"source": "a", "gap_statement": "x "},

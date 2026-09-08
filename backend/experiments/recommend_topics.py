@@ -59,9 +59,27 @@ def _proposals_from_gaps(gaps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "source": g.get("source"),
             "year": g.get("year"),
             "grounding_score": g.get("grounding_score"),
+            "run_hits": g.get("run_hits"),
+            "run_total": g.get("run_total"),
             "related_recent_papers": g.get("related_recent_papers") or [],
         })
     return proposals
+
+
+def _run_hits(g: Dict[str, Any]) -> int:
+    """Kemunculan lintas run; gap tanpa anotasi (1 run) dihitung 1."""
+    try:
+        return max(1, int(g.get("run_hits") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _kn(p: Dict[str, Any]) -> str:
+    """Label 'k/n' untuk laporan; kosong bila gap berasal dari 1 run."""
+    total = p.get("run_total")
+    if not total or int(total) <= 1:
+        return ""
+    return f" · stabil {p.get('run_hits')}/{total} run"
 
 
 def _corpus_from_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -117,10 +135,16 @@ def main(argv=None):
     ap.add_argument("--no-embedder", action="store_true",
                     help="Pakai similarity leksikal (bukan embedding multilingual).")
     ap.add_argument("--no-llm", action="store_true", help="Tanpa narasi LLM.")
+    ap.add_argument("--min-run-hits", type=int, default=0,
+                    help="Hanya gap yang muncul di >= K run (berkas union dari consensus_gaps). "
+                         "Filter SEBELUM rank_proposals; rumus skor tidak berubah.")
     args = ap.parse_args(argv)
 
     gaps = [g for g in read_jsonl(args.gaps) if g.get("record") != "meta"]
     chunks = [c for c in read_jsonl(args.chunks) if c.get("record") == "chunk"]
+    before_filter = len(gaps)
+    if args.min_run_hits > 0:
+        gaps = [g for g in gaps if _run_hits(g) >= args.min_run_hits]
     open_gaps = [g for g in gaps if g.get("novelty_status") == "open"]
 
     proposals = _proposals_from_gaps(open_gaps)
@@ -143,7 +167,10 @@ def main(argv=None):
         "LLM hanya untuk narasi, tidak memengaruhi peringkat.",
         "",
         f"Basis: {len(gaps)} gap terverifikasi, {total_open} **open**, "
-        f"{len(proposals)} proposal dinilai.",
+        f"{len(proposals)} proposal dinilai."
+        + (f" Filter stabilitas: hanya gap yang muncul di ≥{args.min_run_hits} run "
+           f"({before_filter - len(gaps)} gap tidak stabil dibuang sebelum penilaian; "
+           "k/n tidak masuk rumus skor)." if args.min_run_hits > 0 else ""),
         "",
     ]
 
@@ -160,7 +187,7 @@ def main(argv=None):
         lines.append(
             f"   - topik={p.get('topic')} · novelty={nov.get('novelty')} "
             f"({nov.get('band')}) · actionability={nov.get('actionability')} "
-            f"· gap_conf={nov.get('gap_confidence')}"
+            f"· gap_conf={nov.get('gap_confidence')}{_kn(p)}"
         )
         lines.append(f"   - sumber: _{p.get('source')}_ ({p.get('year')}) · literatur 2024+: {cite}")
         if nov.get("notes"):

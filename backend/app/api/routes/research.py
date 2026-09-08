@@ -30,6 +30,7 @@ from ...core.pipeline.token_chunker import (
 )
 from ...services.analysis_queue import get_analysis_queue
 from ...services.research_pipeline import (
+    MAX_GAP_RUNS,
     PIPELINE_CONSTANTS,
     PIPELINE_NAME,
     RESEARCH_STAGES,
@@ -72,6 +73,17 @@ PHASE_FACETS = {
 }
 
 MAX_PAGE = 500
+
+
+def _validate_runs(gap_runs: int, min_run_hits: int) -> tuple[int, int]:
+    """Form gap_runs/min_run_hits: 1..MAX_GAP_RUNS dan 0 (bawaan ceil(2n/3))..gap_runs."""
+    if not 1 <= gap_runs <= MAX_GAP_RUNS:
+        raise HTTPException(status_code=422,
+                            detail=f"gap_runs harus antara 1 dan {MAX_GAP_RUNS}")
+    if not 0 <= min_run_hits <= gap_runs:
+        raise HTTPException(status_code=422,
+                            detail="min_run_hits harus antara 0 (bawaan) dan gap_runs")
+    return gap_runs, min_run_hits
 
 
 @router.get("/stages")
@@ -189,18 +201,23 @@ async def start_research(
     files: List[UploadFile] = File(...),
     until: str = Form(""),
     ocr_mode: str = Form("auto"),
+    gap_runs: int = Form(1),
+    min_run_hits: int = Form(0),
 ):
     """Unggah PDF lalu jalankan pipeline penelitian di latar belakang.
 
     ``until`` (opsional) menghentikan job setelah tahap itu selesai — UI bertahap
     memakai ``gap_mining`` agar OpenAlex/rekomendasi belum dipanggil. ``ocr_mode``
-    sama seperti pada ``chunk-preview``.
+    sama seperti pada ``chunk-preview``. ``gap_runs`` > 1 mengulang penambangan gap
+    (LLM non-deterministik) dan menandai tiap gap dengan k/n kemunculannya;
+    ``min_run_hits`` 0 memakai ambang bawaan ceil(2n/3).
     """
     stage_keys = [s[0] for s in RESEARCH_STAGES]
     if until and until not in stage_keys:
         raise HTTPException(status_code=422, detail=f"until harus salah satu dari {stage_keys}")
     if ocr_mode not in OCR_MODES:
         raise HTTPException(status_code=422, detail=f"ocr_mode harus salah satu dari {list(OCR_MODES)}")
+    gap_runs, min_run_hits = _validate_runs(gap_runs, min_run_hits)
     config = get_config()
     allowed = {str(t).lower().lstrip(".") for t in config.data.allowed_file_types}
     if "pdf" not in allowed:
@@ -239,11 +256,12 @@ async def start_research(
         "pipeline": PIPELINE_NAME,
         "payload": {"pdf_paths": [str(p) for p in pdf_paths],
                     "input_dir": str(job_dir), "output_dir": str(out_dir),
-                    "until": until or None, "ocr_mode": ocr_mode},
+                    "until": until or None, "ocr_mode": ocr_mode,
+                    "gap_runs": gap_runs, "min_run_hits": min_run_hits},
     })
     record_job_event(job_id, "job.created", status="queued",
                      data={"file_count": len(pdf_paths), "pipeline": PIPELINE_NAME,
-                           "until": until or None})
+                           "until": until or None, "gap_runs": gap_runs})
     get_analysis_queue().notify()
 
     planned = stage_keys[: stage_keys.index(until) + 1] if until else stage_keys
@@ -258,7 +276,8 @@ async def start_research(
 
 @router.post("/{job_id}/continue")
 async def continue_research(job_id: str, until: str = Form(""), novelty_limit: int = Form(0),
-                            start_from: str = Form("")):
+                            start_from: str = Form(""), gap_runs: int = Form(0),
+                            min_run_hits: int = Form(0)):
     """Lanjutkan job penelitian yang selesai ke tahap berikutnya.
 
     Job yang berhenti di ``gap_mining`` (UI bertahap) dilanjutkan ke ``novelty``
@@ -268,6 +287,8 @@ async def continue_research(job_id: str, until: str = Form(""), novelty_limit: i
     ke OpenAlex (kuota gratis ≈ 100 pencarian/hari). ``start_from`` opsional boleh
     menunjuk tahap yang SUDAH selesai untuk mengulangnya (mis. cek ulang kebaruan
     setelah kuota pulih; hasil OpenAlex yang sudah ada dibaca dari cache).
+    ``gap_runs`` > 0 hanya berarti bila ``start_from == "gap_mining"``: penambangan
+    diulang sebanyak itu untuk mengukur stabilitas k/n tiap gap.
     """
     stage_keys = [s[0] for s in RESEARCH_STAGES]
     job = get_job(job_id)
@@ -298,10 +319,18 @@ async def continue_research(job_id: str, until: str = Form(""), novelty_limit: i
             status_code=422,
             detail=f"until harus salah satu dari {stage_keys[first_index:]}")
 
+    if gap_runs:
+        if start_from != "gap_mining":
+            raise HTTPException(status_code=422,
+                                detail="gap_runs hanya berlaku bila start_from = gap_mining")
+        gap_runs, min_run_hits = _validate_runs(gap_runs, min_run_hits)
+
     config = get_config()
     payload = dict(job.get("payload") or {})
     payload.update({"start_from": start_from, "until": until,
                     "novelty_limit": max(0, int(novelty_limit))})
+    if gap_runs:
+        payload.update({"gap_runs": gap_runs, "min_run_hits": min_run_hits})
     update_job(
         job_id,
         status="queued",
@@ -316,7 +345,8 @@ async def continue_research(job_id: str, until: str = Form(""), novelty_limit: i
     )
     record_job_event(job_id, "job.continued", status="queued",
                      data={"start_from": start_from, "until": until,
-                           "novelty_limit": payload["novelty_limit"]})
+                           "novelty_limit": payload["novelty_limit"],
+                           "gap_runs": payload.get("gap_runs")})
     get_analysis_queue().notify()
     return {
         "success": True,

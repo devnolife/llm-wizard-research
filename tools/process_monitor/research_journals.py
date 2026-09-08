@@ -173,8 +173,13 @@ def _render_drilldown(df: pd.DataFrame, extra: dict) -> None:
         if not gaps:
             st.caption("Tidak ada gap final dari jurnal ini.")
         for g in gaps:
+            total = int(g.get("run_total") or 1)
+            kn = ""
+            if total > 1:
+                kn = (f" · ✅ {g.get('run_hits')}/{total} run" if g.get("stable", True)
+                      else f" · ⚠️ tidak stabil {g.get('run_hits')}/{total} run")
             st.markdown(f"- **{enum_label('gap_type', g.get('gap_type'))}** · "
-                        f"{label('grounding_score')} {g.get('grounding_score')} — "
+                        f"{label('grounding_score')} {g.get('grounding_score')}{kn} — "
                         f"{g.get('gap_statement')}")
             if g.get("gap_paraphrase"):
                 st.caption(f"  ↳ {g['gap_paraphrase']}")
