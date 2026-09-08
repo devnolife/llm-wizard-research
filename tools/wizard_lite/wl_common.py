@@ -117,10 +117,37 @@ def stage_records(api_base: str, job_id: str, phase: str) -> list:
             return records
 
 
+def start_legacy_analysis(api_base: str, uploads) -> dict:
+    """Job pipeline 8 tahap (neuro-symbolic): ``POST /api/upload-and-analyze``."""
+    resp = requests.post(f"{api_base}/api/upload-and-analyze", files=_upload_files(uploads),
+                         timeout=TIMEOUT_SECONDS)
+    _raise_for_status(resp)
+    return resp.json()
+
+
+def job_artifacts(api_base: str, job_id: str, phase: str) -> list:
+    resp = requests.get(f"{api_base}/api/analysis-status/{job_id}/artifacts",
+                        params={"phase": phase}, timeout=30)
+    _raise_for_status(resp)
+    return resp.json().get("artifacts", [])
+
+
+def job_graph(api_base: str, job_id: str) -> dict:
+    """Snapshot graf pengetahuan (hanya ada setelah job selesai)."""
+    resp = requests.get(f"{api_base}/api/kg/graph", params={"job_id": job_id}, timeout=30)
+    _raise_for_status(resp)
+    return resp.json()
+
+
 # ── Komponen tampilan ──────────────────────────────────────────────────────
 
 def section_label(key: str) -> str:
     return SECTION_LABELS.get(key, key or "—")
+
+
+def short_name(text: str, n: int = 28) -> str:
+    text = text or ""
+    return text if len(text) <= n else text[: n - 1] + "…"
 
 
 def render_reading_text(text: str, highlight: str | None = None) -> None:

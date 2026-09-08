@@ -9,6 +9,18 @@ from typing import Any, Dict, List
 from loguru import logger
 
 
+def resolve_paper_id(paper: Dict[str, Any]) -> str:
+    """Id jurnal untuk provenans fakta.
+
+    Passage RAG hanya membawa ``source``/``title`` (title bisa placeholder
+    "Unknown"), jadi tanpa fallback semua fakta tercatat dari "unknown".
+    """
+    for value in (paper.get("doc_id"), paper.get("id"), paper.get("source"), paper.get("title")):
+        if value and str(value).strip().lower() != "unknown":
+            return str(value)
+    return "unknown"
+
+
 class PaperAnalyzerTool:
     """Tool for analyzing individual papers and extracting structured info."""
     
@@ -34,7 +46,7 @@ class PaperAnalyzerTool:
         Returns:
             Structured analysis with findings, methods, etc.
         """
-        paper_id = paper.get("doc_id", paper.get("id", "unknown"))
+        paper_id = resolve_paper_id(paper)
         content = paper.get("content", "")
         title = paper.get("metadata", {}).get("title", "Unknown")
         

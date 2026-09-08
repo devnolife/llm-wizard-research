@@ -67,7 +67,12 @@ def split_sentences(text: str) -> List[str]:
 
 def _paper_label(paper: Dict[str, Any]) -> str:
     meta = paper.get("metadata", {}) or {}
-    return meta.get("source") or meta.get("title") or paper.get("doc_id", paper.get("id", "?"))
+    # RAG passages keep source/title top-level (title may be the placeholder "Unknown")
+    for candidate in (meta.get("source"), meta.get("title"),
+                      paper.get("source"), paper.get("title")):
+        if candidate and str(candidate).strip().lower() != "unknown":
+            return str(candidate)
+    return paper.get("doc_id", paper.get("id", "?"))
 
 
 def extract_supporting_quotes(

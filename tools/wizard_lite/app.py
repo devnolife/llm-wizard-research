@@ -2,6 +2,8 @@
 
 Langkah 1: unggah PDF → lihat chunk (``POST /api/research/chunk-preview``; tanpa job/LLM).
 Langkah 2: cari research gap dengan LLM (job pipeline ``until=gap_mining``).
+Langkah 3: indikator synthesis gap neuro-symbolic antar jurnal yang diunggah
+           (job pipeline 8 tahap ``POST /api/upload-and-analyze``).
 
 Pencarian ke literatur luar (OpenAlex) sengaja TIDAK ada di sini — bukan bagian
 proposal; analisis dibatasi pada jurnal yang diunggah pengguna.
@@ -19,6 +21,7 @@ import pandas as pd
 import streamlit as st
 
 import step2_gaps
+import step3_neuro
 from wl_common import (
     DEFAULT_API,
     METHOD_LABELS,
@@ -134,7 +137,7 @@ def render_chunks(item: dict, key: str) -> None:
 
 with st.sidebar:
     st.title("📄 Wizard Lite")
-    st.caption("1 chunk → 2 research gap · fokus jurnal yang diunggah")
+    st.caption("1 chunk → 2 research gap → 3 indikator synthesis gap · fokus jurnal yang diunggah")
     st.text_input("Alamat backend", key="api_base")
     alive = backend_alive(st.session_state["api_base"])
     st.markdown("Backend: " + ("🟢 hidup" if alive else "🔴 tidak terjangkau"))
@@ -162,6 +165,7 @@ if run:
                 st.session_state["api_base"], uploads, st.session_state["ocr_mode"]
             )
             step2_gaps.reset()  # chunk baru → hasil gap lama tidak lagi relevan
+            step3_neuro.reset()
         except Exception as exc:
             st.session_state["preview"] = None
             st.error(f"Gagal memproses: {exc}")
@@ -229,7 +233,15 @@ job_id, job_state, gaps = step2_gaps.render(
     chunks_by_id=chunks_by_id,
 )
 
-# Satu polling untuk semua langkah: rerun selama job belum berakhir.
-if job_state and job_state.get("status") not in TERMINAL_STATUSES:
+st.divider()
+ns_job_id, ns_state = step3_neuro.render(
+    api_base=st.session_state["api_base"],
+    uploads=uploads,
+    backend_ok=alive,
+    chunks_by_id=chunks_by_id,
+)
+
+# Satu polling untuk semua langkah: rerun selama ada job yang belum berakhir.
+if any(s and s.get("status") not in TERMINAL_STATUSES for s in (job_state, ns_state)):
     time.sleep(POLL_SECONDS)
     st.rerun()

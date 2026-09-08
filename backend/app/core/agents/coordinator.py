@@ -16,6 +16,8 @@ import operator
 
 from loguru import logger
 
+from app.core.agents.tools.paper_analyzer_tool import resolve_paper_id
+
 # ---------- LangGraph imports (with graceful fallback) ----------
 try:
     from langgraph.graph import StateGraph, END
@@ -226,7 +228,7 @@ class CoordinatorAgent:
                 to_extract = []
                 for paper in retrieved_papers[:5]:  # Limit for performance
                     content = paper.get("content", "")
-                    paper_id = paper.get("doc_id", paper.get("id", "unknown"))
+                    paper_id = resolve_paper_id(paper)  # RAG passages carry only source/title
                     if not content:
                         continue
                     # PERF: skip identical chunks (RAG often returns near-duplicate

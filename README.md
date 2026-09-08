@@ -117,7 +117,12 @@ alongside the full dashboard and scoped to the **uploaded journals only** (no ex
 literature lookup — that is outside the thesis proposal). Step 1 uploads PDFs and shows the
 resulting chunks via `POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector
 store); step 2 runs a research job with `until=gap_mining` and shows every candidate chunk, the
-LLM's answer, and the gaps that survived verbatim verification:
+LLM's answer, and the gaps that survived verbatim verification; step 3 sends the same PDFs
+through the 8-stage neuro-symbolic pipeline (`POST /api/upload-and-analyze`) and shows the
+Cooper/Booth synthesis-gap indicators *between* the uploaded journals (fragmentation,
+inconsistency, collective incompleteness, evidence support) with their Rule Engine verdict,
+calibrated confidence, verbatim quotes highlighted in the step-1 chunks, the SPO fact table,
+and the reasoning trace:
 
 ```bash
 bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process_monitor venv)

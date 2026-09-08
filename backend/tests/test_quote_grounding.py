@@ -86,6 +86,15 @@ class TestExtractSupportingQuotes:
         assert extract_supporting_quotes([], PAPERS) == []
         assert extract_supporting_quotes(["zz"], PAPERS) == []  # <3 chars filtered
 
+    def test_rag_passage_labelled_by_top_level_source(self):
+        # RAGTool passages have no ``metadata`` and a placeholder title
+        passages = [
+            {"content": PAPERS[0]["content"], "title": "Unknown", "source": "resnet_paper.pdf"},
+            {"content": PAPERS[1]["content"], "title": "Densely Connected Networks", "source": ""},
+        ]
+        quotes = extract_supporting_quotes(["residual", "dropout"], passages)
+        assert {q["source_paper"] for q in quotes} == {"resnet_paper.pdf", "Densely Connected Networks"}
+
 
 class TestVerifyQuoteAgainstPapers:
     def test_genuine_quote_verified(self):

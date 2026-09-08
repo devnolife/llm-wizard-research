@@ -22,6 +22,7 @@ from wl_common import (
     render_reading_text,
     render_view_switch,
     section_label,
+    short_name,
     stage_records,
     start_research_job,
 )
@@ -50,8 +51,7 @@ def _reason_text(reason: str) -> str:
     return ", ".join(REASON_LABELS.get(r, r) for r in (reason or "").split(",") if r)
 
 
-def _short(source: str, n: int = 28) -> str:
-    return source if len(source) <= n else source[: n - 1] + "…"
+_short = short_name
 
 
 # ── Progres ────────────────────────────────────────────────────────────────
