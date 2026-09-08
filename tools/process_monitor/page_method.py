@@ -95,6 +95,19 @@ METHOD_CARDS = [
         "code": "backend/app/core/gap_detection/workflow_stages.py · paper_profiles.py",
     },
     {
+        "title": "4️⃣c Kopling Bibliografis & Sumbu Peta Bukti Sadar Domain",
+        "desc": "Daftar pustaka tiap jurnal diurai (tanpa LLM) menjadi entri berkunci DOI/"
+                "penulis-tahun-judul; jurnal yang tidak berbagi satu pun referensi dan tidak "
+                "saling mengutip membentuk komponen terpisah → bukti **Fragmentasi** "
+                "(Kessler, 1963). Sumbu *evidence gap map* diambil dari ontologi domain "
+                "kurasi (`backend/data/ontology/*.yaml`) atau usulan LLM yang lolos grounding "
+                "korpus — rumus skor tidak berubah.",
+        "web": "panel **📚 Kopling bibliografis** dan **🗺️ Peta bukti** pada kartu gap "
+               "(tab 🕳️ Gap).",
+        "code": "backend/app/core/pipeline/references.py · gap_detection/citation_coupling.py · "
+                "gap_detection/coverage_axes.py",
+    },
+    {
         "title": "5️⃣ NLI Cross-check (3-Layer Discriminator)",
         "desc": "Natural Language Inference memverifikasi hubungan antar-fakta "
                 "(entailment / contradiction) untuk memperkuat indikator inkonsistensi.",

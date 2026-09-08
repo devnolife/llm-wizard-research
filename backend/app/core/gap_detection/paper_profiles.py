@@ -47,6 +47,10 @@ class PaperProfile:
 
     source: str
     title: str = ""
+    # Identitas bibliografis paper sendiri (Fase 3): dipakai mengenali sitasi
+    # langsung antar jurnal unggahan di citation_coupling.
+    doi: str = ""
+    year: Optional[int] = None
     # {"tersurat": [{poin, dasar, kutipan, verification_status, confidence}],
     #  "tersirat": [{poin, dasar, verification_status, confidence}]}
     weaknesses: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
@@ -122,6 +126,8 @@ class PaperProfile:
             "source": self.source,
             "key": self.key,
             "title": self.title,
+            "doi": self.doi,
+            "year": self.year,
             "weaknesses": {
                 "tersurat": list(self.weaknesses.get("tersurat") or []),
                 "tersirat": list(self.weaknesses.get("tersirat") or []),
@@ -134,9 +140,12 @@ class PaperProfile:
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "PaperProfile":
         weaknesses = data.get("weaknesses") or {}
+        year = data.get("year")
         return cls(
             source=str(data.get("source") or ""),
             title=str(data.get("title") or ""),
+            doi=str(data.get("doi") or ""),
+            year=int(year) if isinstance(year, int) or (isinstance(year, str) and year.isdigit()) else None,
             weaknesses={
                 "tersurat": list(weaknesses.get("tersurat") or []),
                 "tersirat": list(weaknesses.get("tersirat") or []),
@@ -168,7 +177,12 @@ def build_profiles(
         key = normalize_source(source)
         if not key or key in profiles:
             continue
-        profiles[key] = PaperProfile(source=source, title=str(paper.get("title") or source))
+        year = paper.get("year")
+        profiles[key] = PaperProfile(
+            source=source, title=str(paper.get("title") or source),
+            doi=str(paper.get("doi") or "").lower().strip(),
+            year=year if isinstance(year, int) else None,
+        )
 
     for record in weaknesses or []:
         profile = profiles.get(normalize_source(record.get("source")))

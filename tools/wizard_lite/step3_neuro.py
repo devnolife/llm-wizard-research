@@ -64,6 +64,7 @@ DETECTION_LABELS = {
     "evidence_gap_map": "peta bukti: sel baris×kolom tanpa studi",
     "methodology_coverage": "keragaman metodologi (kata kunci)",
     "workflow_stage_mining": "tahapan metode: tahap yang tidak pernah divariasikan",
+    "bibliographic_coupling": "kopling bibliografis: kelompok jurnal tanpa referensi bersama (tanpa LLM)",
     "evidence_support": "dukungan bukti primer (leave-one-out)",
 }
 # Jenis pernyataan penulis yang dipakai sebagai bukti pendukung (bukan skor):
@@ -301,6 +302,8 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
                               + AUTHOR_KIND_LABELS.get(q.get("kind"), str(q.get("kind") or "")))
                 elif q.get("origin") == "workflow_stage":
                     origin = f" · 🧪 tahap metode: {STAGE_LABELS.get(q.get('stage'), q.get('stage') or '')}"
+                elif q.get("origin") == "reference_entry":
+                    origin = " · 📚 entri daftar pustaka (verbatim dari bibliografi jurnal)"
                 st.markdown(f"> {quote}\n>\n> — *{q.get('source_paper') or '?'}*"
                             + (f" · {q['context']}" if q.get("context") else "") + origin)
                 chunk, span = _find_quote(quote, chunks_by_id)
@@ -320,6 +323,7 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
 
         _render_coverage_map(g)
         _render_stage_matrix(g)
+        _render_bibliographic_coupling(g)
         _render_author_corroboration(g)
 
         directions = g.get("suggested_directions") or []
@@ -406,6 +410,51 @@ def _render_coverage_map(g: dict) -> None:
                        + ", ".join(axes["dropped_ungrounded"][:8]))
         st.caption("Sel berisi JUMLAH studi (bukan skor). Sel kosong adalah kandidat untuk "
                    "dinilai peneliti — literatur tidak menetapkan aturan 'count < k'.")
+
+
+def _render_bibliographic_coupling(g: dict) -> None:
+    """Kopling bibliografis (Kessler 1963): komponen jurnal yang tidak berbagi satu pun
+    referensi dan tidak saling mengutip. Sinyal struktural bebas LLM; confidence =
+    pasangan terputus / semua pasangan (rumus isolasi Metode 2)."""
+    cpl = _sub_dict(g, "bibliographic_coupling")
+    if not cpl:
+        return
+    comps = cpl.get("components") or []
+    label = {"fragmented": "terfragmentasi", "cohesive": "kohesif", "intermediate": "terhubung sebagian",
+             "insufficient": "tidak cukup data"}.get(cpl.get("interpretation"), cpl.get("interpretation"))
+    with st.expander(
+        f"📚 Kopling bibliografis · {label} · {len(comps)} komponen dari "
+        f"{len(cpl.get('eligible') or [])} jurnal · {cpl.get('disconnected_pairs', 0)}/"
+        f"{cpl.get('total_pairs', 0)} pasangan tanpa referensi bersama",
+        expanded=cpl.get("interpretation") == "fragmented",
+    ):
+        if cpl.get("skipped_reason"):
+            st.warning(cpl["skipped_reason"])
+        for i, comp in enumerate(comps, 1):
+            st.markdown(f"- **Kelompok {i}** ({len(comp)} jurnal): "
+                        + ", ".join(short_name(p, 36) for p in comp))
+        shared_pairs = [p for p in (cpl.get("pairs") or []) if p.get("shared") or p.get("direct")]
+        if shared_pairs:
+            st.dataframe(
+                [{"Jurnal A": short_name(p["a"], 30), "Jurnal B": short_name(p["b"], 30),
+                  "Referensi bersama": p.get("shared", 0), "Jaccard": p.get("jaccard"),
+                  "Sitasi langsung": "ya" if p.get("direct") else ""}
+                 for p in sorted(shared_pairs, key=lambda p: -p.get("shared", 0))],
+                width="stretch", hide_index=True,
+            )
+        else:
+            st.caption("Tidak ada pasangan jurnal yang berbagi referensi.")
+        for d in (cpl.get("direct_citations") or [])[:8]:
+            st.caption(f"↪ {short_name(d['citing'], 30)} mengutip {short_name(d['cited'], 30)}")
+        for t in (cpl.get("top_shared") or [])[:5]:
+            st.markdown(f"> {t.get('example') or t.get('key')}  \n> — dikutip oleh {t['count']} jurnal")
+        if cpl.get("skipped"):
+            skipped = list(cpl["skipped"].items())[:6]
+            st.caption("Dilewati (daftar pustaka pendek/tidak terurai): "
+                       + "; ".join(f"{short_name(s, 28)} — {why}" for s, why in skipped))
+        min_refs = (cpl.get("thresholds") or {}).get("min_refs_per_paper", 5)
+        st.caption(f"Modularitas Q partisi komponen = {cpl.get('modularity')} (bukti, bukan ambang). "
+                   f"Minimal {min_refs} referensi terurai per jurnal.")
 
 
 def _render_stage_matrix(g: dict) -> None:

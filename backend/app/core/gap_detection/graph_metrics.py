@@ -228,6 +228,13 @@ def _connected_components(
     return {new_id: members for new_id, members in enumerate(groups.values())}
 
 
+def connected_components(
+    items: List[str], matrix: List[List[float]], threshold: float
+) -> Dict[int, List[str]]:
+    """Public entry point for other detectors (e.g. bibliographic coupling)."""
+    return _connected_components(items, matrix, threshold)
+
+
 def compute_modularity(
     items: List[str],
     matrix: List[List[float]],

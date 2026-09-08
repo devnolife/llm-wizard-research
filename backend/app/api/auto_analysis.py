@@ -20,6 +20,8 @@ from ..core.recommendation.novelty import rank_proposals
 from ..core.pipeline.pipeline import process_pdf_as_document
 from ..core.pipeline.io import read_jsonl
 from ..core.gap_detection.paper_profiles import build_profiles
+from ..core.pipeline.references import extract_references
+from ..services.reference_enrichment import enrich_paper_references
 from ..core.gap_detection.workflow_stages import (
     build_workflow_prompt,
     parse_workflow_json,
@@ -247,6 +249,7 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                 "source": source_name,
                 "title": processed_doc.title or source_name,
                 "year": processed_doc.metadata.get("year"),
+                "doi": processed_doc.metadata.get("doi") or "",
                 "content": " ".join(c.content for c in processed_doc.chunks[:10]),
                 "full_content": processed_doc.content or " ".join(
                     c.content for c in processed_doc.chunks
@@ -275,6 +278,16 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                         c.content for c in processed_doc.chunks
                     ),
                 ),
+                # Parsed bibliography (no LLM) for bibliographic coupling (Fase 3):
+                # reference chunks first, document tail as fallback.
+                "reference_entries": [
+                    e.to_dict() for e in extract_references(
+                        processed_doc.chunks,
+                        processed_doc.content or " ".join(
+                            c.content for c in processed_doc.chunks
+                        ),
+                    )
+                ],
                 "already_indexed": already_indexed,
             })
 
@@ -551,9 +564,17 @@ Topik:"""
         gap_job_id = str((job.get("payload") or {}).get("gap_job_id") or "")
         if gap_job_id:
             author_gaps, gap_note = _load_author_gaps(gap_job_id)
+        # Optional OpenAlex referenced_works top-up (env BIBLIO_OPENALEX_ENRICH, off by
+        # default): coupling stays offline-first per the 7 Sep scope decision.
+        try:
+            openalex_added = enrich_paper_references(paper_contents)
+        except Exception as enrich_err:
+            logger.warning(f"Reference enrichment skipped: {enrich_err}")
+            openalex_added = {}
         paper_profiles = build_profiles(
             paper_contents, weaknesses=paper_weaknesses, author_gaps=author_gaps,
             workflows=paper_workflows,
+            references={p["source"]: p.get("reference_entries") or [] for p in paper_contents},
         )
         matched_gaps = sum(len(prof.author_gaps) for prof in paper_profiles.values())
         if gap_job_id and author_gaps and not matched_gaps:
@@ -570,6 +591,8 @@ Topik:"""
                 "workflow_verified": sum(
                     1 for s in (prof.workflow or {}).values() if s.get("verified")
                 ),
+                "references": len(prof.references),
+                "references_with_doi": sum(1 for r in prof.references if r.get("doi")),
             }
             for prof in paper_profiles.values()
         ]
@@ -586,6 +609,7 @@ Topik:"""
                 "common_keywords": len(paper_similarity.get("common_keywords", [])),
                 "profiles": len(paper_profiles),
                 "workflows": len(paper_workflows),
+                "references": sum(len(p.references) for p in paper_profiles.values()),
             },
         )
         _save_stage_artifact(
@@ -599,6 +623,10 @@ Topik:"""
                 # {source: {stage: {value, kutipan, verified, match_score}}}
                 "workflows": paper_workflows,
                 "profiles": profile_summary,
+                "references_count": {
+                    p.source: len(p.references) for p in paper_profiles.values()
+                },
+                "references_openalex_added": openalex_added,
                 "author_gaps": {
                     "gap_job_id": gap_job_id or None,
                     "loaded": len(author_gaps),

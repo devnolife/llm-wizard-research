@@ -64,6 +64,7 @@ from .graph_metrics import (
     rescue_singletons,
 )
 from .paper_profiles import PaperProfile, normalize_source, profiles_from_context
+from .citation_coupling import build_coupling_graph
 from .workflow_stages import (
     MIN_PAPERS_FOR_HOMOGENEITY,
     StageMatrix,
@@ -116,6 +117,14 @@ def _paper_ref(paper: Dict[str, Any]) -> str:
         if text and text.lower() != "unknown":
             return text
     return ""
+
+
+def _short_ref(name: str, limit: int = 40) -> str:
+    """Filename without the job-dir index prefix, trimmed for evidence lines."""
+    text = str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if len(text) > 3 and text[:2].isdigit() and text[2] == "_":
+        text = text[3:]
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _paper_refs(papers: List[Dict[str, Any]]) -> List[str]:
@@ -474,7 +483,97 @@ class GapAnalyzer:
                     sub_indicators=[{"bridge_candidates": bridges}],
                 ))
 
+        # Method 3: bibliographic coupling over parsed reference lists (LLM-free).
+        # Works on the per-journal profiles (all uploaded journals), not on the
+        # RAG passages, because reference lists live in the profile side-channel.
+        indicators.extend(self._detect_bibliographic_fragmentation(topic, indicators))
+
         return indicators
+
+    def _detect_bibliographic_fragmentation(
+        self,
+        topic: str,
+        existing: List[GapIndicator],
+    ) -> List[GapIndicator]:
+        """Fragmentation from reference lists: groups of journals that share no
+        cited work and do not cite each other (Kessler 1963 coupling).
+
+        Confidence reuses the isolation formula of Method 2
+        (``disconnected_pairs / total_pairs``); no new weights. When the corpus
+        has too few parsed reference lists the reason is attached to an existing
+        fragmentation indicator (if any) instead of inventing a finding.
+        """
+        profiles = [p for p in self._profiles.values() if p.references]
+        if not profiles:
+            return []
+        coupling = build_coupling_graph(profiles)
+        if coupling.skipped_reason or not coupling.fragmented:
+            logger.info(
+                f"Bibliographic coupling: {coupling.interpretation} "
+                f"({coupling.skipped_reason or f'{len(coupling.components)} component(s)'})"
+            )
+            for indicator in existing:
+                if indicator.indicator_type == GapIndicatorType.FRAGMENTATION:
+                    indicator.sub_indicators.append({"bibliographic_coupling": coupling.to_dict()})
+                    break
+            return []
+
+        groups = [", ".join(_short_ref(p) for p in comp[:4])
+                  + (f" (+{len(comp) - 4})" if len(comp) > 4 else "")
+                  for comp in coupling.components]
+        evidence = [
+            f"{len(coupling.components)} reference-coupling component(s) among "
+            f"{len(coupling.eligible)} journal(s) with parsed reference lists: "
+            + "; ".join(f"[{i + 1}] {g}" for i, g in enumerate(groups[:4])) + ".",
+            f"{coupling.disconnected_pairs}/{coupling.total_pairs} journal pairs share no "
+            f"cited work and do not cite each other (isolation "
+            f"{coupling.isolation_score:.2f}); modularity Q={coupling.modularity:.2f} of the "
+            f"component partition (reported as evidence, not as the decision rule).",
+            f"Direct citations between uploaded journals: {len(coupling.direct_citations)}.",
+        ]
+        if coupling.top_shared:
+            evidence.append(
+                "Most-shared references (bridges between the streams): "
+                + "; ".join(
+                    f"{t['count']} journals cite '{(t['example'] or t['key'])[:80]}'"
+                    for t in coupling.top_shared[:3])
+                + "."
+            )
+        else:
+            evidence.append("No cited work is shared by two or more journals.")
+        if coupling.skipped:
+            evidence.append(
+                f"Skipped (reference list too short/unparsed): "
+                + ", ".join(_short_ref(s) for s in list(coupling.skipped)[:5]) + "."
+            )
+        # The verbatim reference entries ARE the evidence; they come straight
+        # from each journal's own bibliography, hence match_score 1.0.
+        quotes = [
+            {"quote": t["example"][:300], "source_paper": t["papers"][0],
+             "match_score": 1.0, "origin": "reference_entry",
+             "context": f"dikutip oleh {t['count']} jurnal"}
+            for t in coupling.top_shared[:3] if t.get("example")
+        ]
+        return [GapIndicator(
+            indicator_type=GapIndicatorType.FRAGMENTATION,
+            description=(
+                f"Bibliographic coupling on '{topic}': the {len(coupling.eligible)} journals "
+                f"split into {len(coupling.components)} groups that share no cited work "
+                f"and do not cite each other ({coupling.disconnected_pairs}/"
+                f"{coupling.total_pairs} pairs disconnected)."
+            ),
+            confidence=coupling.isolation_score,
+            related_papers=list(coupling.eligible),
+            evidence=evidence,
+            supporting_quotes=quotes,
+            suggested_directions=[
+                "Review the literature streams jointly: the groups draw on disjoint bodies of "
+                "prior work and may be unaware of each other",
+                "Write an integrative review that connects the reference bases of the groups",
+            ],
+            detection_method="bibliographic_coupling",
+            sub_indicators=[{"bibliographic_coupling": coupling.to_dict()}],
+        )]
 
     # -------------------------------------------------------------------
     # Indicator 2: INCONSISTENCY

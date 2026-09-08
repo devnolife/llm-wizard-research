@@ -765,6 +765,51 @@ def render_coverage_map(gap: dict) -> None:
         st.caption(n)
 
 
+def _short_src(name, limit: int = 34) -> str:
+    """Nama berkas tanpa prefiks indeks job, dipangkas untuk label kompak."""
+    text = str(name or "").replace("\\", "/").rsplit("/", 1)[-1]
+    if len(text) > 3 and text[:2].isdigit() and text[2] == "_":
+        text = text[3:]
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def render_bibliographic_coupling(gap: dict) -> None:
+    """Kopling bibliografis (Kessler 1963) antar jurnal unggahan — sinyal fragmentasi
+    bebas LLM. Confidence indikatornya = pasangan terputus / semua pasangan."""
+    cpl = _sub_dict(gap, "bibliographic_coupling")
+    if not cpl:
+        return
+    comps = cpl.get("components") or []
+    label = {"fragmented": "terfragmentasi", "cohesive": "kohesif",
+             "intermediate": "terhubung sebagian", "insufficient": "tidak cukup data"}.get(
+        cpl.get("interpretation"), cpl.get("interpretation"))
+    st.markdown(
+        f"**📚 Kopling bibliografis** — {label}: {len(comps)} komponen dari "
+        f"{len(cpl.get('eligible') or [])} jurnal ber-daftar pustaka; "
+        f"{cpl.get('disconnected_pairs', 0)}/{cpl.get('total_pairs', 0)} pasangan tanpa "
+        f"referensi bersama; {len(cpl.get('direct_citations') or [])} sitasi langsung; "
+        f"Q={cpl.get('modularity')} (bukti, bukan ambang)"
+    )
+    if cpl.get("skipped_reason"):
+        st.caption("⚠️ " + cpl["skipped_reason"])
+    for i, comp in enumerate(comps[:8], 1):
+        st.caption(f"Kelompok {i} ({len(comp)}): " + ", ".join(_short_src(p) for p in comp[:6])
+                   + (f" … (+{len(comp) - 6})" if len(comp) > 6 else ""))
+    shared_pairs = [p for p in (cpl.get("pairs") or []) if p.get("shared")]
+    if shared_pairs:
+        st.dataframe(
+            [{"Jurnal A": _short_src(p["a"], 30), "Jurnal B": _short_src(p["b"], 30),
+              "Referensi bersama": p["shared"], "Jaccard": p.get("jaccard"),
+              "Sitasi langsung": "ya" if p.get("direct") else ""}
+             for p in sorted(shared_pairs, key=lambda p: -p["shared"])[:12]],
+            width="stretch", hide_index=True,
+        )
+    for t in (cpl.get("top_shared") or [])[:3]:
+        st.markdown(f"> {t.get('example') or t.get('key')}  \n> — dikutip oleh {t['count']} jurnal")
+    if cpl.get("skipped"):
+        st.caption(f"Dilewati (daftar pustaka pendek/tidak terurai): {len(cpl['skipped'])} jurnal.")
+
+
 def render_stage_matrix(gap: dict) -> None:
     """Matriks tahap metode x jurnal dari workflow-stage mining.
 
@@ -880,6 +925,7 @@ def _render_gaps_result(payload: dict) -> None:
             st.caption(f"🔎 Bukti: {ev}")
         render_coverage_map(gap)
         render_stage_matrix(gap)
+        render_bibliographic_coupling(gap)
         render_author_corroboration(gap)
         directions = gap.get("suggested_directions") or []
         if directions:
@@ -904,14 +950,18 @@ def render_gap_method_explainer() -> None:
             "- 🧩 **Fragmentasi** — klasterisasi embedding yang dilaporkan dengan "
             "*modularity* Q & *silhouette*, ditambah *link prediction* "
             "(Adamic-Adar/resource allocation) untuk mengusulkan jembatan konkret "
-            "antar-klaster, serta isolasi sitasi di knowledge graph;\n"
+            "antar-klaster, isolasi sitasi di knowledge graph, serta **kopling "
+            "bibliografis** (Kessler, 1963): kelompok jurnal yang tidak berbagi satu pun "
+            "referensi dan tidak saling mengutip — sinyal struktural tanpa LLM;\n"
             "- ⚡ **Inkonsistensi** — normalisasi klaim (arah, polaritas, PICO) + "
             "gerbang keselarasan variabel, lalu *adjudikasi* 4 kelas "
             "(kontradiksi / heterogenitas / beda konteks / bukan klaim) memakai "
             "uji Cochran's Q dan I²; NLI dipakai sebagai satu sinyal, bukan vonis;\n"
             "- 🕳️ **Ketidaklengkapan kolektif** — pencocokan aspek semantik "
             "(bukan sekadar sama-persis) + *evidence gap map* (matriks "
-            "intervensi × luaran) yang menandai sel kosong dan sel tipis;\n"
+            "intervensi × luaran) yang menandai sel kosong dan sel tipis; sumbu peta "
+            "diambil dari ontologi domain kurasi (YAML) atau usulan LLM yang lolos "
+            "grounding korpus, bukan kosakata generik;\n"
             "- 🔍 **Ketiadaan dukungan bukti** — untuk tiap klaim dilakukan "
             "penelusuran *leave-one-out* ke seluruh korpus; klaim yang tidak "
             "menemukan paragraf bukti primer (atau hanya diulang lintas jurnal "

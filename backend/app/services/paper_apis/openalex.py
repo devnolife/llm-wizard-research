@@ -68,6 +68,22 @@ class OpenAlexAPI:
                 logger.warning(f"Failed to parse OpenAlex entry: {exc}")
         return papers
 
+    def get_work_by_doi(self, doi: str) -> Optional[Dict]:
+        """Satu karya OpenAlex lewat DOI (``works/https://doi.org/<doi>``), atau None.
+
+        Dipakai pengayaan daftar pustaka opsional (``referenced_works``). Satu GET
+        per karya = 1 kredit kuota; respons di-cache di disk oleh ``http_cache`` dan
+        host yang sedang cooldown 429 tidak dipanggil.
+        """
+        doi = (doi or "").strip().lower().replace("https://doi.org/", "").replace("http://doi.org/", "")
+        if not doi:
+            return None
+        params = {"mailto": self.email} if self.email else None
+        return http_cache.get_json(
+            f"{self.BASE_URL}/https://doi.org/{doi}", params=params, cache_dir=self.cache_dir,
+            min_interval=self.min_interval, max_retries=self.max_retries,
+        )
+
     def _parse_work(self, work: Dict) -> PaperMetadata:
         """Parse a single OpenAlex work."""
         authors = []
