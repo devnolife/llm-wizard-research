@@ -949,6 +949,39 @@ class TestNoveltyProgress:
         out = stage_novelty("nvl", SCRATCH / "gaps_l.jsonl", SCRATCH / "nov_l.jsonl", limit=25)
         assert seen == {"limit": 25} and out.params["batas_cek"] == 25
 
+    def test_stage_with_openalex_disabled_reports_switch_not_quota(self, monkeypatch):
+        """OPENALEX_DISABLED=1: semua unchecked, tanpa jaringan, catatan menyebut saklar."""
+        from app.core.gap_mining import novelty as novelty_mod
+
+        monkeypatch.setenv(novelty_mod.ENV_DISABLED, "1")
+        monkeypatch.setattr(novelty_mod, "OpenAlexAPI",
+                            lambda *a, **k: (_ for _ in ()).throw(AssertionError("jaringan")))
+        job_store.save_job("nvoff", {"status": "running", "progress": 0})
+        write_jsonl(str(SCRATCH / "gaps_off.jsonl"), [
+            {"record": "meta"},
+            *[{"source": "a.pdf", "gap_statement": f"gap {i} forensic tool",
+               "gap_type": "implicit_gap"} for i in range(6)],
+        ])
+        messages: list[str] = []
+        original = research_pipeline.update_job
+
+        def spy(job_id, **fields):
+            if "message" in fields:
+                messages.append(fields["message"])
+            return original(job_id, **fields)
+        monkeypatch.setattr(research_pipeline, "update_job", spy)
+
+        out = stage_novelty("nvoff", SCRATCH / "gaps_off.jsonl", SCRATCH / "nov_off.jsonl")
+
+        assert out.metrics["unchecked"] == 6 and out.metrics["gap_dicek"] == 0
+        assert out.params["dimatikan"] is True and "dimatikan" in out.params["sumber"]
+        assert any("DIMATIKAN" in n and "OPENALEX_DISABLED" in n for n in out.notes)
+        assert not any("kuota pulih" in n for n in out.notes), "bukan insiden kuota"
+        assert any(m.startswith("Cek kebaruan dimatikan") for m in messages)
+        assert not any(m.startswith("Cek OpenAlex") for m in messages)
+        rows = [r for r in read_jsonl(str(SCRATCH / "nov_off.jsonl")) if "gap_statement" in r]
+        assert all(r["novelty_status"] == "unchecked" for r in rows)
+
 
 class TestContinueFromStage:
     """Langkah 3 UI melanjutkan job langkah 2: gap mining (LLM) tidak boleh diulang."""

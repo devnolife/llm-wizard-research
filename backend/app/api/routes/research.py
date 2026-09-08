@@ -28,6 +28,7 @@ from ...core.pipeline.token_chunker import (
     DEFAULT_OVERLAP_RATIO,
     DEFAULT_TARGET_TOKENS,
 )
+from ...core.gap_mining.novelty import novelty_disabled
 from ...services.analysis_queue import get_analysis_queue
 from ...services.research_pipeline import (
     MAX_GAP_RUNS,
@@ -97,7 +98,10 @@ async def list_stages():
         "stages": [
             {"key": key, "icon": icon, "title": title, "description": desc,
              "substeps": SUBSTEPS.get(key, []),
-             "constants": PIPELINE_CONSTANTS.get(key, {})}
+             "constants": PIPELINE_CONSTANTS.get(key, {}),
+             # Tahap novelty tetap ada (rekomendasi membaca berkasnya) tetapi tidak
+             # menyentuh jaringan bila OPENALEX_DISABLED=1.
+             "disabled": key == "novelty" and novelty_disabled()}
             for key, icon, title, desc in RESEARCH_STAGES
         ]
     }

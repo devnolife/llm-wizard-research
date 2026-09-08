@@ -30,7 +30,8 @@ from loguru import logger
 from ..core.gap_detection.quote_grounding import QUOTE_MATCH_THRESHOLD
 from ..core.gap_mining.candidates import matched_phrases, select_candidates, with_context
 from ..core.gap_mining.extractor import extract_gaps_from_candidate
-from ..core.gap_mining.novelty import STRONG_MATCH_THRESHOLD, annotate_gaps
+from ..core.gap_mining.novelty import (DISABLED_REASON, LIMIT_REASON, STRONG_MATCH_THRESHOLD,
+                                       annotate_gaps, novelty_disabled)
 from ..core.gap_mining.verify import verify_gaps
 from ..core.pipeline.corpus_relevance import build_probe, check_corpus_relevance
 from ..core.pipeline.io import read_jsonl, source_name, write_chunks_jsonl, write_jsonl
@@ -886,6 +887,8 @@ def stage_novelty(
     # menghemat kuota dan mencegah gap satu-undian dilaporkan sebagai kebaruan.
     gaps = [g for g in all_gaps if g.get("stable", True)]
     skipped_unstable = len(all_gaps) - len(gaps)
+    offline = novelty_disabled()
+    tick_label = "Menandai unchecked" if offline else "Cek OpenAlex"
 
     def _tick(done: int, total: int) -> None:
         # OpenAlex dibatasi ~1 permintaan/dtk, jadi tahap ini lambat dan tanpa
@@ -893,10 +896,14 @@ def stage_novelty(
         if done % 5 == 0 or done == total:
             _ensure_active(job_id)
             _progress(job_id, 62 + 18 * done / max(1, total),
-                      f"Cek OpenAlex {done}/{total} gap")
+                      f"{tick_label} {done}/{total} gap")
 
-    _progress(job_id, 62, f"Cek kebaruan {len(gaps)} gap ke OpenAlex"
-              + (f" (maks {limit})" if limit else ""))
+    if offline:
+        _progress(job_id, 62, f"Cek kebaruan dimatikan (OPENALEX_DISABLED) — {len(gaps)} gap "
+                  "ditandai unchecked")
+    else:
+        _progress(job_id, 62, f"Cek kebaruan {len(gaps)} gap ke OpenAlex"
+                  + (f" (maks {limit})" if limit else ""))
     with _substep(job_id, "novelty", "cek_kebaruan", masuk=len(gaps)) as sub:
         enriched = annotate_gaps(gaps, from_date=from_date, min_interval=min_interval,
                                  max_retries=max_retries, on_progress=_tick, limit=limit)
@@ -907,8 +914,10 @@ def stage_novelty(
                                                   if k != "open"})
     with_matches = sum(1 for g in enriched if g.get("related_recent_papers"))
     unchecked = [g for g in enriched if g.get("novelty_status") == "unchecked"]
+    disabled = any(g.get("novelty_error") == DISABLED_REASON for g in unchecked)
     quota_hit = sorted({g.get("novelty_error") for g in unchecked
-                        if g.get("novelty_error") and g.get("novelty_error") != "di luar batas cek"})
+                        if g.get("novelty_error")
+                        and g.get("novelty_error") not in (LIMIT_REASON, DISABLED_REASON)})
 
     out_meta = dict(meta)
     out_meta.update({
@@ -929,7 +938,9 @@ def stage_novelty(
 
     return StageOutcome(
         params={"from_date": from_date, "min_interval": min_interval,
-                "max_retries": max_retries, "sumber": "OpenAlex",
+                "max_retries": max_retries,
+                "sumber": "OpenAlex (dimatikan)" if disabled else "OpenAlex",
+                "dimatikan": disabled,
                 "ambang_strong_match": STRONG_MATCH_THRESHOLD,
                 "batas_cek": limit or "semua"},
         metrics={
@@ -961,6 +972,12 @@ def stage_novelty(
             "contoh_unchecked": [_nov_row(g) for g in unchecked][:SAMPLE_ROWS],
         },
         notes=(
+            [f"Cek kebaruan DIMATIKAN (env OPENALEX_DISABLED=1): {len(unchecked)} gap berstatus "
+             "'unchecked' tanpa permintaan jaringan dan tetap diteruskan ke rekomendasi. Skor "
+             "prioritas tidak bergantung OpenAlex — kebaruan proposal diukur terhadap korpus "
+             "unggahan; yang hilang hanya penyaringan gap yang sudah dijawab literatur 2024+."]
+            if disabled else []
+        ) + (
             [f"{skipped_unstable} gap tidak stabil lintas run (stable=false) tidak dicek "
              "kebaruannya dan tidak diteruskan ke rekomendasi."]
             if skipped_unstable else []
@@ -969,13 +986,15 @@ def stage_novelty(
              "'unchecked', bukan 'open' — jalankan ulang tahap ini setelah kuota pulih."]
             if quota_hit else []
         ) + (
-            [f"{sum(1 for g in unchecked if g.get('novelty_error') == 'di luar batas cek')} gap "
+            [f"{sum(1 for g in unchecked if g.get('novelty_error') == LIMIT_REASON)} gap "
              f"di luar batas cek ({limit}) sengaja tidak dikirim ke OpenAlex."]
-            if limit and any(g.get("novelty_error") == "di luar batas cek" for g in unchecked) else []
-        ) + [
-            "Kuota gratis OpenAlex ≈ 100 pencarian/hari per IP; gap yang gagal dicek "
-            "berstatus 'unchecked' agar gangguan layanan tidak terbaca sebagai 'semua gap baru'.",
-        ],
+            if limit and any(g.get("novelty_error") == LIMIT_REASON for g in unchecked) else []
+        ) + (
+            [] if disabled else [
+                "Kuota gratis OpenAlex ≈ 100 pencarian/hari per IP; gap yang gagal dicek "
+                "berstatus 'unchecked' agar gangguan layanan tidak terbaca sebagai 'semua gap baru'.",
+            ]
+        ),
     )
 
 

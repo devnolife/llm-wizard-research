@@ -11,10 +11,16 @@ the gap is labelled ``unchecked`` — never ``open`` — so an outage does not r
 as "every gap is novel". OpenAlex's free tier is credit-based (~100 searches per
 day per IP/mailto); a 429 with a long Retry-After puts the host in cooldown and
 the remaining gaps are marked ``unchecked`` immediately.
+
+The external check is optional: ``OPENALEX_DISABLED=1`` marks every gap
+``unchecked`` without touching the network. Downstream ranking does not depend
+on it (proposal novelty is measured against the uploaded corpus), so the switch
+only removes the ``addressed`` filter and the quota/time cost.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
@@ -25,11 +31,20 @@ from ...services.paper_apis import http_cache
 from ...services.paper_apis.openalex import OpenAlexAPI
 
 NOVELTY_STATUSES = ("open", "partially_addressed", "addressed", "unchecked")
+ENV_DISABLED = "OPENALEX_DISABLED"
+DISABLED_REASON = "cek kebaruan dimatikan (OPENALEX_DISABLED=1)"
+LIMIT_REASON = "di luar batas cek"
 
 # A recent paper "strongly" matches a gap when at least this share of the gap's
 # keywords appears in its title+abstract. 3+ strong matches => addressed,
 # 1-2 => partially_addressed, 0 => open.
 STRONG_MATCH_THRESHOLD = 0.5
+
+
+def novelty_disabled() -> bool:
+    """True bila cek literatur luar dimatikan lewat env (tanpa permintaan jaringan)."""
+    return os.getenv(ENV_DISABLED, "").strip().lower() in ("1", "true", "yes")
+
 
 _STOPWORDS = set(
     """the a an and or of to in for on with from by as is are be this that these those
@@ -169,15 +184,17 @@ def annotate_gaps(
     ``on_progress(done, total)`` is called after each gap so a caller can
     surface live progress; the CLI leaves it ``None``.
     """
-    openalex = openalex or OpenAlexAPI(min_interval=min_interval, max_retries=max_retries)
+    disabled = novelty_disabled()
+    if not disabled:
+        openalex = openalex or OpenAlexAPI(min_interval=min_interval, max_retries=max_retries)
     out = []
     for i, gap in enumerate(gaps, 1):
         enriched = dict(gap)
-        if limit and i > limit:
+        if disabled or (limit and i > limit):
             enriched.update({
                 "novelty_status": "unchecked",
                 "novelty_query": build_keywords(gap),
-                "novelty_error": "di luar batas cek",
+                "novelty_error": DISABLED_REASON if disabled else LIMIT_REASON,
                 "related_recent_papers": [],
                 "checked_at": datetime.now().isoformat(timespec="seconds"),
             })

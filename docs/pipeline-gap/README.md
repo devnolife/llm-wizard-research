@@ -217,6 +217,7 @@ Lewat API/UI: `POST /api/research/start` menerima *form* `gap_runs` (1–5, bawa
 | `GROBID_URL` | (Opsional) server GROBID; kosong = fallback CrossRef/regex. |
 | `CROSSREF_EMAIL` | Email *polite pool* **CrossRef** (respons lebih cepat). Untuk **OpenAlex** email tidak menaikkan kuota: tier gratisnya berbasis **kredit (~100 pencarian/hari per akun/IP)**; saat habis, server menjawab 429 dengan `Retry-After` ~13 jam dan gap yang belum dicek diberi status `unchecked`. |
 | `PIPELINE_API_CACHE_DIR` | Direktori cache respons API (default `backend/data/cache/api`). |
+| `OPENALEX_DISABLED` | `1` = TAHAP 3 tidak menyentuh jaringan: semua gap berstatus `unchecked`, tetap diteruskan ke rekomendasi. Skor prioritas **tidak berubah** (novelty proposal diukur terhadap korpus unggahan); yang hilang hanya penyaringan gap `addressed`. Aktif di mesin kerja sejak 8 Sep (pencarian luar bukan bagian proposal). |
 | `COVERAGE_AXES_DIR` | Direktori ontologi sumbu *evidence gap map* (YAML; bawaan `backend/data/ontology`). |
 | `BIBLIO_OPENALEX_ENRICH` | `true` = lengkapi daftar pustaka pendek dengan `referenced_works` OpenAlex (bawaan **mati**; kopling bibliografis berjalan sepenuhnya *offline* dari PDF). |
 

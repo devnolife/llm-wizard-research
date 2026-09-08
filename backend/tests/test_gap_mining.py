@@ -164,6 +164,33 @@ class TestNovelty:
         assert all(g["novelty_error"] == "di luar batas cek" for g in out[2:])
         assert NoHits.calls == 2, "gap di luar batas tidak boleh menghabiskan kuota"
 
+    def test_openalex_disabled_marks_all_unchecked_without_network(self, monkeypatch):
+        from app.core.gap_mining import novelty
+
+        monkeypatch.setenv(novelty.ENV_DISABLED, "1")
+
+        class Boom:
+            def search_recent(self, *a, **k):
+                raise AssertionError("tidak boleh ada permintaan jaringan saat dimatikan")
+
+        monkeypatch.setattr(novelty, "OpenAlexAPI",
+                            lambda *a, **k: (_ for _ in ()).throw(AssertionError("konstruksi klien")))
+        gaps = [{"gap_statement": f"gap statement number {i} forensic"} for i in range(3)]
+        out = novelty.annotate_gaps(gaps, openalex=Boom())
+        assert [g["novelty_status"] for g in out] == ["unchecked"] * 3
+        assert all(g["novelty_error"] == novelty.DISABLED_REASON for g in out)
+        assert all(g["novelty_query"] and g["related_recent_papers"] == [] for g in out)
+
+    def test_openalex_disabled_flag_parsing(self, monkeypatch):
+        from app.core.gap_mining.novelty import ENV_DISABLED, novelty_disabled
+
+        for raw, expected in (("1", True), ("true", True), ("YES", True),
+                              ("0", False), ("", False), ("false", False)):
+            monkeypatch.setenv(ENV_DISABLED, raw)
+            assert novelty_disabled() is expected, raw
+        monkeypatch.delenv(ENV_DISABLED)
+        assert novelty_disabled() is False
+
 
 class TestHttpCacheQuotaCooldown:
     """OpenAlex menjawab kuota habis dengan 429 + Retry-After ~13 jam."""

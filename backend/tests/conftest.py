@@ -25,3 +25,15 @@ def setup_logging():
     sink_id = logger.add("logs/test.log", rotation="10 MB", retention=3, level="WARNING")
     yield
     logger.remove(sink_id)
+
+
+@pytest.fixture(autouse=True)
+def _openalex_check_enabled_by_default(monkeypatch):
+    """Netralkan saklar OPENALEX_DISABLED dari backend/.env pengembang.
+
+    ``ConfigLoader()`` memanggil ``load_dotenv(override=True)`` kapan pun ia
+    dibuat, sehingga nilai ``.env`` bocor ke tes berikutnya dan tes perilaku cek
+    kebaruan (yang memakai klien OpenAlex palsu) ikut berubah. Tes yang sengaja
+    menguji saklar menyetelnya sendiri lewat ``monkeypatch.setenv``.
+    """
+    monkeypatch.setenv("OPENALEX_DISABLED", "0")

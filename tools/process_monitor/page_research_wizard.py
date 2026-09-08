@@ -116,8 +116,12 @@ if langkah == 1:
     for i, stage in enumerate(stages, 1):
         est = (f" · biasanya {fmt_duration(durations[stage['key']])}"
                if stage["key"] in durations else "")
+        off = (" · ⏸️ **dimatikan** (`OPENALEX_DISABLED=1`: tanpa permintaan ke OpenAlex, semua "
+               "gap berstatus *unchecked* dan tetap masuk rekomendasi)"
+               if stage.get("disabled") else "")
         st.markdown(f"&nbsp;&nbsp;**{i}. {stage['icon']} {stage['title']}** — "
-                    f"{stage['description']}{est}", unsafe_allow_html=True)
+                    f"{stage['description']}{est if not off else ''}{off}",
+                    unsafe_allow_html=True)
 
     with st.expander("🧭 Bagaimana sistem bekerja — peta alur & yang terjadi di tiap tahap",
                      expanded=False):
