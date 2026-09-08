@@ -33,7 +33,11 @@ from ...models.responses import (
     GapIndicatorModel,
 )
 from ..knowledge.fact_table import EntityType
-from .quote_grounding import extract_supporting_quotes, verify_quote_against_papers
+from .quote_grounding import (
+    QUOTE_MATCH_THRESHOLD,
+    extract_supporting_quotes,
+    verify_quote_against_papers,
+)
 from .claim_normalization import (
     ALIGNMENT_GATE,
     NormalizedClaim,
@@ -59,6 +63,11 @@ from .graph_metrics import (
     rescue_singletons,
 )
 from .paper_profiles import PaperProfile, normalize_source, profiles_from_context
+from .workflow_stages import (
+    MIN_PAPERS_FOR_HOMOGENEITY,
+    StageMatrix,
+    compare_workflows,
+)
 
 # Re-export for backward compatibility
 GapIndicatorType = IndicatorType
@@ -796,7 +805,20 @@ class GapAnalyzer:
                         sub_indicators=[{"coverage_matrix": matrix.to_dict()}],
                     ))
         
-        # Check for missing methodology diversity
+        # Methodology diversity. Workflow-stage mining (P5) is authoritative
+        # whenever the job supplied per-journal pipelines for enough papers: it
+        # names the stage that never varies instead of guessing a method from
+        # ten keywords. The keyword check stays as the profile-less fallback.
+        workflows = {
+            profile.source: profile.workflow
+            for profile in self._profiles.values() if profile.workflow
+        }
+        if len(workflows) >= MIN_PAPERS_FOR_HOMOGENEITY:
+            workflow_indicator = self._detect_workflow_homogeneity(topic, workflows)
+            if workflow_indicator is not None:
+                indicators.append(workflow_indicator)
+            return indicators
+
         methods_used = self._extract_methods(papers)
         if len(methods_used) <= 1 and len(papers) >= 3:
             # Calibrated: a single shared method across MORE papers is a stronger
@@ -835,6 +857,92 @@ class GapAnalyzer:
             ))
         
         return indicators
+
+    # Verbatim stage quotes attached to the workflow indicator; the full matrix
+    # (every quote) stays in sub_indicators for the UI.
+    MAX_WORKFLOW_QUOTES = 4
+
+    def _detect_workflow_homogeneity(
+        self,
+        topic: str,
+        workflows: Dict[str, Dict[str, Any]],
+    ) -> Optional[GapIndicator]:
+        """INCOMPLETENESS indicator from pipeline stages no journal varies.
+
+        Returns ``None`` when every stage shows variation — the corpus is then
+        methodologically diverse and no indicator is warranted, which is also
+        why the keyword fallback is not consulted afterwards.
+        """
+        matcher = SemanticMatcher.from_vector_store(self.vector_store)
+        matrix: StageMatrix = compare_workflows(workflows, matcher=matcher)
+        homogeneous = matrix.homogeneous
+        if not homogeneous:
+            return None
+
+        n_papers = len(matrix.papers)
+        # Same formula as the keyword check: one choice shared by more journals
+        # is a stronger incompleteness signal than the minimum of 3.
+        dominant_support = max(len(s.dominant.papers) for s in homogeneous)
+        dominance = min(1.0, dominant_support / 5.0)
+        conf = round(0.4 + 0.4 * dominance, 3)
+
+        stage_lines = [
+            f"{s.label}: {len(s.dominant.papers)}/{n_papers} journals rely on "
+            f"'{s.dominant.value}'"
+            + (f" ({len(s.unstated_papers)} do not state this stage)"
+               if s.unstated_papers else "")
+            for s in homogeneous
+        ]
+        evidence = [
+            f"Tahap {s.label}: {len(s.variants)} varian — "
+            + ", ".join(f"'{v.value}' ({len(v.papers)} jurnal)" for v in s.variants[:4])
+            + (f"; tidak dinyatakan: {len(s.unstated_papers)} jurnal"
+               if s.unstated_papers else "")
+            + (" [HOMOGEN]" if s.homogeneous else "")
+            for s in matrix.stages
+        ]
+        evidence.append(
+            f"Kutipan tahap terverifikasi verbatim: {matrix.verified_quotes}/"
+            f"{matrix.total_quotes} (ambang {QUOTE_MATCH_THRESHOLD}); pencocokan varian: "
+            f"{matrix.matcher_method}."
+        )
+        evidence.append(
+            f"Homogen = satu varian pada >= {matrix.min_papers} jurnal yang menyatakan tahap "
+            "itu; jurnal yang tidak menyatakan tahap tidak dihitung sebagai setuju."
+        )
+        quotes = [
+            {
+                "quote": q["quote"],
+                "source_paper": q["source"],
+                "match_score": q["match_score"],
+                "origin": "workflow_stage",
+                "stage": s.stage,
+            }
+            for s in homogeneous
+            for q in s.dominant.quotes
+        ][: self.MAX_WORKFLOW_QUOTES]
+
+        return GapIndicator(
+            indicator_type=GapIndicatorType.INCOMPLETENESS,
+            description=(
+                f"Methodological incompleteness (workflow stages) for '{topic}': "
+                f"{len(homogeneous)} of {len(matrix.stages)} pipeline stage(s) show no "
+                f"variation across the {n_papers} journals — "
+                + "; ".join(stage_lines[:3])
+                + ". Alternative choices at these stages are absent."
+            ),
+            confidence=conf,
+            related_papers=list(matrix.papers),
+            evidence=evidence,
+            supporting_quotes=quotes,
+            suggested_directions=[
+                f"Vary the '{s.label}' stage: every journal that states it relies on "
+                f"'{s.dominant.value}'"
+                for s in homogeneous
+            ][:3],
+            detection_method="workflow_stage_mining",
+            sub_indicators=[{"stage_matrix": matrix.to_dict()}],
+        )
     
     # -------------------------------------------------------------------
     # Indicator 4: EVIDENCE-SUPPORT GAP

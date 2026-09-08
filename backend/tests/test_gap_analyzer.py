@@ -515,3 +515,112 @@ class TestAuthorCorroboration:
                    for ind in plain for s in ind["sub_indicators"])
         assert all(q.get("origin") is None
                    for ind in plain for q in ind["supporting_quotes"])
+
+
+# ===================================================================
+# Workflow-stage mining (methodological incompleteness from pipelines)
+# ===================================================================
+
+class TestWorkflowStageMining:
+    PAPER_CONTENTS = [{"source": s, "title": s} for s in ("h1", "h2", "h3")]
+
+    @staticmethod
+    def _stage(value, quote="", verified=False):
+        return {"value": value, "kutipan": quote, "verified": verified,
+                "match_score": 0.95 if verified else 0.0}
+
+    def _profiles(self, workflows):
+        from app.core.gap_detection.paper_profiles import build_profiles
+
+        profiles = build_profiles(self.PAPER_CONTENTS, workflows=workflows)
+        return {k: v.to_dict() for k, v in profiles.items()}
+
+    def _homogeneous_workflows(self):
+        return {
+            "h1": {"method_model": self._stage("CNN"),
+                   "evaluation_metrics": self._stage(
+                       "accuracy", "we report accuracy on the test set", verified=True)},
+            "h2": {"method_model": self._stage("SVM"),
+                   "evaluation_metrics": self._stage(
+                       "accuracy", "accuracy is the only metric", verified=True)},
+            "h3": {"method_model": self._stage("random forest"),
+                   "evaluation_metrics": self._stage(
+                       "accuracy", "invented quote", verified=False)},
+        }
+
+    def test_homogeneous_stage_replaces_keyword_check(self, homogeneous_papers):
+        ga = GapAnalyzer()
+        indicators = ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles=self._profiles(self._homogeneous_workflows()))
+
+        assert [i for i in indicators if i.detection_method == "methodology_coverage"] == []
+        wf = [i for i in indicators if i.detection_method == "workflow_stage_mining"]
+        assert len(wf) == 1
+        ind = wf[0]
+        assert ind.indicator_type == IndicatorType.INCOMPLETENESS
+        assert "unidentified" not in ind.description
+        assert "Metrik evaluasi: 3/3 journals rely on 'accuracy'" in ind.description
+        # Same formula as the keyword check: 3 journals on one choice -> 0.64.
+        assert ind.confidence == pytest.approx(0.64)
+        assert sorted(ind.related_papers) == ["h1", "h2", "h3"]
+        # Only verified stage quotes are presented as verbatim evidence.
+        quotes = [q for q in ind.supporting_quotes if q.get("origin") == "workflow_stage"]
+        assert [q["source_paper"] for q in quotes] == ["h1", "h2"]
+        assert all(q["stage"] == "evaluation_metrics" for q in quotes)
+        matrix = next(s["stage_matrix"] for s in ind.sub_indicators if "stage_matrix" in s)
+        assert [h["stage"] for h in matrix["homogeneous"]] == ["evaluation_metrics"]
+        assert matrix["verified_quotes"] == 2 and matrix["total_quotes"] == 3
+        assert any(e.startswith("Tahap Metrik evaluasi: 1 varian") and "[HOMOGEN]" in e
+                   for e in ind.evidence)
+
+    def test_diverse_pipelines_yield_no_methodology_indicator(self, homogeneous_papers):
+        workflows = {
+            "h1": {"method_model": self._stage("CNN"), "evaluation_metrics": self._stage("accuracy")},
+            "h2": {"method_model": self._stage("SVM"), "evaluation_metrics": self._stage("F1-score")},
+            "h3": {"method_model": self._stage("random forest"),
+                   "evaluation_metrics": self._stage("processing time")},
+        }
+        ga = GapAnalyzer()
+        indicators = ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles=self._profiles(workflows))
+        # The pipelines are authoritative: no fallback to the keyword guess
+        # that would have called these three journals "similar methodology".
+        assert [i for i in indicators
+                if i.detection_method in ("workflow_stage_mining", "methodology_coverage")] == []
+
+    def test_too_few_pipelines_keep_the_keyword_fallback(self, homogeneous_papers):
+        workflows = {k: v for k, v in self._homogeneous_workflows().items() if k != "h3"}
+        ga = GapAnalyzer()
+        indicators = ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles=self._profiles(workflows))
+        assert [i for i in indicators if i.detection_method == "workflow_stage_mining"] == []
+        meth = [i for i in indicators if i.detection_method == "methodology_coverage"]
+        assert len(meth) == 1 and meth[0].confidence == pytest.approx(0.64)
+
+    def test_author_statement_corroborates_the_homogeneous_stage(self, homogeneous_papers):
+        from app.core.gap_detection.paper_profiles import build_profiles
+
+        weakness = {
+            "title": "h2", "source": "h2", "tersirat": [],
+            "tersurat": [{
+                "poin": "The evaluation reports accuracy only",
+                "dasar": "Other evaluation metrics are absent",
+                "kutipan": "accuracy is the only metric",
+                "verification_status": "terverifikasi", "confidence": 0.9,
+            }],
+        }
+        profiles = build_profiles(self.PAPER_CONTENTS, weaknesses=[weakness],
+                                  workflows=self._homogeneous_workflows())
+        ga = GapAnalyzer()
+        ind = next(i for i in ga.analyze_gaps(
+            "test topic", homogeneous_papers, depth="quick",
+            paper_profiles={k: v.to_dict() for k, v in profiles.items()})
+            if i.detection_method == "workflow_stage_mining")
+        hits = next(s["author_corroboration"] for s in ind.sub_indicators
+                    if "author_corroboration" in s)
+        assert hits[0]["source"] == "h2" and hits[0]["kind"] == "tersurat"
+        origins = {q.get("origin") for q in ind.supporting_quotes}
+        assert origins == {"workflow_stage", "author_stated"}

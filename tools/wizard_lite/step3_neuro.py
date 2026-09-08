@@ -62,7 +62,8 @@ DETECTION_LABELS = {
     "llm_nli": "kontradiksi via LLM (pelengkap)",
     "aspect_coverage": "cakupan aspek: aspek yang diharapkan vs yang dibahas",
     "evidence_gap_map": "peta bukti: sel baris×kolom tanpa studi",
-    "methodology_coverage": "keragaman metodologi",
+    "methodology_coverage": "keragaman metodologi (kata kunci)",
+    "workflow_stage_mining": "tahapan metode: tahap yang tidak pernah divariasikan",
     "evidence_support": "dukungan bukti primer (leave-one-out)",
 }
 # Jenis pernyataan penulis yang dipakai sebagai bukti pendukung (bukan skor):
@@ -73,6 +74,17 @@ AUTHOR_KIND_LABELS = {
     "explicit_future_work": "future work eksplisit (gap mining)",
     "stated_limitation": "keterbatasan yang dinyatakan (gap mining)",
     "implicit_gap": "gap implisit (gap mining)",
+}
+# Label tahap workflow-stage mining (selaras core/gap_detection/workflow_stages.STAGES).
+STAGE_LABELS = {
+    "data_source": "Sumber data",
+    "data_collection": "Pengumpulan data",
+    "preprocessing": "Prapemrosesan",
+    "representation_features": "Representasi/fitur",
+    "method_model": "Metode/model",
+    "evaluation_metrics": "Metrik evaluasi",
+    "validation_design": "Desain validasi",
+    "tools_environment": "Alat/lingkungan",
 }
 TRACE_LABELS = {
     "observe": "👁️ Observe — ambil passage, ekstrak fakta, bangun graf",
@@ -283,9 +295,12 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
             st.markdown("**Kutipan verbatim dari jurnal**")
             for i, q in enumerate(quotes):
                 quote = q.get("quote", "")
-                origin = (" · ✍️ pernyataan penulis: "
-                          + AUTHOR_KIND_LABELS.get(q.get("kind"), str(q.get("kind") or ""))
-                          if q.get("origin") == "author_stated" else "")
+                origin = ""
+                if q.get("origin") == "author_stated":
+                    origin = (" · ✍️ pernyataan penulis: "
+                              + AUTHOR_KIND_LABELS.get(q.get("kind"), str(q.get("kind") or "")))
+                elif q.get("origin") == "workflow_stage":
+                    origin = f" · 🧪 tahap metode: {STAGE_LABELS.get(q.get('stage'), q.get('stage') or '')}"
                 st.markdown(f"> {quote}\n>\n> — *{q.get('source_paper') or '?'}*"
                             + (f" · {q['context']}" if q.get("context") else "") + origin)
                 chunk, span = _find_quote(quote, chunks_by_id)
@@ -303,6 +318,7 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
             st.caption("Jurnal terkait: " + ", ".join(short_name(p, 40) for p in related[:12])
                        + (f" … (+{len(related) - 12})" if len(related) > 12 else ""))
 
+        _render_stage_matrix(g)
         _render_author_corroboration(g)
 
         directions = g.get("suggested_directions") or []
@@ -341,6 +357,49 @@ def _author_corroboration(g: dict) -> list:
         if isinstance(sub, dict) and sub.get("author_corroboration"):
             return list(sub["author_corroboration"])
     return []
+
+
+def _stage_matrix(g: dict) -> dict:
+    for sub in g.get("sub_indicators") or []:
+        if isinstance(sub, dict) and isinstance(sub.get("stage_matrix"), dict):
+            return sub["stage_matrix"]
+    return {}
+
+
+def _render_stage_matrix(g: dict) -> None:
+    """Tahap metode x jurnal (workflow-stage mining).
+
+    HOMOGEN = satu varian pada >= min_papers jurnal yang menyatakan tahap itu;
+    jurnal yang tidak menyatakan tahap tidak dihitung setuju. Tabel ini bukti
+    indikator Ketidaklengkapan, bukan skor tambahan.
+    """
+    matrix = _stage_matrix(g)
+    stages = matrix.get("stages") or []
+    if not stages:
+        return
+    papers = [str(p) for p in matrix.get("papers") or []]
+    homogeneous = [s for s in stages if s.get("homogeneous")]
+    with st.expander(
+        f"🧪 Matriks tahapan metode · {len(homogeneous)}/{len(stages)} tahap homogen pada "
+        f"{len(papers)} jurnal · kutipan terverifikasi "
+        f"{matrix.get('verified_quotes', 0)}/{matrix.get('total_quotes', 0)}",
+        expanded=bool(homogeneous),
+    ):
+        rows = []
+        for s in stages:
+            row = {"Tahap": s.get("label") or s.get("stage"),
+                   "Status": "HOMOGEN" if s.get("homogeneous") else
+                   ("beragam" if s.get("variants") else "tidak dinyatakan")}
+            value_by_paper = {}
+            for v in s.get("variants") or []:
+                for p in v.get("papers") or []:
+                    value_by_paper[str(p)] = v.get("value", "")
+            for p in papers:
+                row[short_name(p, 24)] = value_by_paper.get(p, "—")
+            rows.append(row)
+        st.dataframe(rows, width="stretch", hide_index=True)
+        st.caption(f"Pencocokan varian: {matrix.get('matcher', '?')} · ambang homogen: satu varian "
+                   f"pada ≥ {matrix.get('min_papers', 3)} jurnal yang menyatakan tahap itu.")
 
 
 def _render_author_corroboration(g: dict) -> None:

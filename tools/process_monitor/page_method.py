@@ -75,12 +75,24 @@ METHOD_CARDS = [
         "code": "backend/app/core/agents/coordinator.py",
     },
     {
-        "title": "4️⃣ Deteksi 3 Indikator Synthesis Gap (Cooper)",
-        "desc": "Menghitung indikator **Fragmentasi**, **Inkonsistensi**, dan "
-                "**Ketidaklengkapan** dari fakta antar-paper per topik.",
+        "title": "4️⃣ Deteksi 4 Indikator Synthesis Gap (Cooper)",
+        "desc": "Menghitung indikator **Fragmentasi**, **Inkonsistensi**, "
+                "**Ketidaklengkapan**, dan **Ketiadaan Dukungan Bukti** dari fakta "
+                "antar-paper per topik.",
         "web": "tahap **🕳️ Synthesis Gap** dan tab **🕳️ Gap** pada 🏁 Hasil Akhir "
                "(tiap kartu gap memuat jenis indikatornya).",
         "code": "backend/app/core/agents/gap_detector.py",
+    },
+    {
+        "title": "4️⃣b Workflow-Stage Mining & Korroborasi Penulis",
+        "desc": "Tiap jurnal direkonstruksi menjadi 8 tahap metode (sumber data → alat) "
+                "dengan kutipan verbatim terverifikasi; tahap yang tidak pernah divariasikan "
+                "lintas jurnal menjadi bukti **Ketidaklengkapan** metodologis. Pernyataan "
+                "keterbatasan/future work penulis dicocokkan ke indikator sebagai **bukti "
+                "pendukung** — tidak mengubah skor.",
+        "web": "tabel **🧪 Tahapan metode lintas jurnal** dan badge **✍️ Dikuatkan pernyataan "
+               "penulis** pada kartu gap (tab 🕳️ Gap).",
+        "code": "backend/app/core/gap_detection/workflow_stages.py · paper_profiles.py",
     },
     {
         "title": "5️⃣ NLI Cross-check (3-Layer Discriminator)",

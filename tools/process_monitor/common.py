@@ -712,6 +712,49 @@ AUTHOR_KIND_LABELS = {
 }
 
 
+def _stage_matrix(gap: dict) -> dict:
+    for sub in gap.get("sub_indicators") or []:
+        if isinstance(sub, dict) and isinstance(sub.get("stage_matrix"), dict):
+            return sub["stage_matrix"]
+    return {}
+
+
+def render_stage_matrix(gap: dict) -> None:
+    """Matriks tahap metode x jurnal dari workflow-stage mining.
+
+    Tahap HOMOGEN = satu varian pada >= min_papers jurnal yang menyatakannya;
+    jurnal yang tidak menyatakan tahap tidak dihitung setuju. Ini bukti
+    indikator Ketidaklengkapan, bukan skor tambahan.
+    """
+    matrix = _stage_matrix(gap)
+    stages = matrix.get("stages") or []
+    if not stages:
+        return
+    homogeneous = [s for s in stages if s.get("homogeneous")]
+    st.markdown(
+        f"**🧪 Tahapan metode lintas jurnal** — {len(homogeneous)} dari {len(stages)} tahap "
+        f"tanpa variasi pada {matrix.get('n_papers', '?')} jurnal "
+        f"(kutipan tahap terverifikasi {matrix.get('verified_quotes', 0)}/"
+        f"{matrix.get('total_quotes', 0)}; pencocokan {matrix.get('matcher', '?')})"
+    )
+    rows = []
+    for s in stages:
+        variants = s.get("variants") or []
+        rows.append({
+            "Tahap": s.get("label") or s.get("stage"),
+            "Varian": len(variants),
+            "Pilihan dominan": (variants[0]["value"] if variants else "—"),
+            "Jurnal setuju": len(variants[0]["papers"]) if variants else 0,
+            "Tidak menyatakan": len(s.get("unstated_papers") or []),
+            "Status": "HOMOGEN" if s.get("homogeneous") else ("beragam" if variants else "—"),
+        })
+    st.dataframe(rows, width="stretch", hide_index=True)
+    for s in homogeneous:
+        variant = (s.get("variants") or [{}])[0]
+        for q in (variant.get("quotes") or [])[:2]:
+            st.markdown(f"> {q.get('quote', '')}  \n> — *{q.get('source') or '?'}* · tahap {s.get('label')}")
+
+
 def render_author_corroboration(gap: dict) -> None:
     """Pernyataan penulis yang sejalan dengan gap kolektif — bukti, bukan skor.
 
@@ -789,6 +832,7 @@ def _render_gaps_result(payload: dict) -> None:
 
         for ev in (gap.get("evidence") or [])[:5]:
             st.caption(f"🔎 Bukti: {ev}")
+        render_stage_matrix(gap)
         render_author_corroboration(gap)
         directions = gap.get("suggested_directions") or []
         if directions:

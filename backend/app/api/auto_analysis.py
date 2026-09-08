@@ -20,6 +20,12 @@ from ..core.recommendation.novelty import rank_proposals
 from ..core.pipeline.pipeline import process_pdf_as_document
 from ..core.pipeline.io import read_jsonl
 from ..core.gap_detection.paper_profiles import build_profiles
+from ..core.gap_detection.workflow_stages import (
+    build_workflow_prompt,
+    parse_workflow_json,
+    select_workflow_context,
+    verify_workflow,
+)
 from ..utils.job_store import (
     add_stage_artifact,
     complete_job,
@@ -261,6 +267,14 @@ def process_auto_analysis(job_id: str, pdf_paths: List[Path] | None = None):
                         c.content for c in processed_doc.chunks
                     )
                 ),
+                # Method/result sections for workflow-stage mining (Step 2c);
+                # falls back to the document head when sections were not detected.
+                "method_context": select_workflow_context(
+                    processed_doc.chunks,
+                    processed_doc.content or " ".join(
+                        c.content for c in processed_doc.chunks
+                    ),
+                ),
                 "already_indexed": already_indexed,
             })
 
@@ -472,15 +486,46 @@ Topik:"""
                 })
             return out
 
+        def _compute_workflows():
+            # Workflow-stage mining (P5): one call per journal, eight fixed
+            # stages, each value tied to a verbatim quote that is re-verified
+            # against the paper with the same threshold as the weaknesses.
+            prompts = [
+                build_workflow_prompt(
+                    p["title"],
+                    p.get("method_context") or (p.get("full_content") or "")[:3000],
+                )
+                for p in paper_contents
+            ]
+            raws = glm.generate_batch(prompts, max_tokens=700, format="json")
+            out = {}
+            for p, prompt, raw in zip(paper_contents, prompts, raws):
+                raw_text = raw if isinstance(raw, str) else str(raw)
+                _save_stage_artifact(
+                    job_id,
+                    "paper_analysis",
+                    "llm",
+                    label=f"Tahapan metode: {p['title'][:70]}",
+                    payload={"prompt": prompt, "response": raw_text},
+                )
+                stages = verify_workflow(
+                    parse_workflow_json(raw_text), p.get("full_content", "")
+                )
+                if stages:
+                    out[p["source"]] = stages
+            return out
+
         paper_groups = []
         paper_similarity = {"common_keywords": [], "shared_themes": [], "summary": ""}
         paper_weaknesses = []
+        paper_workflows: dict[str, dict] = {}
 
         from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=3) as _stage_pool:
+        with ThreadPoolExecutor(max_workers=4) as _stage_pool:
             _f_groups = _stage_pool.submit(_compute_groups)
             _f_sim = _stage_pool.submit(_compute_similarity)
             _f_weak = _stage_pool.submit(_compute_weaknesses)
+            _f_wf = _stage_pool.submit(_compute_workflows)
             try:
                 paper_groups = _f_groups.result()
             except Exception as group_err:
@@ -493,6 +538,10 @@ Topik:"""
                 paper_weaknesses = _f_weak.result()
             except Exception as weak_err:
                 logger.warning(f"Paper weakness analysis failed: {weak_err}")
+            try:
+                paper_workflows = _f_wf.result()
+            except Exception as wf_err:
+                logger.warning(f"Workflow-stage extraction failed: {wf_err}")
 
         # Per-journal side-channel for the gap analyzer: the coordinator only
         # hands it RAG passages, so author-stated weaknesses would otherwise
@@ -504,6 +553,7 @@ Topik:"""
             author_gaps, gap_note = _load_author_gaps(gap_job_id)
         paper_profiles = build_profiles(
             paper_contents, weaknesses=paper_weaknesses, author_gaps=author_gaps,
+            workflows=paper_workflows,
         )
         matched_gaps = sum(len(prof.author_gaps) for prof in paper_profiles.values())
         if gap_job_id and author_gaps and not matched_gaps:
@@ -516,6 +566,10 @@ Topik:"""
                 "tersurat": len(prof.weaknesses.get("tersurat") or []),
                 "tersirat": len(prof.weaknesses.get("tersirat") or []),
                 "author_gaps": len(prof.author_gaps),
+                "workflow_stages": len(prof.workflow or {}),
+                "workflow_verified": sum(
+                    1 for s in (prof.workflow or {}).values() if s.get("verified")
+                ),
             }
             for prof in paper_profiles.values()
         ]
@@ -531,6 +585,7 @@ Topik:"""
                 "weaknesses": len(paper_weaknesses),
                 "common_keywords": len(paper_similarity.get("common_keywords", [])),
                 "profiles": len(paper_profiles),
+                "workflows": len(paper_workflows),
             },
         )
         _save_stage_artifact(
@@ -541,6 +596,8 @@ Topik:"""
                 "groups": paper_groups,
                 "similarity": paper_similarity,
                 "weaknesses": paper_weaknesses,
+                # {source: {stage: {value, kutipan, verified, match_score}}}
+                "workflows": paper_workflows,
                 "profiles": profile_summary,
                 "author_gaps": {
                     "gap_job_id": gap_job_id or None,
