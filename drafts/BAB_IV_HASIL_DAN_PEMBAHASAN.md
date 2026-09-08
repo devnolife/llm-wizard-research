@@ -25,14 +25,19 @@ Komponen inti yang membedakan sistem ini dari pipeline RAG+LLM konvensional:
 | Fact Extractor (`fact_extractor.py`) | 599 | Ekstraksi entitas dan relasi dari teks |
 | Relation Classifier (`relation_classifier.py`) | 453 | Klasifikasi 3 jenis hubungan (kookurensi, kausal, kontradiksi) |
 | Coordinator Agent (`coordinator.py`) | 737 | Orkestrator LangGraph dengan 5 tool agen |
-| Gap Analyzer (`analyzer.py`) | 1.610 | Deteksi 4 indikator gap (fragmentasi, inkonsistensi, ketidaklengkapan, ketiadaan dukungan bukti) |
+| Gap Analyzer (`analyzer.py`) | 2.035 | Deteksi 4 indikator gap (fragmentasi, inkonsistensi, ketidaklengkapan, ketiadaan dukungan bukti) + korroborasi pernyataan penulis |
 | Support Gap (`support_gap.py`) | 423 | Indikator ke-4: uji kegagalan retrieval bukti primer *leave-one-out* |
-| Graph Metrics (`graph_metrics.py`) | 567 | Modularitas Newman, prediksi tautan Adamic-Adar, isolasi struktural |
-| Coverage Map (`coverage_map.py`) | 273 | *Evidence gap map* (Snilstveit dkk., 2016) untuk indikator ketidaklengkapan |
+| Graph Metrics (`graph_metrics.py`) | 573 | Modularitas Newman, prediksi tautan Adamic-Adar, isolasi struktural |
+| Coverage Map (`coverage_map.py`) | 287 | *Evidence gap map* (Snilstveit dkk., 2016) untuk indikator ketidaklengkapan; dukungan sinonim sumbu |
+| Coverage Axes (`coverage_axes.py`) | 275 | Sumbu peta bukti sadar domain: ontologi kurasi (YAML) > usulan LLM ber-*grounding* korpus > bawaan |
+| Paper Profiles (`paper_profiles.py`) | 266 | Kanal samping per jurnal (kekurangan penulis, gap eksplisit, tahap metode, daftar pustaka) menuju analyzer |
+| Workflow Stages (`workflow_stages.py`) | 358 | Rekonstruksi 8 tahap metode per jurnal dengan kutipan terverifikasi; deteksi tahap homogen lintas jurnal (Zhang & Zhang, 2025) |
+| References (`pipeline/references.py`) | 245 | Penguraian daftar pustaka menjadi entri berkunci DOI / penulis-tahun-judul (tanpa LLM) |
+| Citation Coupling (`citation_coupling.py`) | 207 | *Bibliographic coupling* antar jurnal (Kessler, 1963): komponen, Jaccard referensi, sitasi langsung |
 | Calibration (`calibration.py`) | 470 | ECE/Brier/AURC, *temperature scaling*, abstensi selektif, rantai provenans |
 | Novelty (`novelty.py`) | 305 | Skor kebaruan semantik untuk pemeringkatan usulan (bukan indikator gap) |
 
-**Total**: ~5.700 baris kode Python untuk komponen inti, dengan 508 unit test yang semuanya lulus.
+**Total**: ~7.900 baris kode Python untuk komponen inti, dengan 878 unit test yang terkumpul (semuanya lulus pada pemeriksaan terakhir).
 
 ### 4.1.3 Teknologi yang Digunakan
 
@@ -104,10 +109,14 @@ Sesuai framework evaluasi pada BAB III, metrik yang diukur:
 | M10 | Laju Abstensi Selektif | Proporsi indikator ber-`needs_review` beserta alasan abstensi |
 | M11 | Kelengkapan Provenans | Proporsi indikator dengan rantai klaim→jurnal→kutipan→validasi utuh |
 | M12 | Kebaruan Usulan | Distribusi *band* kebaruan (derivative / sweet spot / off-topic) usulan |
+| M13 | Stabilitas Lintas-Run (k/n) | Proporsi temuan bergantung-LLM yang muncul pada ≥ ⌈2n/3⌉ dari n *run* identik; Jaccard antar-run |
+| M14 | Korroborasi Penulis | Proporsi indikator lintas-paper yang didukung ≥ 1 pernyataan keterbatasan/*future work* penulis di dalam korpus |
 
 Metrik M9–M12 ditambahkan pada revisi metodologi (Subbab 3.6–3.7) sebagai
-konsekuensi penambahan indikator keempat dan lapisan kalibrasi; M1–M8 tetap
-diukur agar hasil pra-revisi dan pasca-revisi dapat dibandingkan langsung.
+konsekuensi penambahan indikator keempat dan lapisan kalibrasi; M13–M14 menyusul
+bersama pelaporan stabilitas lintas-run dan lapisan korroborasi penulis (Subbab
+3.6.2 dan 3.7.4). M1–M8 tetap diukur agar hasil pra-revisi dan pasca-revisi dapat
+dibandingkan langsung.
 
 Metrik berbasis pakar (EAR, LCS, AS, FDR, SHG, REP — hipotesis H4–H5) diukur
 terpisah melalui instrumen penilaian di `backend/experiments/expert_eval/`
@@ -441,6 +450,39 @@ unit test regresi (`backend/tests/test_gap_upgrade.py`) yang secara eksplisit
 menguji kondisi-kondisi tersebut — termasuk *embedder* yang mengembalikan
 `Tensor`, korpus dengan `sample_chunks` bertipe dict, dan matriks degeneratif —
 sehingga total menjadi **508 unit test** yang seluruhnya lulus.
+
+### 4.3.9 Sinyal Struktural Bebas-LLM: Kopling Bibliografis pada Korpus Forensik
+
+Metode fragmentasi kelima (Subbab 3.6.2, kopling bibliografis) diuji pada
+korpus 35 jurnal forensika digital yang sama, langsung dari daftar pustaka yang
+diurai tanpa LLM.
+
+#### Tabel 4.4: Penguraian Daftar Pustaka dan Kopling Bibliografis (35 jurnal)
+
+| Aspek | Nilai |
+|-------|-------|
+| Jurnal dengan ≥ 5 entri pustaka terurai (memenuhi syarat) | 25 dari 35 |
+| Jurnal dilewati (daftar pustaka tidak terdeteksi / < 5 entri) | 10 (termasuk 4 dengan 0 entri: editorial, bab buku, PDF Cyrillic) |
+| Entri terurai pada jurnal terbanyak | 73 (46 ber-DOI) |
+| Komponen graf kopling | 20 (ukuran 3, 3, 2, dan 17 jurnal tunggal) |
+| Pasangan jurnal tanpa referensi bersama & tanpa sitasi langsung | 295 dari 300 (isolasi 0,98) |
+| Sitasi langsung antar-jurnal korpus | 2 (keduanya terverifikasi benar: 1 via DOI, 1 via judul) |
+| Karya rujukan yang dibagi ≥ 2 jurnal | 5 (antara lain Piva, 2013, *An Overview on Image Forensics*; Riadi dkk., analisis *image forensics*) |
+| Modularitas Q partisi komponen | 0,58 |
+
+Hasilnya memperkuat, dari arah yang sepenuhnya independen dari LLM dan
+*embedding*, temuan fragmentasi pada Subbab 4.3.8 dan temuan bahwa sebagian
+besar tema rekomendasi hanya didukung satu jurnal: 25 jurnal yang membahas
+forensika digital hampir tidak berbagi basis rujukan (hanya 5 dari 300 pasangan
+yang terkopel) dan hampir tidak saling mengutip. Dua pengamatan metodologis
+penting dari pengujian ini: (1) pencocokan sitasi langsung berbasis kesamaan
+judul dengan ambang tetap empat kata isi menghasilkan 12 kandidat, 10 di
+antaranya positif palsu akibat kata domain umum ("*forensic*", "*digital*",
+"*evidence*"); ambang proporsional (≥ 60% kata isi himpunan terpendek, entri
+minimal lima kata isi) menyisakan tepat dua sitasi yang keduanya benar — ambang
+inilah yang dipakai; (2) sepuluh jurnal yang dilewati **tidak** dihitung sebagai
+terputus, sehingga angka isolasi 0,98 adalah properti dari 25 jurnal yang daftar
+pustakanya benar-benar terbaca, bukan artefak kegagalan penguraian.
 
 ---
 

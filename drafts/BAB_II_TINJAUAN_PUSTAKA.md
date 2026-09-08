@@ -80,6 +80,41 @@ Keempat indikator ini menjadi basis operasional bagi sistem yang dikembangkan da
 penelitian ini. Sistem tidak mengklaim menemukan synthesis gap secara final, melainkan
 mendeteksi indikator-indikator tersebut sebagai bahan pertimbangan bagi peneliti manusia.
 
+### 2.2.4 Sinyal Pendukung Deteksi Indikator dari Literatur Bibliometrika dan Penambangan Teks
+
+Keempat indikator di atas mendefinisikan *apa* yang dicari; literatur bibliometrika dan
+penambangan teks ilmiah menyediakan sinyal tambahan tentang *bagaimana* indikator itu
+dapat dikenali secara independen dari penilaian model bahasa. Tiga sinyal yang diadopsi
+penelitian ini adalah sebagai berikut.
+
+**Kopling bibliografis dan ko-sitasi.** Kessler [1963] memperkenalkan *bibliographic
+coupling*: dua dokumen dinyatakan berkopel bila keduanya mengutip karya yang sama, dan
+kekuatan kopling diukur dari jumlah referensi bersama. Small [1973] melengkapinya dengan
+*co-citation*, yakni kedekatan dua dokumen yang diukur dari seberapa sering keduanya
+dikutip bersama oleh dokumen lain. Dalam konteks synthesis gap, kopling bibliografis
+memberi sinyal fragmentasi yang bersifat struktural: sekumpulan paper tentang fenomena yang
+sama yang tidak berbagi satu pun referensi dan tidak saling mengutip menandakan untai
+literatur yang berkembang tanpa saling menyadari. Sinyal ini tidak bergantung pada
+*embedding* maupun LLM, sehingga dapat dipakai sebagai pembanding bebas-model bagi
+klasterisasi tematik.
+
+**Penambangan alur kerja metodologis dari teks penuh.** Zhang dan Zhang [2025] menunjukkan
+bahwa alur kerja penelitian (sumber data, prapemrosesan, model, evaluasi) dapat direkonstruksi
+secara otomatis dari teks penuh paper, bukan hanya dari abstrak. Rekonstruksi per tahap ini
+memungkinkan pertanyaan yang lebih tajam daripada "apakah metodenya sama": tahap mana yang
+tidak pernah divariasikan oleh seluruh literatur. Tahap yang homogen lintas paper merupakan
+operasionalisasi ketidaklengkapan metodologis yang dapat ditelusuri ke kalimat sumbernya.
+
+**Pernyataan keterbatasan penulis sebagai korroborasi.** Subbab 2.2.2 menegaskan bahwa
+saran *future work* dan keterbatasan yang dinyatakan penulis (*explicit gap*) bukan
+synthesis gap, karena keduanya merupakan penilaian satu paper atas dirinya sendiri. Namun
+pernyataan tersebut tetap bernilai sebagai **bukti pendukung** [Robinson et al., 2011]: bila
+suatu aspek yang ditemukan tidak tercakup secara kolektif oleh korpus juga disebut sebagai
+keterbatasan oleh penulis-penulis di dalam korpus itu, maka indikator lintas-paper tersebut
+terkorroborasi dari dua arah yang independen. Penelitian ini karena itu memakai pernyataan
+penulis hanya sebagai bukti yang dilampirkan pada indikator, bukan sebagai sumber indikator
+baru maupun sebagai komponen skor.
+
 ---
 
 ## 2.3 Large Language Models dan Retrieval-Augmented Generation
@@ -318,7 +353,7 @@ Beberapa penelitian terdahulu telah mengeksplorasi penggunaan teknik NLP dan AI 
 | 5 | GPT-based Gap Detection [berbagai, 2023-2024] | Prompting LLM langsung | ⚠️ Parsial — output bergantung pada prompt, rentan halusinasi | ❌ Tidak ada | Single-pass LLM | ❌ Tidak |
 | 6 | Literature-Based Discovery / ARROWSMITH [Swanson, 1986; Smalheiser & Swanson, 1998] | Model ABC — menemukan jembatan tersembunyi antar literatur terpisah | ⚠️ Parsial — hanya sinyal fragmentasi antar-literatur, tanpa taksonomi indikator | ❌ Tidak ada | Co-occurrence + penyaringan manual | ⚠️ Co-occurrence istilah, bukan fakta SPO |
 | 7 | Topic-Modeling Gap Detection [Abd-alrazaq et al., 2024] | BERTopic — deteksi gap dari kelangkaan topik (studi kasus COVID-19) | ⚠️ Parsial — gap level topik, bukan sintesis klaim lintas paper | ❌ Tidak ada | Pipeline topic modeling | ❌ Tidak |
-| 8 | **Penelitian ini** | **Neuro-Symbolic Agentic System** | **✅ Tiga indikator: fragmentasi, inkonsistensi, ketidaklengkapan** | **✅ Rule Engine + Fact Base** | **Agentic (multi-step)** | **✅ SPO triples** |
+| 8 | **Penelitian ini** | **Neuro-Symbolic Agentic System** | **✅ Empat indikator: fragmentasi, inkonsistensi, ketidaklengkapan, ketiadaan dukungan bukti** | **✅ Rule Engine + Fact Base** | **Agentic (multi-step)** | **✅ SPO triples** |
 
 ### 2.10.2 Kebaruan Penelitian Ini
 
@@ -351,20 +386,23 @@ Tinjauan literatur mutakhir memperkuat posisi ini dari dua arah. Pertama, hingga
 12. Giarratano, J. C., & Riley, G. D. (2005). *Expert Systems: Principles and Programming* (4th ed.). Thomson Course Technology.
 13. Han, B., et al. (2024). Automating Systematic Literature Reviews with Retrieval-Augmented Generation: A Comprehensive Overview. *Applied Sciences*, 14(19), 9103. https://doi.org/10.3390/app14199103
 14. Ji, S., et al. (2021). A Survey on Knowledge Graphs: Representation, Acquisition, and Applications. *IEEE Transactions on Neural Networks and Learning Systems*, 33(2), 494–514.
-15. LangChain Team. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. https://github.com/langchain-ai/langgraph.
-16. Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. *NeurIPS 2020*.
-17. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv preprint arXiv:2002.06177*.
-18. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage Books.
-19. Marshall, I. J., & Wallace, B. C. (2019). Toward Systematic Review Automation: A Practical Guide to Using Machine Learning Tools in Research Synthesis. *Systematic Reviews*, 8(1), 163.
-20. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *Proceedings of the 36th International Conference on Information Systems (ICIS 2015)*.
-21. OpenAI. (2023). GPT-4 Technical Report. *arXiv preprint arXiv:2303.08774*.
-22. Pare, G., Trudel, M. C., Jaana, M., & Kitsiou, S. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183–199.
-23. Pham, H., et al. (2025). ClaimPKG: Enhancing Claim Verification via Pseudo-Subgraph Generation with Lightweight Specialized LLM. *NAACL 2025*. https://doi.org/10.18653/v1/2025.naacl-short.68
-24. Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. *EMNLP 2019*.
-25. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*, 64(12), 1325–1330.
-26. Smalheiser, N. R., & Swanson, D. R. (1998). Using ARROWSMITH: A Computer-Assisted Approach to Formulating and Assessing Scientific Hypotheses. *Computer Methods and Programs in Biomedicine*, 57(3), 149–153.
-27. Swanson, D. R. (1986). Undiscovered Public Knowledge. *Library Quarterly*, 56(2), 103–118.
-28. Touvron, H., et al. (2023). LLaMA: Open and Efficient Foundation Language Models. *arXiv preprint arXiv:2302.13971*.
-29. Vaswani, A., et al. (2017). Attention Is All You Need. *NeurIPS 2017*.
-30. Williams, A., Nangia, N., & Bowman, S. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.
-31. Yao, S., et al. (2023). ReAct: Synergizing Reasoning and Acting in Language Models. *ICLR 2023*.
+15. Kessler, M. M. (1963). Bibliographic Coupling between Scientific Papers. *American Documentation*, 14(1), 10–25. https://doi.org/10.1002/asi.5090140103
+16. LangChain Team. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. https://github.com/langchain-ai/langgraph.
+17. Lewis, P., et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. *NeurIPS 2020*.
+18. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv preprint arXiv:2002.06177*.
+19. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage Books.
+20. Marshall, I. J., & Wallace, B. C. (2019). Toward Systematic Review Automation: A Practical Guide to Using Machine Learning Tools in Research Synthesis. *Systematic Reviews*, 8(1), 163.
+21. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *Proceedings of the 36th International Conference on Information Systems (ICIS 2015)*.
+22. OpenAI. (2023). GPT-4 Technical Report. *arXiv preprint arXiv:2303.08774*.
+23. Pare, G., Trudel, M. C., Jaana, M., & Kitsiou, S. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183–199.
+24. Pham, H., et al. (2025). ClaimPKG: Enhancing Claim Verification via Pseudo-Subgraph Generation with Lightweight Specialized LLM. *NAACL 2025*. https://doi.org/10.18653/v1/2025.naacl-short.68
+25. Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. *EMNLP 2019*.
+26. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*, 64(12), 1325–1330.
+27. Small, H. (1973). Co-citation in the Scientific Literature: A New Measure of the Relationship between Two Documents. *Journal of the American Society for Information Science*, 24(4), 265–269. https://doi.org/10.1002/asi.4630240406
+28. Smalheiser, N. R., & Swanson, D. R. (1998). Using ARROWSMITH: A Computer-Assisted Approach to Formulating and Assessing Scientific Hypotheses. *Computer Methods and Programs in Biomedicine*, 57(3), 149–153.
+29. Swanson, D. R. (1986). Undiscovered Public Knowledge. *Library Quarterly*, 56(2), 103–118.
+30. Touvron, H., et al. (2023). LLaMA: Open and Efficient Foundation Language Models. *arXiv preprint arXiv:2302.13971*.
+31. Vaswani, A., et al. (2017). Attention Is All You Need. *NeurIPS 2017*.
+32. Williams, A., Nangia, N., & Bowman, S. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.
+33. Yao, S., et al. (2023). ReAct: Synergizing Reasoning and Acting in Language Models. *ICLR 2023*.
+34. Zhang, H., & Zhang, C. (2025). Automated Generation of Research Workflows from Academic Papers: A Full-Text Mining Framework. *Journal of Informetrics*. https://doi.org/10.1016/j.joi.2025.101732

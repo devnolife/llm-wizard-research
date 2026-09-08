@@ -646,6 +646,8 @@ Fragmentasi dideteksi melalui *clustering* tematik yang dilaporkan bersama ukura
 
 4. **Penyaringan Jembatan Palsu:** Entitas generik yang terhubung ke hampir semua klaster (rasio kehadiran lintas-klaster di atas 0,6) dikeluarkan dari daftar kandidat. Tanpa penyaringan ini, entitas seperti "*machine learning*" akan selalu muncul sebagai jembatan terbaik dan menghasilkan gap semu.
 
+5. **Kopling Bibliografis Antar-Jurnal:** Sebagai sinyal struktural yang bebas dari LLM maupun *embedding*, daftar pustaka setiap paper diurai menjadi entri berkunci (DOI bila ada; jika tidak, penulis pertama–tahun–enam kata isi judul), lalu dibangun graf *bibliographic coupling* [Kessler, 1963]: dua paper terhubung bila berbagi sekurang-kurangnya satu referensi (bobot sisi = Jaccard himpunan referensi) atau salah satunya mengutip yang lain (dikenali dari DOI atau kecocokan ≥ 60% kata isi judul). Literatur dinyatakan **terfragmentasi secara bibliografis** bila graf terpecah menjadi dua komponen atau lebih — yakni ada kelompok paper yang tidak berbagi satu pun karya rujukan dan tidak saling mengutip. *Confidence* indikator memakai rumus isolasi butir 3 (proporsi pasangan paper yang terputus), *modularity* $Q$ partisi komponen dilaporkan sebagai bukti, bukan sebagai ambang keputusan, dan paper dengan kurang dari lima referensi terurai dikecualikan (dilaporkan sebagai *dilewati*) alih-alih diperlakukan sebagai terputus. Kutipan pendukung indikator ini adalah entri daftar pustaka verbatim yang menjadi jembatan antar-kelompok.
+
 #### Deteksi Inkonsistensi
 
 Deteksi inkonsistensi tidak lagi bersandar pada *pairwise* NLI sebagai penentu tunggal. Skor NLI diperlakukan sebagai satu sinyal di antara beberapa sinyal, karena dua kalimat dapat tampak bertentangan semata-mata karena diukur pada populasi, satuan, atau desain studi yang berbeda:
@@ -666,9 +668,15 @@ Ketidaklengkapan dideteksi melalui pemetaan cakupan yang bersifat semantik, buka
 
 2. **Pencocokan Aspek Semantik:** Aspek yang diharapkan dicocokkan dengan aspek yang benar-benar dibahas menggunakan kemiripan *embedding* dengan ambang 0,62 (atau kemiripan leksikal dengan ambang 0,55 bila *embedding* tidak tersedia). Pencocokan sama-persis yang digunakan sebelumnya menyebabkan sinonim seperti "*reproducibility*" dan "*reproducible experiments*" dihitung sebagai aspek yang hilang, sehingga menghasilkan gap semu.
 
-3. **Evidence Gap Map:** Selain matriks *paper* × *aspek*, sistem membangun matriks intervensi × luaran mengikuti praktik *evidence gap map* [Snilstveit dkk., 2016]. Matriks ini membedakan **sel kosong** (tidak ada satu pun studi) dari **sel tipis** (paling banyak dua studi) — perbedaan yang penting karena keduanya menyiratkan tingkat ketidakpastian yang berbeda.
+3. **Evidence Gap Map:** Selain matriks *paper* × *aspek*, sistem membangun matriks intervensi × luaran mengikuti praktik *evidence gap map* [Snilstveit dkk., 2016]. Matriks ini membedakan **sel kosong** (tidak ada satu pun studi) dari **sel tipis** (paling banyak dua studi) — perbedaan yang penting karena keduanya menyiratkan tingkat ketidakpastian yang berbeda. Sumbu matriks tidak memakai kosakata generik, melainkan ditentukan dengan urutan prioritas yang dapat diaudit: (a) ontologi domain yang dikurasi peneliti dalam berkas konfigurasi (baris, kolom, sinonim lintas bahasa, dan kolom penentu keputusan); (b) bila tidak tersedia, usulan LLM yang **disaring grounding korpus** — istilah yang kata isinya tidak pernah muncul di korpus dibuang karena merepresentasikan pengetahuan parametrik, bukan properti korpus; (c) kosakata bawaan sebagai cadangan terakhir. Asal sumbu dicatat pada setiap indikator.
 
 4. **Significance Assessment:** *Self-Critic tool* mengevaluasi apakah aspek yang tidak tercakup bersifat signifikan (*critical gap*) atau marginal.
+
+5. **Workflow-Stage Mining untuk Ketidaklengkapan Metodologis:** Mengadopsi penambangan alur kerja dari teks penuh [Zhang & Zhang, 2025], setiap paper direkonstruksi menjadi delapan tahap metode (sumber data, pengumpulan data, prapemrosesan, representasi/fitur, metode/model, metrik evaluasi, desain validasi, alat/lingkungan). Nilai tiap tahap wajib disertai kutipan verbatim 5–20 kata yang diverifikasi terhadap teks paper dengan ambang kecocokan 0,82 — ambang yang sama dengan verifikasi keterbatasan penulis; tahap yang tidak dinyatakan paper dibiarkan kosong, tidak ditebak. Nilai-nilai satu tahap lintas paper dikelompokkan dengan pencocokan semantik (ambang 0,62; leksikal 0,55), dan tahap dinyatakan **homogen** bila hanya ada satu varian pada sekurang-kurangnya tiga paper yang menyatakan tahap itu; paper yang tidak menyatakan tahap tidak dihitung sebagai setuju. Indikator ketidaklengkapan metodologis dilaporkan bila ada tahap homogen, dengan matriks tahap × paper sebagai bukti dan kutipan tahap terverifikasi sebagai provenans. Ini menggantikan pemeriksaan keragaman metode berbasis sepuluh kata kunci yang sebelumnya kerap berakhir pada label "metodologi tidak teridentifikasi".
+
+#### Korroborasi Pernyataan Penulis (Lapisan Bukti, Bukan Skor)
+
+Setiap indikator lintas-paper yang dihasilkan keempat detektor di atas dicocokkan dengan pernyataan keterbatasan dan *future work* yang ditulis penulis paper-paper terkait — dari telaah kekurangan per jurnal (poin tersurat dengan kutipan terverifikasi, dan poin tersirat) serta, bila tersedia, dari penambangan gap eksplisit per jurnal. Pencocokan memakai ambang semantik yang sama dengan pencocokan aspek (0,62; leksikal 0,55). Pernyataan yang cocok dilampirkan sebagai **bukti korroborasi**: hanya teks verbatim yang masuk ke daftar kutipan pendukung (dan karena itu ke rantai provenans), sedangkan poin tersirat dicatat sebagai sub-indikator. Sesuai Subbab 2.2.2, pernyataan penulis tidak pernah menjadi indikator tersendiri dan tidak mengubah *confidence*, vonis *Rule Engine*, maupun kalibrasi; ia hanya memperlihatkan bahwa temuan lintas-paper juga diakui dari dalam korpus.
 
 #### Deteksi Ketiadaan Dukungan Bukti
 
@@ -852,6 +860,20 @@ ada dalam korpus — sehingga *false-gap rate* (jumlah indikator palsu pada
 topik kontrol) dapat diukur per konfigurasi; sistem yang terkalibrasi
 seharusnya menghasilkan ≈0 indikator pada topik tersebut.
 
+#### Pelaporan Stabilitas Lintas-Run (k/n)
+
+Keluaran LLM tidak deterministik: pengukuran awal menunjukkan dua *run* pada
+masukan yang identik hanya tumpang tindih sekitar 75%, dan dari gabungan tiga
+*run* hanya sekitar sepertiga temuan muncul di ketiganya. Angka dari satu *run*
+karena itu diperlakukan sebagai satu undian, bukan sebagai hasil. Setiap temuan
+yang bergantung pada LLM dilaporkan bersama frekuensi kemunculannya **k/n**
+(muncul pada k dari n *run* dengan masukan identik). Untuk tahap penambangan
+pernyataan gap per jurnal — yang menjadi sumber korroborasi pada Subbab 3.6.2 —
+digunakan n = 3 dengan ambang stabil ⌈2n/3⌉ = 2; temuan di bawah ambang tetap
+disimpan dan ditampilkan sebagai **tidak stabil**, tetapi tidak diteruskan ke
+tahap berikutnya dan tidak masuk pemeringkatan. Frekuensi k/n adalah anotasi
+dan filter, bukan komponen skor: rumus prioritas usulan tidak berubah.
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │            DESAIN EKSPERIMENTAL                            │
@@ -942,15 +964,18 @@ Posisi sistem sebagai **alat bantu** (*decision support*) — bukan pengganti pe
 13. Hevner, A. R., et al. (2004). Design Science in Information Systems Research. *MIS Quarterly*, 28(1), 75-105.
 14. Higgins, J. P. T., & Thompson, S. G. (2002). Quantifying Heterogeneity in a Meta-Analysis. *Statistics in Medicine*, 21(11), 1539-1558. https://doi.org/10.1002/sim.1186
 15. Ji, S., et al. (2021). A Survey on Knowledge Graphs: Representation, Acquisition, and Applications. *IEEE TNNLS*.
-16. LangChain. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. *Documentation*.
-17. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv:2002.06177*.
-18. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage.
-19. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *ICIS 2015 Proceedings*.
-20. Neumann, M., et al. (2019). ScispaCy: Fast and Robust Models for Biomedical Natural Language Processing. *BioNLP 2019*.
-21. Newman, M. E. J. (2006). Modularity and Community Structure in Networks. *Proceedings of the National Academy of Sciences*, 103(23), 8577-8582. https://doi.org/10.1073/pnas.0601602103
-22. Pare, G., et al. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183-199.
-23. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*.
-24. Snilstveit, B., Vojtkova, M., Bhavsar, A., Stevenson, J., & Gaarder, M. (2016). Evidence & Gap Maps: A Tool for Promoting Evidence Informed Policy and Strategic Research Agendas. *Journal of Clinical Epidemiology*, 79, 120-129. https://doi.org/10.1016/j.jclinepi.2016.05.015
-25. Swanson, D. R. (1986). Fish Oil, Raynaud's Syndrome, and Undiscovered Public Knowledge. *Perspectives in Biology and Medicine*, 30(1), 7-18. https://doi.org/10.1353/pbm.1986.0087
-26. Vovk, V., Gammerman, A., & Shafer, G. (2005). *Algorithmic Learning in a Random World*. Springer.
-27. Williams, A., et al. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.
+16. Kessler, M. M. (1963). Bibliographic Coupling between Scientific Papers. *American Documentation*, 14(1), 10-25. https://doi.org/10.1002/asi.5090140103
+17. LangChain. (2024). LangGraph: Building Stateful, Multi-Actor Applications with LLMs. *Documentation*.
+18. Marcus, G. (2020). The Next Decade in AI: Four Steps Towards Robust Artificial Intelligence. *arXiv:2002.06177*.
+19. Marcus, G., & Davis, E. (2020). *Rebooting AI: Building Artificial Intelligence We Can Trust*. Vintage.
+20. Muller-Bloch, C., & Kranz, J. (2015). A Framework for Rigorously Identifying Research Gaps in Qualitative Literature Reviews. *ICIS 2015 Proceedings*.
+21. Neumann, M., et al. (2019). ScispaCy: Fast and Robust Models for Biomedical Natural Language Processing. *BioNLP 2019*.
+22. Newman, M. E. J. (2006). Modularity and Community Structure in Networks. *Proceedings of the National Academy of Sciences*, 103(23), 8577-8582. https://doi.org/10.1073/pnas.0601602103
+23. Pare, G., et al. (2015). Synthesizing Information Systems Knowledge: A Typology of Literature Reviews. *Information & Management*, 52(2), 183-199.
+24. Robinson, K. A., Saldanha, I. J., & McKoy, N. A. (2011). Development of a Framework to Identify Research Gaps from Systematic Reviews. *Journal of Clinical Epidemiology*.
+25. Small, H. (1973). Co-citation in the Scientific Literature: A New Measure of the Relationship between Two Documents. *Journal of the American Society for Information Science*, 24(4), 265-269. https://doi.org/10.1002/asi.4630240406
+26. Snilstveit, B., Vojtkova, M., Bhavsar, A., Stevenson, J., & Gaarder, M. (2016). Evidence & Gap Maps: A Tool for Promoting Evidence Informed Policy and Strategic Research Agendas. *Journal of Clinical Epidemiology*, 79, 120-129. https://doi.org/10.1016/j.jclinepi.2016.05.015
+27. Swanson, D. R. (1986). Fish Oil, Raynaud's Syndrome, and Undiscovered Public Knowledge. *Perspectives in Biology and Medicine*, 30(1), 7-18. https://doi.org/10.1353/pbm.1986.0087
+28. Vovk, V., Gammerman, A., & Shafer, G. (2005). *Algorithmic Learning in a Random World*. Springer.
+29. Williams, A., et al. (2018). A Broad-Coverage Challenge Corpus for Sentence Understanding through Inference. *NAACL 2018*.
+30. Zhang, H., & Zhang, C. (2025). Automated Generation of Research Workflows from Academic Papers: A Full-Text Mining Framework. *Journal of Informetrics*. https://doi.org/10.1016/j.joi.2025.101732
