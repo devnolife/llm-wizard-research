@@ -719,6 +719,52 @@ def _stage_matrix(gap: dict) -> dict:
     return {}
 
 
+AXES_SOURCE_LABELS = {
+    "curated": "ontologi domain kurasi (YAML)",
+    "llm_grounded": "usulan LLM yang lolos grounding korpus",
+    "default": "kosakata bawaan (generik)",
+}
+
+
+def _sub_dict(gap: dict, key: str) -> dict:
+    for sub in gap.get("sub_indicators") or []:
+        if isinstance(sub, dict) and isinstance(sub.get(key), dict):
+            return sub[key]
+    return {}
+
+
+def render_coverage_map(gap: dict) -> None:
+    """Peta bukti (evidence gap map): grid baris x kolom berisi JUMLAH studi.
+
+    Sel kosong adalah KANDIDAT gap, bukan gap (tidak ada aturan 'count < k' di
+    literatur). Asal sumbu ditampilkan agar pembaca tahu apakah peta memakai
+    ontologi domain yang dikurasi, usulan LLM yang tergrounding, atau bawaan.
+    """
+    matrix = _sub_dict(gap, "coverage_matrix")
+    grid = matrix.get("grid") or []
+    if not grid:
+        return
+    axes = _sub_dict(gap, "axes_spec")
+    source = axes.get("source") or "default"
+    st.markdown(
+        f"**🗺️ Peta bukti** — {matrix.get('empty_cells', 0)} sel kosong dari "
+        f"{len(matrix.get('rows') or [])}×{len(matrix.get('columns') or [])} "
+        f"(kepadatan {float(matrix.get('density') or 0):.0%}) · sumbu: "
+        f"{AXES_SOURCE_LABELS.get(source, source)}"
+        + (f" `{axes['slug']}.yaml`" if axes.get("slug") else "")
+    )
+    st.dataframe([{"Baris \\ Kolom": r.get("row"), **{k: v for k, v in r.items() if k != "row"}}
+                  for r in grid], width="stretch", hide_index=True)
+    notes = list(axes.get("notes") or [])
+    if axes.get("dropped_ungrounded"):
+        notes.append("Istilah LLM yang dibuang karena tidak ada di korpus: "
+                     + ", ".join(axes["dropped_ungrounded"][:8]))
+    if axes.get("important_columns"):
+        notes.append("Kolom penentu keputusan (kurasi): " + ", ".join(axes["important_columns"]))
+    for n in notes:
+        st.caption(n)
+
+
 def render_stage_matrix(gap: dict) -> None:
     """Matriks tahap metode x jurnal dari workflow-stage mining.
 
@@ -832,6 +878,7 @@ def _render_gaps_result(payload: dict) -> None:
 
         for ev in (gap.get("evidence") or [])[:5]:
             st.caption(f"🔎 Bukti: {ev}")
+        render_coverage_map(gap)
         render_stage_matrix(gap)
         render_author_corroboration(gap)
         directions = gap.get("suggested_directions") or []

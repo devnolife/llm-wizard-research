@@ -318,6 +318,7 @@ def _render_indicator_card(g: dict, chunks_by_id: dict) -> None:
             st.caption("Jurnal terkait: " + ", ".join(short_name(p, 40) for p in related[:12])
                        + (f" … (+{len(related) - 12})" if len(related) > 12 else ""))
 
+        _render_coverage_map(g)
         _render_stage_matrix(g)
         _render_author_corroboration(g)
 
@@ -364,6 +365,47 @@ def _stage_matrix(g: dict) -> dict:
         if isinstance(sub, dict) and isinstance(sub.get("stage_matrix"), dict):
             return sub["stage_matrix"]
     return {}
+
+
+def _sub_dict(g: dict, key: str) -> dict:
+    for sub in g.get("sub_indicators") or []:
+        if isinstance(sub, dict) and isinstance(sub.get(key), dict):
+            return sub[key]
+    return {}
+
+
+_AXES_SOURCE_LABELS = {
+    "curated": "ontologi domain kurasi (YAML)",
+    "llm_grounded": "usulan LLM yang lolos grounding korpus",
+    "default": "kosakata bawaan (generik)",
+}
+
+
+def _render_coverage_map(g: dict) -> None:
+    """Grid baris x kolom berisi jumlah studi; sel kosong = kandidat gap, bukan gap.
+    Asal sumbu (kurasi / LLM grounded / bawaan) ditampilkan agar bisa diaudit."""
+    matrix = _sub_dict(g, "coverage_matrix")
+    grid = matrix.get("grid") or []
+    if not grid:
+        return
+    axes = _sub_dict(g, "axes_spec")
+    source = axes.get("source") or "default"
+    with st.expander(
+        f"🗺️ Peta bukti · {matrix.get('empty_cells', 0)} sel kosong dari "
+        f"{len(matrix.get('rows') or [])}×{len(matrix.get('columns') or [])} · sumbu: "
+        f"{_AXES_SOURCE_LABELS.get(source, source)}"
+        + (f" ({axes['slug']}.yaml)" if axes.get("slug") else ""),
+        expanded=False,
+    ):
+        st.dataframe([{"Baris \\ Kolom": r.get("row"), **{k: v for k, v in r.items() if k != "row"}}
+                      for r in grid], width="stretch", hide_index=True)
+        for n in axes.get("notes") or []:
+            st.caption(n)
+        if axes.get("dropped_ungrounded"):
+            st.caption("Istilah usulan LLM yang dibuang karena tidak ada di korpus: "
+                       + ", ".join(axes["dropped_ungrounded"][:8]))
+        st.caption("Sel berisi JUMLAH studi (bukan skor). Sel kosong adalah kandidat untuk "
+                   "dinilai peneliti — literatur tidak menetapkan aturan 'count < k'.")
 
 
 def _render_stage_matrix(g: dict) -> None:

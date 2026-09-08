@@ -165,9 +165,20 @@ def _axis_values(
     return unique
 
 
-def _terms_present(text: str, terms: Sequence[str]) -> List[str]:
+def _terms_present(
+    text: str,
+    terms: Sequence[str],
+    aliases: Optional[Dict[str, Sequence[str]]] = None,
+) -> List[str]:
+    """Canonical terms present in ``text``, directly or via one of their aliases."""
     low = text.lower()
-    return [t for t in terms if t in low]
+    aliases = aliases or {}
+    present: List[str] = []
+    for term in terms:
+        variants = [term, *aliases.get(term, ())]
+        if any(v and v.lower() in low for v in variants):
+            present.append(term)
+    return present
 
 
 def build_coverage_matrix(
@@ -177,13 +188,16 @@ def build_coverage_matrix(
     important_columns: Optional[Iterable[str]] = None,
     paper_ref=None,
     matcher: Optional[SemanticMatcher] = None,
+    aliases: Optional[Dict[str, Sequence[str]]] = None,
 ) -> CoverageMatrix:
     """Construct the evidence gap map from the analyzed corpus.
 
     Axis values are taken from structured extraction fields when present
     (`domain`, `setting`, `population`, `intervention` for rows; `outcome`,
     `metric` for columns) and fall back to vocabulary matching over the paper
-    text otherwise, so legacy jobs still produce a usable matrix.
+    text otherwise, so legacy jobs still produce a usable matrix. ``aliases``
+    maps a canonical axis term to synonyms (e.g. Indonesian/English spellings)
+    that also count as a hit for that term.
 
     A single paper may occupy several cells — the mapping is many-to-many, as
     the report prescribes.
@@ -206,10 +220,10 @@ def build_coverage_matrix(
 
         rows = _axis_values(paper, ("domain", "setting", "population", "intervention"))
         if not rows:
-            rows = _terms_present(text, row_terms)
+            rows = _terms_present(text, row_terms, aliases)
         columns = _axis_values(paper, ("outcome", "metric", "outcomes"))
         if not columns:
-            columns = _terms_present(text, column_terms)
+            columns = _terms_present(text, column_terms, aliases)
 
         if not rows or not columns:
             unmapped.append(ref)

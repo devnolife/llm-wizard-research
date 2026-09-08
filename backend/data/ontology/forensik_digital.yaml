@@ -1,0 +1,66 @@
+# Sumbu Evidence Gap Map untuk korpus FORENSIK DIGITAL — DRAF untuk dikurasi peneliti.
+#
+# Dipakai GapAnalyzer (indikator Ketidaklengkapan, metode evidence_gap_map) bila topik
+# analisis cocok dengan salah satu kata di `match`. Istilah dicocokkan sebagai substring
+# huruf kecil pada teks paper; `aliases` menautkan ejaan/bahasa lain ke istilah kanonik.
+# Ubah bebas: hanya SUMBU peta yang berubah, aturan "sel kosong = kandidat" tetap.
+# Lokasi alternatif: set env COVERAGE_AXES_DIR.
+note: Draf ontologi domain forensik digital (8 Sep 2026); belum divalidasi pembimbing.
+
+match:
+  - forensik
+  - forensic
+  - bukti digital
+  - digital evidence
+  - chain of custody
+  - barang bukti
+
+# Baris = domain / objek / tahapan investigasi yang dipelajari paper.
+rows:
+  - akuisisi
+  - analisis artefak
+  - pelaporan
+  - chain of custody
+  - forensik mobile
+  - forensik citra
+  - forensik video
+  - forensik jaringan
+  - forensik cloud
+  - anti-forensik
+
+# Kolom = luaran / dimensi mutu yang diukur atau dibahas paper.
+columns:
+  - akurasi
+  - validasi tool
+  - admisibilitas
+  - reproduksibilitas
+  - waktu proses
+  - integritas bukti
+  - privasi
+  - standar
+
+# Kolom yang dianggap menentukan keputusan (sel kosong di kolom ini = kandidat gap signifikan).
+important_columns:
+  - admisibilitas
+  - integritas bukti
+  - validasi tool
+
+aliases:
+  akuisisi: [acquisition, imaging, pencitraan disk, live acquisition]
+  analisis artefak: [artifact analysis, artefact analysis, analisis artifak]
+  pelaporan: [reporting, laporan forensik, expert report]
+  chain of custody: [rantai kustodi, rantai bukti, custody]
+  forensik mobile: [mobile forensics, smartphone forensics, android forensics, ios forensics]
+  forensik citra: [image forensics, forgery detection, deteksi pemalsuan citra, manipulasi citra]
+  forensik video: [video forensics, cctv, rekaman video]
+  forensik jaringan: [network forensics, lalu lintas jaringan, packet capture]
+  forensik cloud: [cloud forensics, penyimpanan awan]
+  anti-forensik: [anti-forensics, anti forensic, penyamaran bukti]
+  akurasi: [accuracy, ketepatan, precision, recall]
+  validasi tool: [tool validation, validasi alat, tool testing, pengujian alat]
+  admisibilitas: [admissibility, admissible, dapat diterima di pengadilan, alat bukti yang sah]
+  reproduksibilitas: [reproducibility, replikasi, dapat direproduksi]
+  waktu proses: [processing time, runtime, latency, kecepatan]
+  integritas bukti: [evidence integrity, hash, integritas data, tamper]
+  privasi: [privacy, data pribadi, perlindungan data]
+  standar: [standard, iso, sni, sop, guideline, pedoman]

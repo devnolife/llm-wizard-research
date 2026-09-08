@@ -49,6 +49,7 @@ from .adjudication import (
 )
 from .semantic_match import SemanticMatcher
 from .coverage_map import build_coverage_matrix, mark_important_columns
+from .coverage_axes import resolve_axes
 from .calibration import build_provenance, load_calibrator
 from .support_gap import (
     MAX_REPORTED_CLAIMS,
@@ -727,14 +728,22 @@ class GapAnalyzer:
         # "count < k and quality < q", so significance comes from the explicit
         # importance overlay rather than an invented threshold.
         if len(papers) >= 3:
-            matrix = build_coverage_matrix(papers, paper_ref=_paper_ref)
+            # Sumbu sadar domain (Fase 4): kurasi YAML > usulan LLM yang lolos
+            # grounding korpus > kosakata bawaan. Hanya sumbunya yang berubah;
+            # aturan sel kosong dan rumus confidence di bawah tetap.
+            axes = resolve_axes(topic, papers, llm=self.llm)
+            matrix = build_coverage_matrix(
+                papers, row_terms=axes.rows, column_terms=axes.columns,
+                important_columns=axes.important_columns, paper_ref=_paper_ref,
+                aliases=axes.aliases,
+            )
             # A map needs at least a 2x2 grid to say anything: with a single row
             # or column there is nothing to compare against, and every cell is
             # trivially "the whole corpus".
             if len(matrix.rows) >= 2 and len(matrix.columns) >= 2:
                 matrix = mark_important_columns(
                     matrix,
-                    expected_aspects,
+                    list(expected_aspects) + list(axes.important_columns),
                     matcher=SemanticMatcher.from_vector_store(self.vector_store),
                 )
                 candidates = matrix.candidate_gaps()
@@ -767,6 +776,14 @@ class GapAnalyzer:
                             f"{', '.join(matrix.rows[:6])}",
                             f"Columns (outcome/question dimension): "
                             f"{', '.join(matrix.columns[:6])}",
+                            (
+                                f"Axes source: {axes.source}"
+                                + (f" ({axes.slug}.yaml)" if axes.slug else "")
+                                + (f"; {len(axes.dropped_ungrounded)} LLM-proposed term(s) "
+                                   f"dropped as absent from the corpus"
+                                   if axes.dropped_ungrounded else "")
+                                + "."
+                            ),
                             f"Cell values are study counts, not weighted evidence "
                             f"scores; one study may occupy several cells "
                             f"(many-to-many mapping).",
@@ -802,7 +819,8 @@ class GapAnalyzer:
                             papers=papers,
                         ),
                         detection_method="evidence_gap_map",
-                        sub_indicators=[{"coverage_matrix": matrix.to_dict()}],
+                        sub_indicators=[{"coverage_matrix": matrix.to_dict()},
+                                        {"axes_spec": axes.to_dict()}],
                     ))
         
         # Methodology diversity. Workflow-stage mining (P5) is authoritative
