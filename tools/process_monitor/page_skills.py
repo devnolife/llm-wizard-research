@@ -190,12 +190,10 @@ with col_risiko:
         for t in items:
             st.markdown(f"- {t}")
 
-# ── Kata kunci → Cari Paper ───────────────────────────────────────────────────
+# ── Kata kunci literatur ──────────────────────────────────────────────────────────────
 keywords = [str(k) for k in (rec.get("keywords") or []) if str(k).strip()]
 if keywords:
     st.subheader("🔎 Kata Kunci Literatur")
     st.markdown(" ".join(f"`{k}`" for k in keywords))
-    if st.button("🔎 Cari paper dengan kata kunci ini", type="secondary"):
-        st.session_state["paper_query"] = " ".join(keywords[:3])
-        st.session_state["paper_mode"] = "🔑 Kata kunci langsung"
-        st.switch_page("page_papers.py")
+    st.caption("Pakai kata kunci ini di Google Scholar / Scopus / OpenAlex secara manual — "
+               "pencarian literatur luar tidak dilakukan aplikasi ini.")

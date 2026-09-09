@@ -140,7 +140,7 @@ menu groups expose each pipeline stage in technical detail. *Wizard Lite* used t
 
 ## Usage
 
-1. **Upload Papers** — Upload 3–10 PDF papers on the *Proses & Hasil* page (or pick open-access papers on *Cari Paper* and let the server download them)
+1. **Upload Papers** — Upload 3–10 PDF papers on the *Proses & Hasil* page (or start from the *🧭 Wizard*)
 2. **Auto-Analysis** — System extracts facts, builds KG, runs agentic analysis; progress is shown per phase
 3. **View Results** — Topics, gap indicators with provenance, proposals with novelty score, roadmap; export the whole run as one Markdown file
 4. **Search** — Query external APIs (arXiv, Semantic Scholar, CORE, PubMed, CrossRef, Europe PMC, ScienceDirect)

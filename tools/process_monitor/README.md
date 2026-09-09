@@ -25,13 +25,9 @@ menjadi **halaman pembuka** aplikasi ini.
    (job antre berhenti seketika, job berjalan berhenti di batas tahap
    berikutnya), dan tombol 🗑️ **hapus** (dengan konfirmasi; job yang sedang
    berjalan harus dibatalkan dulu).
-2. **🔎 Cari Paper** — dua mode: **💡 ide penelitian** (AI/LLM lokal mengubah ide
-   Bahasa Indonesia menjadi kata kunci akademik Inggris) atau **🔑 kata kunci
-   langsung**. Hasil dari 8 sumber akademik (arXiv, Europe PMC, CrossRef,
-   Semantic Scholar, CORE, PubMed, Scopus, ScienceDirect), lihat badge
-   🔓 open-access / 🎯 coba-via-DOI / 🔒 berbayar, centang paper, lalu
-   **📥 Unduh & Analisis** — PDF open-access legal diunduh server (langsung /
-   resolve Unpaywall) dan otomatis jadi job analisis baru.
+2. *(dihapus 9 Sep 2026)* **🔎 Cari Paper** — pencarian literatur luar (8 sumber
+   akademik + unduh OA) dicopot dari UI karena di luar lingkup proposal; endpoint
+   `POST /api/papers/*` tetap ada untuk skrip/CLI (`backend/scripts/papers_cli.py`).
 3. **🔬 Proses & Hasil** — unggah PDF / pilih job; lalu:
    - **🤖 Unduh paket lengkap (.md)**: satu berkas Markdown berisi *seluruh*
      hasil run (korpus, ringkasan, status lapisan metode, tiap indikator gap
@@ -100,7 +96,7 @@ menjadi **halaman pembuka** aplikasi ini.
    (`.agents/skills/`) → menyusun **rekomendasi penelitian lengkap**: judul,
    latar belakang, rumusan masalah, tujuan, metodologi bertahap dengan **bagan
    alur (graphviz)**, rencana eksperimen (tabel), kontribusi, risiko, dan kata
-   kunci literatur (tombol lompat ke halaman Cari Paper). Engine: GitHub
+   kunci literatur (untuk dicari manual di Scholar/Scopus/OpenAlex). Engine: GitHub
    Copilot via SDK resmi, fallback Ollama.
 8. **🧾 Log Event** — riwayat event mentah (metadata-only) per job.
 
@@ -133,7 +129,6 @@ python -m venv .venv && .venv/bin/pip install streamlit requests pyvis
 | `wl_common.py` | Klien backend & komponen baca untuk halaman Wizard (`api_base` tanpa `/api`) |
 | `common.py` | Helper API, interpretasi event, semua renderer |
 | `page_dashboard.py` | Halaman dashboard & riwayat |
-| `page_papers.py` | Halaman cari paper multi-sumber + unduh OA + analisis |
 | `page_analysis.py` | Halaman proses + hasil akhir + graph |
 | `page_method.py` | Halaman metode proposal + eksperimen ablasi + adversarial |
 | `page_skills.py` | Halaman ide → rekomendasi penelitian lengkap (LLM memilih skill) |
@@ -165,7 +160,7 @@ python -m venv .venv && .venv/bin/pip install streamlit requests pyvis
   respons menyertakan `engine` yang dipakai.
 - `POST /api/papers/fetch-pdf` — unduh SATU PDF open-access untuk sebuah paper
   (pdf_url / DOI via Unpaywall) dan kirim sebagai berkas `application/pdf` —
-  dipakai tombol ⬇️ PDF per dokumen di halaman Cari Paper.
+  (halaman Cari Paper di UI sudah dihapus; endpoint tetap dipakai skrip/CLI).
 - `GET /api/skills` — daftar 95 AI-Research-SKILLs terpasang (nama+deskripsi
   dari frontmatter `SKILL.md`).
 - `POST /api/skills/ask` — jawab pertanyaan riset dengan satu skill sebagai

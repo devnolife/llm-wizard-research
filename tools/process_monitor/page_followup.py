@@ -118,28 +118,6 @@ with st.container(border=True):
         st.caption(f"📄 Jurnal yang terlibat: {shown}{extra}")
     for d in gap.get("suggested_directions") or []:
         st.caption(f"🧭 Arah yang disarankan: {d}")
-    if st.button(
-        "🔎 Cari jurnal baru untuk menguji gap ini",
-        key="followup_search_gap",
-        help="Buka halaman Cari Paper dengan ide pencarian sudah terisi dari gap ini",
-    ):
-        idea = (
-            f"Cari literatur untuk menguji gap penelitian berikut ({gap_badge}): "
-            f"{_short(gap.get('description'), 350)} "
-        )
-        dirs = gap.get("suggested_directions") or []
-        if dirs:
-            idea += "Arah yang dicari: " + "; ".join(str(d) for d in dirs[:2])
-        st.session_state["paper_idea"] = " ".join(idea.split())
-        st.session_state["paper_mode"] = "💡 Ide penelitian (AI ubah jadi kata kunci)"
-        for k in ("paper_results", "paper_generated", "paper_selected"):
-            st.session_state.pop(k, None)
-        st.switch_page("page_papers.py")
-    st.caption(
-        "💡 Uji validitas gap: bila jurnal baru ternyata **sudah menutup** aspek ini, "
-        "gap melemah (baik diketahui sekarang); bila **tidak ada**, klaim gap Anda "
-        "makin kuat — plus dapat referensi segar untuk proposal."
-    )
 
 render_gap_method_explainer()
 
