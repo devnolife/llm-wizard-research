@@ -61,6 +61,7 @@ RECORD_SOURCES = {
     "novelty": ("novelty", "gaps_novelty_jsonl"),
     "recommendation": ("recommendation", "proposals_jsonl"),
     "themes": ("recommendation", "themes_jsonl"),
+    "narration": ("recommendation", "narasi_jsonl"),
 }
 
 # Kolom yang boleh dipakai memfilter; daftar putih agar query sembarang ditolak.
@@ -71,6 +72,7 @@ PHASE_FACETS = {
     "novelty": ("source", "novelty_status", "gap_type", "topic"),
     "recommendation": ("source", "topic", "band", "theme_id"),
     "themes": ("journal_support",),
+    "narration": ("basis", "topik"),
 }
 
 MAX_PAGE = 500

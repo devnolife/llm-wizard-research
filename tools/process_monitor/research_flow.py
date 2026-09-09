@@ -32,7 +32,7 @@ from research_common import (
     stage_states,
     substep_states,
 )
-from research_explorer import render_candidate_trace
+from research_explorer import render_candidate_trace, render_title_narration
 from research_vocab import (
     ENUM_LABELS,
     enum_label,
@@ -267,6 +267,8 @@ def render_stage_body(job_id: str, stage: dict, events: list[dict]) -> None:
     names = ["🧭 Alur & angka", "📈 Grafik", "🗂️ Data lengkap", "💻 Kode & rumus"]
     if key == "gap_mining":
         names.insert(2, "🔍 Jejak per kandidat")
+    if key == "recommendation":
+        names.insert(2, "✍️ Judul siap-pakai")
     tabs = st.tabs(names)
     with tabs[0]:
         if not payload:
@@ -286,6 +288,9 @@ def render_stage_body(job_id: str, stage: dict, events: list[dict]) -> None:
     if key == "gap_mining":
         with tabs[2]:
             render_candidate_trace(job_id)
+    if key == "recommendation":
+        with tabs[2]:
+            render_title_narration(job_id)
     with tabs[-2]:
         render_records_tab(job_id, key, trace=render_record_trace)
         render_glossary(key)

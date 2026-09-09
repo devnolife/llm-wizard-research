@@ -1,9 +1,9 @@
-"""Penelusur: rantai per kandidat (chunk → LLM → gap → verifikasi) dan
-penjelajah tema (tema → anggota → jurnal pendukung).
+"""Penelusur: rantai per kandidat (chunk → LLM → gap → verifikasi), penjelajah
+tema (tema → anggota → jurnal pendukung), dan judul siap-pakai (narasi LLM).
 
-Keduanya membaca berkas samping yang ditulis pipeline (``candidates_jsonl``,
-``themes_jsonl``) dan menyatakan terang-terangan bila job lama tidak
-memilikinya, alih-alih menampilkan panel kosong.
+Semuanya membaca berkas samping yang ditulis pipeline (``candidates_jsonl``,
+``themes_jsonl``, ``narasi_jsonl``) dan menyatakan terang-terangan bila job lama
+tidak memilikinya, alih-alih menampilkan panel kosong.
 """
 
 from __future__ import annotations
@@ -236,3 +236,58 @@ def render_theme_browser(job_id: str) -> None:
     if (theme.get("size") or 0) >= 5 and (theme.get("journal_support") or 0) >= 3:
         st.caption("⚠️ Tema besar: periksa apakah anggota di atas benar-benar satu topik. Bila "
                    "campur, jumlah jurnal pendukungnya jangan dikutip sebagai kesepakatan.")
+
+
+_BASIS_LABEL = {"tema_lintas_jurnal": "tema lintas-jurnal", "proposal": "proposal berperingkat"}
+
+
+def render_title_narration(job_id: str) -> None:
+    """Judul siap-pakai: judul + latar belakang + alasan + metode tulisan LLM untuk
+    butir teratas. Peringkat & skor berasal dari rumus project; LLM hanya menulis."""
+    probe = fetch_records(job_id, "narration", limit=1)
+    if probe.get("error"):
+        st.info("Narasi judul **tidak tersimpan pada analisis ini** (job dibuat sebelum fitur "
+                "ini ada). Ulangi tahap rekomendasi saja — gap mining tidak diulang:  \n"
+                f"`curl -X POST <api>/api/research/{job_id}/continue -F start_from=recommendation`")
+        return
+    rows = fetch_all_records(job_id, "narration")
+    if not rows:
+        st.info("Tahap rekomendasi selesai **tanpa narasi** — LLM tidak tersedia atau tidak "
+                "menjawab saat itu (lihat catatan tahap di tab *Alur & angka*). Peringkat dan "
+                "skor tidak terpengaruh. Ulangi tahap rekomendasi untuk mencoba lagi.")
+        return
+
+    st.caption("Judul, latar belakang, alasan, dan metode di bawah **ditulis LLM** dari kutipan "
+               "gap yang sudah diperingkat rumus project. LLM tidak menilai dan tidak mengubah "
+               "urutan; anggap ini bahan awal yang perlu Anda nilai, bukan hasil akhir. Tema "
+               "lintas-jurnal didahulukan karena didukung lebih dari satu jurnal.")
+    k = st.columns(3)
+    k[0].metric("butir dinarasikan", len(rows))
+    k[1].metric("dari tema lintas-jurnal",
+                sum(1 for r in rows if r.get("basis") == "tema_lintas_jurnal"))
+    k[2].metric("model", str(rows[0].get("model") or "-").removeprefix("copilot:"))
+
+    for r in rows:
+        with st.container(border=True):
+            basis = _BASIS_LABEL.get(str(r.get("basis")), str(r.get("basis")))
+            head = (f"{basis} · {r.get('jumlah_jurnal')} jurnal · {r.get('jumlah_gap')} gap"
+                    if r.get("basis") == "tema_lintas_jurnal"
+                    else f"{basis} #{r.get('peringkat')}")
+            st.markdown(f"### {r.get('no')}. {r.get('judul')}")
+            st.caption(f"{head} · topik {enum_label('topic', r.get('topik')).split(' (')[0]} · "
+                       f"skor prioritas {r.get('skor_prioritas')} · kebaruan: {r.get('kebaruan')}")
+            st.markdown(f"**Latar belakang.** {r.get('latar_belakang') or '—'}")
+            st.markdown(f"**Alasan.** {r.get('alasan') or '—'}")
+            st.markdown(f"**Metode.** {r.get('metode') or '—'}")
+            with st.expander("Kutipan gap yang menjadi bahan (verbatim dari jurnal)", expanded=False):
+                for q in r.get("kutipan") or []:
+                    st.markdown(f"- **{q.get('source')}** — {q.get('gap_statement')}")
+            if st.button("🧠 Kembangkan jadi rencana penelitian lengkap",
+                         key=f"narr_dev_{job_id}_{r.get('no')}",
+                         help="Buka halaman Skill Riset dengan judul, latar belakang, dan metode "
+                              "ini sudah terisi"):
+                idea = (f"{r.get('judul')}. {r.get('latar_belakang') or ''} "
+                        f"Pendekatan yang dipertimbangkan: {r.get('metode') or ''}")
+                st.session_state["skill_idea"] = " ".join(idea.split())
+                st.session_state.pop("skill_reco", None)
+                st.switch_page("page_skills.py")

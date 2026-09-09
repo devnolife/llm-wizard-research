@@ -279,6 +279,8 @@ class TestOrchestratorAsQueueHandler:
 class TestStageRecommendation:
     """Scoring must match the CLI, so the corpus/confidence shape is asserted."""
 
+    _NO_LLM = staticmethod(lambda *a, **k: None)
+
     def _write_inputs(self):
         gaps = SCRATCH / "gaps_novelty.jsonl"
         chunks = SCRATCH / "chunks.jsonl"
@@ -305,7 +307,8 @@ class TestStageRecommendation:
         job_store.save_job("job-rec2", {"status": "running", "progress": 0})
         gaps, chunks = self._write_inputs()
         out = stage_recommendation("job-rec2", gaps, chunks,
-                                   SCRATCH / "rekomendasi.md", embedder=None)
+                                   SCRATCH / "rekomendasi.md", embedder=None,
+                                   generate_fn=self._NO_LLM)
         assert out.metrics["gap_open"] == 1
         assert out.metrics["proposal_dinilai"] == 1
 
@@ -314,7 +317,8 @@ class TestStageRecommendation:
         job_store.save_job("job-rec3", {"status": "running", "progress": 0})
         gaps, chunks = self._write_inputs()
         out = stage_recommendation("job-rec3", gaps, chunks,
-                                   SCRATCH / "rekomendasi.md", embedder=None)
+                                   SCRATCH / "rekomendasi.md", embedder=None,
+                                   generate_fn=self._NO_LLM)
         assert out.metrics["skor_tertinggi"] >= 0.5, \
             "gap_confidence 1.0 menyumbang 0.5 ke skor prioritas"
 
@@ -322,10 +326,126 @@ class TestStageRecommendation:
         job_store.save_job("job-rec4", {"status": "running", "progress": 0})
         gaps, chunks = self._write_inputs()
         out_md = SCRATCH / "rekomendasi.md"
-        out = stage_recommendation("job-rec4", gaps, chunks, out_md, embedder=None)
+        out = stage_recommendation("job-rec4", gaps, chunks, out_md, embedder=None,
+                                   generate_fn=self._NO_LLM)
         assert out_md.exists()
         assert "Rekomendasi Topik" in out_md.read_text(encoding="utf-8")
         assert out.outputs["rekomendasi_md"] == str(out_md)
+
+    def test_llm_unavailable_keeps_stage_complete_without_narration(self):
+        job_store.save_job("job-rec5", {"status": "running", "progress": 0})
+        gaps, chunks = self._write_inputs()
+        out = stage_recommendation("job-rec5", gaps, chunks, SCRATCH / "rek5.md",
+                                   embedder=None, generate_fn=self._NO_LLM)
+        assert out.metrics["narasi_diminta"] == 1 and out.metrics["narasi_dibuat"] == 0
+        assert out.substep_samples["narasi_contoh"] == []
+        assert any("Narasi judul tidak dibuat" in n for n in out.notes)
+        assert read_jsonl(out.outputs["narasi_jsonl"]) == []
+        assert "Tidak ada narasi" in (SCRATCH / "rek5.md").read_text(encoding="utf-8")
+        # Skor tidak boleh berubah hanya karena LLM mati.
+        assert out.metrics["skor_tertinggi"] >= 0.5
+
+    def test_narration_is_written_to_md_jsonl_and_llm_artifact(self):
+        job_store.save_job("job-rec6", {"status": "running", "progress": 0})
+        gaps, chunks = self._write_inputs()
+        seen = {}
+
+        def fake_generate(prompt, system="", json_mode=False, **_):
+            seen.update(prompt=prompt, system=system, json_mode=json_mode)
+            return ('```json\n[{"no": 1, "judul": "Protokol Validasi Alat Forensik Digital '
+                    'Berbasis Standar Terbuka", "latar_belakang": "Jurnal a.pdf menyatakan '
+                    'protokol pengujian belum ada.", "alasan": "Didukung 1 jurnal; status '
+                    'masih terbuka.", "metode": "Desain eksperimen komparatif; metrik akurasi '
+                    'dan reproducibility."}]\n```', "copilot:test-model")
+
+        out = stage_recommendation("job-rec6", gaps, chunks, SCRATCH / "rek6.md",
+                                   embedder=None, generate_fn=fake_generate)
+        assert seen["json_mode"] is True
+        assert "Protokol pengujian alat forensik belum ada." in seen["prompt"], \
+            "kutipan verbatim gap harus menjadi bahan narasi"
+        assert "tidak menilai" in seen["system"]
+        assert out.metrics["narasi_dibuat"] == 1 and out.params["narasi_model"] == "copilot:test-model"
+        rows = read_jsonl(out.outputs["narasi_jsonl"])
+        assert rows[0]["judul"].startswith("Protokol Validasi")
+        assert rows[0]["basis"] == "proposal" and rows[0]["peringkat"] == 1
+        assert rows[0]["jurnal"] == ["a.pdf"] and rows[0]["kebaruan"].startswith("1 masih terbuka")
+        assert set(rows[0]) >= {"judul", "latar_belakang", "alasan", "metode", "kutipan", "model"}
+        md = (SCRATCH / "rek6.md").read_text(encoding="utf-8")
+        assert "## Judul Siap-Pakai" in md and "**Metode.**" in md
+        llm_arts = [a for a in job_store.get_stage_artifacts("job-rec6", "recommendation")
+                    if a["kind"] == "llm"]
+        assert len(llm_arts) == 1 and llm_arts[0]["payload"]["butir"] == 1
+        assert out.substep_samples["narasi_contoh"][0]["judul"].startswith("Protokol")
+        assert any("tulisan LLM" in n for n in out.notes)
+
+    def test_narrate_top_zero_skips_llm_entirely(self):
+        job_store.save_job("job-rec7", {"status": "running", "progress": 0})
+        gaps, chunks = self._write_inputs()
+
+        def boom(*_a, **_k):
+            raise AssertionError("LLM tidak boleh dipanggil bila narrate_top=0")
+        out = stage_recommendation("job-rec7", gaps, chunks, SCRATCH / "rek7.md",
+                                   embedder=None, narrate_top=0, generate_fn=boom)
+        assert out.metrics["narasi_diminta"] == 0 and out.metrics["narasi_dibuat"] == 0
+        assert "Judul Siap-Pakai" not in (SCRATCH / "rek7.md").read_text(encoding="utf-8")
+        assert not any(a["kind"] == "llm" for a in
+                       job_store.get_stage_artifacts("job-rec7", "recommendation"))
+
+    def test_llm_exception_does_not_fail_stage(self):
+        job_store.save_job("job-rec8", {"status": "running", "progress": 0})
+        gaps, chunks = self._write_inputs()
+
+        def flaky(*_a, **_k):
+            raise RuntimeError("CLI mati")
+        out = stage_recommendation("job-rec8", gaps, chunks, SCRATCH / "rek8.md",
+                                   embedder=None, generate_fn=flaky)
+        assert out.metrics["narasi_dibuat"] == 0
+        assert any("LLM gagal: CLI mati" in n for n in out.notes)
+
+
+class TestNarrationHelpers:
+    def _ranked(self):
+        from app.core.recommendation.novelty import rank_proposals
+        props = [
+            {"title": f"Gap {i}", "description": f"Kalimat gap {i}.", "how": "",
+             "gap_type": "stated_limitation", "topic": "tools",
+             "source": f"{'a' if i % 2 else 'b'}.pdf", "novelty_status": "unchecked"}
+            for i in range(1, 6)
+        ]
+        return rank_proposals(props, [{"source": "a.pdf", "title": "A", "content": "alat"}],
+                              [{"type": "stated_limitation", "confidence": 1.0}])
+
+    def test_seeds_put_cross_journal_themes_first_then_uncovered_proposals(self):
+        from app.core.recommendation.themes import Theme
+        ranked = self._ranked()
+        theme = Theme(theme_id=3, label="Tema bersama", members=[ranked[1], ranked[3]],
+                      journals=["a.pdf", "b.pdf"], top_priority=0.9, topics=["tools"])
+        single = Theme(theme_id=4, label="Sendiri", members=[ranked[0]], journals=["a.pdf"])
+        seeds = research_pipeline._narration_seeds(ranked, [theme, single], top=3)
+        assert [s["basis"] for s in seeds] == ["tema_lintas_jurnal", "proposal", "proposal"]
+        assert seeds[0]["theme_id"] == 3 and seeds[0]["jumlah_jurnal"] == 2
+        assert seeds[0]["peringkat"] == 2, "peringkat tema = anggota terbaiknya"
+        # Anggota tema yang sudah terwakili tidak dinarasikan dua kali; urutan peringkat dijaga.
+        assert [s["peringkat"] for s in seeds[1:]] == [1, 3]
+        assert len(seeds[0]["kutipan"]) == 2 and seeds[0]["kebaruan"].startswith("2 belum dicek")
+
+    def test_seeds_respect_top_and_have_no_per_journal_cap(self):
+        ranked = self._ranked()
+        seeds = research_pipeline._narration_seeds(ranked, [], top=8)
+        assert len(seeds) == 5 and [s["peringkat"] for s in seeds] == [1, 2, 3, 4, 5]
+        assert research_pipeline._narration_seeds(ranked, [], top=0) == []
+
+    def test_parse_narration_aligns_by_no_and_tolerates_wrappers(self):
+        parse = research_pipeline._parse_narration
+        raw = '{"items": [{"no": 2, "judul": "J2", "metode": "M2"}, {"no": 1, "judul": "J1"}]}'
+        slots = parse(raw, 3)
+        assert slots[0]["judul"] == "J1" and slots[1]["judul"] == "J2" and slots[2] is None
+        assert slots[1]["metode"] == "M2" and slots[1]["alasan"] == ""
+        assert parse("bukan json", 2) == [None, None]
+        assert parse(None, 1) == [None]
+        # Jawaban berbentuk gap (bukan narasi) tidak diterima sebagai judul.
+        assert parse('[{"gap_type": "x", "gap_statement": "y"}]', 1) == [None]
+        assert parse('teks pembuka [{"judul": "J"}] penutup', 1)[0]["judul"] == "J"
 
 
 # ── Peta proses & pencatatan sub-langkah ───────────────────────────────────

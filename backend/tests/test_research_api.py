@@ -423,6 +423,27 @@ class TestRecordEndpoints:
         detail = client.get(f"/api/research/{self.JOB}/records/themes").json()["detail"]
         assert "themes_jsonl" in detail and "jalankan ulang" in detail.lower()
 
+    def test_narration_collection_resolves_and_filters_by_basis(self):
+        narasi = SCRATCH / "rekomendasi_judul.jsonl"
+        narasi.write_text(
+            '{"no":1,"basis":"tema_lintas_jurnal","topik":"tools","judul":"J1",'
+            '"latar_belakang":"L","alasan":"A","metode":"M","jurnal":["a.pdf","b.pdf"]}\n'
+            '{"no":2,"basis":"proposal","topik":"legal","judul":"J2",'
+            '"latar_belakang":"L","alasan":"A","metode":"M","jurnal":["a.pdf"]}\n',
+            encoding="utf-8")
+        job_store.add_stage_artifact(self.JOB, "recommendation", "result", "recommendation", {
+            "outputs": {"rekomendasi_md": str(SCRATCH / "rekomendasi.md"),
+                        "narasi_jsonl": str(narasi)}})
+        body = client.get(f"/api/research/{self.JOB}/records/narration").json()
+        assert body["total"] == 2 and body["facets"]["basis"] == ["proposal", "tema_lintas_jurnal"]
+        only = client.get(f"/api/research/{self.JOB}/records/narration",
+                          params={"basis": "proposal"}).json()
+        assert [r["judul"] for r in only["records"]] == ["J2"]
+
+    def test_narration_missing_on_old_job_explains_rerun(self):
+        detail = client.get(f"/api/research/{self.JOB}/records/narration").json()["detail"]
+        assert "narasi_jsonl" in detail and "jalankan ulang" in detail.lower()
+
     def test_unknown_collection_is_rejected(self):
         assert client.get(f"/api/research/{self.JOB}/records/bogus").status_code == 404
 

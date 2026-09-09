@@ -79,6 +79,12 @@ METRIC_LABELS: dict[str, tuple[str, str]] = {
                           "Tinggi berarti literatur terfragmentasi: tiap jurnal bicara hal "
                           "berbeda."),
     "skor_tertinggi": ("skor prioritas tertinggi", "Skor proposal peringkat #1 (maks 1,0)."),
+    "narasi_diminta": ("butir dinarasikan LLM",
+                       "Butir teratas (tema lintas-jurnal dulu, lalu proposal) yang diminta "
+                       "dirumuskan judul, latar belakang, alasan, dan metodenya."),
+    "narasi_dibuat": ("narasi judul jadi",
+                      "Butir yang berhasil dinarasikan LLM. Peringkat dan skor tidak "
+                      "terpengaruh; bila 0, LLM tidak tersedia saat itu."),
 }
 
 # Nilai enum → (label awam, penjelasan).

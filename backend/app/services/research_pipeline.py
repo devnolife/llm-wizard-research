@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import json
+import re
 import threading
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -75,6 +77,10 @@ SAMPLE_ROWS = 8
 # Batas atas run gap mining per job: tiap run = satu lintasan LLM penuh atas
 # kandidat yang sama, jadi biayanya linear.
 MAX_GAP_RUNS = 5
+# Butir teratas yang dinarasikan LLM (judul, latar belakang, alasan, metode) pada
+# tahap rekomendasi: satu panggilan per job. Tema lintas-jurnal dulu, lalu proposal
+# berperingkat; tanpa batas per jurnal (keputusan pengguna 9 Sep 2026).
+NARRATION_TOP = 8
 
 # Urutan tahap penelitian; dipakai UI untuk menggambar timeline.
 RESEARCH_STAGES = [
@@ -223,6 +229,15 @@ SUBSTEPS: Dict[str, List[Dict[str, Any]]] = {
              "yang didukung banyak jurnal lebih kuat daripada satu jurnal yang "
              "banyak bicara.",
              masuk="proposal_dinilai", keluar="tema", contoh="tema_terbesar"),
+        _sub("narasi_judul", "Merumuskan judul, latar belakang, alasan, dan metode",
+             f"copilot_client.generate (JSON, 1 panggilan) untuk {NARRATION_TOP} butir teratas: "
+             "tema lintas-jurnal dulu, lalu proposal berperingkat; peringkat tidak diubah",
+             "Untuk beberapa butir teratas, LLM diminta menuliskan judul penelitian siap "
+             "pakai beserta latar belakang singkat, alasan kelayakan, dan usulan metode — "
+             "hanya dari kutipan gap yang ada. LLM tidak menilai dan tidak mengubah urutan; "
+             "bila LLM tidak tersedia, tahap tetap selesai tanpa narasi.",
+             masuk="narasi_diminta", keluar="narasi_dibuat", contoh="narasi_contoh",
+             jenis="periksa"),
     ],
 }
 
@@ -242,7 +257,8 @@ PIPELINE_CONSTANTS: Dict[str, Dict[str, Any]] = {
     "recommendation": {"w_gap": W_GAP, "w_novelty": W_NOVELTY,
                        "w_actionability": W_ACTIONABILITY,
                        "sweet_spot": list(NOVELTY_SWEET_SPOT),
-                       "theme_similarity_threshold": THEME_SIMILARITY_THRESHOLD},
+                       "theme_similarity_threshold": THEME_SIMILARITY_THRESHOLD,
+                       "narration_top": NARRATION_TOP},
 }
 
 
@@ -1000,6 +1016,178 @@ def stage_novelty(
 
 # ── TAHAP 4 ────────────────────────────────────────────────────────────────
 
+NARRATION_FIELDS = ("judul", "latar_belakang", "alasan", "metode")
+_NARRATION_SYSTEM = (
+    "Anda pakar metodologi penelitian yang menulis dalam Bahasa Indonesia. Tugas Anda "
+    "hanya MERUMUSKAN teks dari bahan yang diberikan: Anda tidak menilai, tidak "
+    "memeringkat, dan tidak menambah temuan yang tidak ada dalam kutipan."
+)
+_NOVELTY_WORDS = {"open": "masih terbuka", "unchecked": "belum dicek ke literatur luar",
+                  "partially_addressed": "sebagian sudah dijawab", "addressed": "sudah dijawab"}
+
+
+def _novelty_summary(items: Sequence[Dict[str, Any]]) -> str:
+    """Ringkasan status kebaruan sekelompok proposal, untuk bahan 'alasan'."""
+    counts = Counter(str(p.get("novelty_status") or "unchecked") for p in items)
+    parts = [f"{n} {_NOVELTY_WORDS.get(k, k)}" for k, n in counts.most_common()]
+    recent = sum(len(p.get("related_recent_papers") or []) for p in items)
+    return ", ".join(parts) + (f"; {recent} paper 2024+ terkait ditemukan" if recent else "")
+
+
+def _narration_seeds(ranked: Sequence[Dict[str, Any]], themes: Sequence[Any],
+                     top: int = NARRATION_TOP) -> List[Dict[str, Any]]:
+    """Butir yang dinarasikan: tema lintas-jurnal dulu (bukti terkuat), lalu proposal
+    berperingkat yang belum terwakili tema tersebut. Urutan peringkat rumus project
+    dipertahankan; tidak ada batas per jurnal."""
+    rank_of = {id(p): i for i, p in enumerate(ranked, 1)}
+    seeds: List[Dict[str, Any]] = []
+    covered: set = set()
+    for t in themes:
+        if len(seeds) >= top:
+            break
+        if t.journal_support < 2:
+            continue
+        covered.update(id(m) for m in t.members)
+        seeds.append({
+            "basis": "tema_lintas_jurnal", "theme_id": t.theme_id,
+            "peringkat": min((rank_of.get(id(m), 10**6) for m in t.members), default=None),
+            "teks": t.label, "topik": ", ".join(t.topics) or "-",
+            "jurnal": list(t.journals), "jumlah_jurnal": t.journal_support,
+            "jumlah_gap": len(t.members), "kebaruan": _novelty_summary(t.members),
+            "skor_prioritas": round(t.top_priority, 4),
+            "kutipan": [{"source": m.get("source"),
+                        "gap_statement": (m.get("description") or "")[:300]}
+                       for m in t.members[:3]],
+        })
+    for i, p in enumerate(ranked, 1):
+        if len(seeds) >= top:
+            break
+        if id(p) in covered:
+            continue
+        seeds.append({
+            "basis": "proposal", "theme_id": None, "peringkat": i,
+            "teks": p.get("title"), "topik": p.get("topic") or "-",
+            "jurnal": [p.get("source")], "jumlah_jurnal": 1, "jumlah_gap": 1,
+            "kebaruan": _novelty_summary([p]),
+            "skor_prioritas": (p.get("novelty") or {}).get("priority_score"),
+            "kutipan": [{"source": p.get("source"),
+                        "gap_statement": (p.get("description") or "")[:300]}],
+        })
+    return seeds
+
+
+def _narration_prompt(seeds: Sequence[Dict[str, Any]]) -> str:
+    lines = [
+        f"Berikut {len(seeds)} butir gap penelitian yang SUDAH diperingkat oleh sistem; "
+        "urutan dan jumlahnya tidak boleh diubah. Untuk TIAP butir tulis:",
+        '- "judul": satu judul penelitian Bahasa Indonesia yang spesifik dan layak '
+        "skripsi/tesis (maksimal 25 kata).",
+        '- "latar_belakang": 2-3 kalimat: apa masalahnya dan mengapa penting, HANYA dari '
+        "kutipan gap dan nama jurnal yang diberikan (sebut jurnal sumbernya).",
+        '- "alasan": 1-2 kalimat mengapa layak diteliti: sebutkan jumlah jurnal pendukung '
+        "dan status kebaruan yang diberikan, apa adanya.",
+        '- "metode": 2-3 kalimat pendekatan penelitian yang disarankan (desain, data, '
+        "metrik evaluasi). Istilah teknis boleh dalam bahasa Inggris.",
+        "Jangan mengarang angka atau temuan yang tidak ada dalam bahan. Kembalikan HANYA "
+        'JSON array: [{"no": 1, "judul": "...", "latar_belakang": "...", "alasan": "...", '
+        '"metode": "..."}, ...]',
+        "", "Butir:",
+    ]
+    for i, s in enumerate(seeds, 1):
+        basis = (f"tema lintas-jurnal · {s['jumlah_jurnal']} jurnal · {s['jumlah_gap']} gap"
+                 if s["basis"] == "tema_lintas_jurnal"
+                 else f"proposal peringkat #{s['peringkat']} · 1 jurnal")
+        lines.append(f"{i}. [{basis} · topik {s['topik']} · kebaruan: {s['kebaruan']}] {s['teks']}")
+        for q in s["kutipan"]:
+            lines.append(f'   - Kutipan ({q["source"]}): "{q["gap_statement"]}"')
+    return "\n".join(lines)
+
+
+def _parse_narration(raw: Optional[str], n: int) -> List[Optional[Dict[str, str]]]:
+    """Selaraskan jawaban LLM ke ``n`` butir (indeks = ``no`` - 1); butir yang hilang
+    atau tanpa judul menjadi None. Toleran terhadap pagar kode dan pembungkus objek."""
+    slots: List[Optional[Dict[str, str]]] = [None] * n
+    if not raw:
+        return slots
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip())
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\[.*\]", text, re.S)
+        if not match:
+            return slots
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return slots
+    if isinstance(data, dict):
+        data = next((v for v in data.values() if isinstance(v, list)), [])
+    if not isinstance(data, list):
+        return slots
+    for idx, item in enumerate(data):
+        if not isinstance(item, dict) or not str(item.get("judul") or "").strip():
+            continue
+        try:
+            pos = int(item.get("no", idx + 1)) - 1
+        except (TypeError, ValueError):
+            pos = idx
+        if 0 <= pos < n and slots[pos] is None:
+            slots[pos] = {f: str(item.get(f) or "").strip() for f in NARRATION_FIELDS}
+    return slots
+
+
+def _narrate_titles(job_id: str, seeds: Sequence[Dict[str, Any]],
+                    generate: Optional[Callable[..., Any]] = None,
+                    ) -> tuple[List[Dict[str, Any]], Optional[str], str]:
+    """Satu panggilan LLM untuk semua butir. Mengembalikan (record narasi, alasan gagal,
+    model). Tidak pernah melempar: narasi adalah pelengkap, bukan syarat tahap selesai."""
+    if not seeds:
+        return [], "tidak ada proposal untuk dinarasikan", ""
+    generate = generate or copilot_client.generate
+    prompt = _narration_prompt(seeds)
+    try:
+        result = generate(prompt, system=_NARRATION_SYSTEM, json_mode=True)
+    except Exception as exc:  # jaringan/CLI mati: tahap tetap selesai tanpa narasi
+        logger.warning(f"narasi judul gagal: {exc}")
+        return [], f"LLM gagal: {str(exc)[:200]}", ""
+    text, model = (result[0], result[1]) if result else (None, "")
+    add_stage_artifact(job_id, "recommendation", "llm", "narasi judul", {
+        "prompt": prompt, "response": text or "", "model": model,
+        "system": _NARRATION_SYSTEM, "butir": len(seeds),
+    })
+    if not text:
+        return [], "LLM tidak tersedia atau tidak menjawab", model
+    slots = _parse_narration(text, len(seeds))
+    records = []
+    for i, (seed, item) in enumerate(zip(seeds, slots), 1):
+        if item is None:
+            continue
+        records.append({"no": i, **seed, **item, "model": model})
+    reason = None if records else "jawaban LLM tidak berbentuk JSON butir yang diminta"
+    return records, reason, model
+
+
+def _narration_markdown(records: Sequence[Dict[str, Any]], requested: int,
+                        reason: Optional[str]) -> List[str]:
+    lines = ["", "## Judul Siap-Pakai (narasi LLM)", "",
+             "> Judul, latar belakang, alasan, dan metode dirumuskan LLM dari kutipan gap; "
+             "peringkat tetap dari rumus project, LLM tidak menilai. Tema lintas-jurnal "
+             "didahulukan, lalu proposal teratas.", ""]
+    if not records:
+        lines.append(f"_Tidak ada narasi ({reason or 'tidak diketahui'}); {requested} butir diminta._")
+        return lines
+    for r in records:
+        basis = (f"tema lintas-jurnal · {r['jumlah_jurnal']} jurnal · {r['jumlah_gap']} gap"
+                 if r["basis"] == "tema_lintas_jurnal" else f"proposal peringkat #{r['peringkat']}")
+        lines += [f"### {r['no']}. {r['judul']}",
+                  f"_{basis} · topik {r['topik']} · kebaruan: {r['kebaruan']} · "
+                  f"jurnal: {'; '.join(str(j) for j in r['jurnal'])}_", "",
+                  f"**Latar belakang.** {r['latar_belakang']}", "",
+                  f"**Alasan.** {r['alasan']}", "",
+                  f"**Metode.** {r['metode']}", ""]
+    return lines
+
+
 def stage_recommendation(
     job_id: str,
     gaps_novelty_path: Path,
@@ -1007,7 +1195,11 @@ def stage_recommendation(
     out_path: Path,
     embedder=None,
     top: int = 15,
+    narrate_top: int = NARRATION_TOP,
+    generate_fn: Optional[Callable[..., Any]] = None,
 ) -> StageOutcome:
+    """``narrate_top`` butir teratas dinarasikan LLM (0 = tanpa narasi); ``generate_fn``
+    menggantikan ``copilot_client.generate`` (tes)."""
     gaps = [g for g in read_jsonl(str(gaps_novelty_path)) if "gap_statement" in g]
     _progress(job_id, 82, f"Menyaring gap open dari {len(gaps)} gap")
     with _substep(job_id, "recommendation", "filter_open", masuk=len(gaps)) as sub:
@@ -1044,6 +1236,9 @@ def stage_recommendation(
             "gap_type": g.get("gap_type"), "topic": g.get("topic"),
             "source": g.get("source"), "year": g.get("year"),
             "grounding_score": g.get("grounding_score"),
+            # Bahan narasi (bukan masukan rumus): status kebaruan & paper 2024+ terkait.
+            "novelty_status": g.get("novelty_status"),
+            "related_recent_papers": g.get("related_recent_papers") or [],
         })
 
     _progress(job_id, 85, f"Memeringkat {len(proposals)} proposal")
@@ -1056,6 +1251,18 @@ def stage_recommendation(
         sub.done(keluar=len(themes))
     cross = [t for t in themes if t.journal_support >= 2]
     singletons = sum(1 for t in themes if len(t.members) == 1)
+
+    # Narasi: LLM hanya menulis judul/latar belakang/alasan/metode untuk butir
+    # teratas; peringkat & skor di atas tidak disentuh. Gagal = tahap tetap selesai.
+    seeds = _narration_seeds(ranked, themes, top=max(0, int(narrate_top)))
+    _progress(job_id, 95, f"Merumuskan judul siap-pakai untuk {len(seeds)} butir teratas")
+    with _substep(job_id, "recommendation", "narasi_judul", masuk=len(seeds)) as sub:
+        narration, narration_reason, narration_model = (
+            _narrate_titles(job_id, seeds, generate=generate_fn) if seeds
+            else ([], "narasi dimatikan (narrate_top=0)" if not narrate_top
+                  else "tidak ada proposal untuk dinarasikan", ""))
+        sub.done(keluar=len(narration), model=narration_model,
+                 **({"alasan": narration_reason} if narration_reason else {}))
 
     lines = [
         "# Rekomendasi Topik Penelitian", "",
@@ -1071,6 +1278,8 @@ def stage_recommendation(
     lines += ["", "## Tema Lintas-Jurnal", ""]
     for i, t in enumerate(cross, 1):
         lines.append(f"{i}. **[{t.journal_support} jurnal · {len(t.members)} gap]** {t.label}")
+    if narrate_top:
+        lines += _narration_markdown(narration, len(seeds), narration_reason)
     Path(out_path).write_text("\n".join(lines), encoding="utf-8")
 
     # Markdown hanya memuat top-N; JSONL menyimpan seluruh proposal agar UI bisa
@@ -1078,6 +1287,7 @@ def stage_recommendation(
     theme_of = {id(p): t for t in themes for p in t.members}
     proposals_path = Path(out_path).with_suffix(".jsonl")
     themes_path = Path(out_path).with_name(f"{Path(out_path).stem}_tema.jsonl")
+    narration_path = Path(out_path).with_name(f"{Path(out_path).stem}_judul.jsonl")
     proposal_records = []
     for i, p in enumerate(ranked, 1):
         nov = p.get("novelty") or {}
@@ -1091,6 +1301,7 @@ def stage_recommendation(
             "source": p.get("source"),
             "year": p.get("year"),
             "grounding_score": p.get("grounding_score"),
+            "novelty_status": p.get("novelty_status"),
             "priority_score": nov.get("priority_score"),
             "novelty": nov.get("novelty"),
             "band": nov.get("band"),
@@ -1109,13 +1320,18 @@ def stage_recommendation(
         })
     write_jsonl(str(proposals_path), proposal_records)
     write_jsonl(str(themes_path), [t.to_dict() for t in themes])
+    write_jsonl(str(narration_path), narration)
 
     return StageOutcome(
         params={"rumus": "0.5*gap_confidence + 0.3*novelty + 0.2*actionability",
                 "filter": "novelty_status in (open, unchecked)",
                 "pemecah_seri": "jarak novelty ke tengah sweet spot",
                 "embedder": "multilingual-MiniLM" if embedder is not None else "leksikal",
-                "top": top},
+                "top": top,
+                "narasi_butir": narrate_top,
+                "narasi_model": narration_model or "-",
+                "narasi_urutan": "tema lintas-jurnal dulu, lalu proposal berperingkat; "
+                                 "tanpa batas per jurnal"},
         metrics={
             "gap_dicek": len(gaps),
             "gap_open": len(open_gaps),
@@ -1126,6 +1342,8 @@ def stage_recommendation(
             "tema_satu_gap": singletons,
             "tema_satu_gap_pct": round(100 * singletons / max(1, len(themes)), 1),
             "skor_tertinggi": ranked[0]["novelty"]["priority_score"] if ranked else 0,
+            "narasi_diminta": len(seeds),
+            "narasi_dibuat": len(narration),
         },
         samples=[
             {"rank": i, "title": p.get("title"), "topic": p.get("topic"),
@@ -1136,7 +1354,8 @@ def stage_recommendation(
         ],
         outputs={"rekomendasi_md": str(out_path),
                  "proposals_jsonl": str(proposals_path),
-                 "themes_jsonl": str(themes_path)},
+                 "themes_jsonl": str(themes_path),
+                 "narasi_jsonl": str(narration_path)},
         substep_samples={
             "dibuang_bukan_open": [
                 {"source": g.get("source"), "novelty_status": g.get("novelty_status"),
@@ -1152,9 +1371,19 @@ def stage_recommendation(
                              for m in t.members[:6]]}
                 for t in sorted(themes, key=lambda t: -len(t.members))[:3]
             ],
+            "narasi_contoh": [
+                {"no": r["no"], "basis": r["basis"], "judul": r["judul"],
+                 "jurnal": r["jurnal"], "metode": r["metode"][:200]}
+                for r in narration[:3]
+            ],
         },
         notes=["journal_support pada tema besar adalah batas atas, bukan bukti "
-               "bahwa N jurnal menyatakan gap yang sama (chaining single-linkage)."],
+               "bahwa N jurnal menyatakan gap yang sama (chaining single-linkage)."]
+        + ([f"Narasi judul tidak dibuat: {narration_reason}. Peringkat dan skor tidak "
+            "terpengaruh."] if narrate_top and narration_reason and not narration else [])
+        + (["Judul/latar belakang/alasan/metode adalah tulisan LLM dari kutipan gap — "
+            "bahan awal, bukan hasil penilaian; LLM tidak mengubah peringkat."]
+           if narration else []),
     )
 
 
@@ -1328,7 +1557,8 @@ STAGE_SOURCE_FUNCS: Dict[str, List[Callable]] = {
     "gap_mining": [stage_gap_mining, select_candidates,
                    extract_gaps_from_candidate, verify_gaps],
     "novelty": [stage_novelty, annotate_gaps],
-    "recommendation": [stage_recommendation, rank_proposals, build_themes],
+    "recommendation": [stage_recommendation, rank_proposals, build_themes,
+                       _narration_seeds, _narrate_titles],
 }
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
