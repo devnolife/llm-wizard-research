@@ -4,7 +4,7 @@ Menjalankan job pipeline penelitian sampai tahap ``gap_mining`` saja (tanpa
 OpenAlex/rekomendasi), memantau progresnya, lalu memperlihatkan dua hal:
 gap final yang lolos verifikasi verbatim, dan jejak tiap kandidat chunk
 (apa yang dibaca LLM, apa jawabannya, gap mana yang gugur dan mengapa).
-Polling status dilakukan oleh ``app.py`` (satu untuk semua langkah).
+Polling status dilakukan oleh ``page_wizard.py`` (satu untuk semua langkah).
 """
 
 from __future__ import annotations

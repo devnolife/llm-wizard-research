@@ -208,7 +208,8 @@ python -m experiments.recommend_topics --gaps ../data/processed/gaps_union_novel
 ```
 
 Lewat API/UI: `POST /api/research/start` menerima *form* `gap_runs` (1–5, bawaan 1) dan
-`min_run_hits` (bawaan ⌈2n/3⌉); Wizard Lite (`:8502`, Langkah 2) menyediakan pilihan 1 atau 3 run.
+`min_run_hits` (bawaan ⌈2n/3⌉); halaman 🧭 Wizard (`:8501`, Langkah 2) menyediakan pilihan 1 atau 3 run,
+dan Langkah 4 melanjutkan job ke tahap rekomendasi (`/continue`) → peringkat, tema, judul siap-pakai.
 
 ### Konfigurasi (env di `backend/.env`)
 | Variabel | Fungsi |

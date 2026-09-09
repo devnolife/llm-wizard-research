@@ -1,4 +1,6 @@
-"""Konstanta, klien backend, dan komponen tampilan yang dipakai semua langkah Wizard Lite."""
+"""Konstanta, klien backend, dan komponen tampilan yang dipakai langkah-langkah 🧭 Wizard
+(``page_wizard.py`` + ``step*.py``). Klien di sini menerima ``api_base`` TANPA akhiran
+``/api`` (sidebar utama menyimpan "…/api"; halaman wizard membuangnya)."""
 
 from __future__ import annotations
 
@@ -103,6 +105,26 @@ def cancel_job(api_base: str, job_id: str) -> dict:
     resp = requests.post(f"{api_base}/api/analysis-status/{job_id}/cancel", timeout=15)
     _raise_for_status(resp)
     return resp.json()
+
+
+def continue_research_job(api_base: str, job_id: str, until: str = "recommendation",
+                          novelty_limit: int = 0) -> dict:
+    """Lanjutkan job langkah 2 (selesai di gap_mining) ke tahap berikutnya sampai ``until``.
+
+    Gap mining (LLM) tidak diulang: tahap lanjutan membaca berkas keluaran yang ada.
+    ``novelty_limit`` > 0 membatasi gap yang dikirim ke OpenAlex bila tahap kebaruan aktif.
+    """
+    resp = requests.post(f"{api_base}/api/research/{job_id}/continue",
+                         data={"until": until, "novelty_limit": int(novelty_limit)}, timeout=30)
+    _raise_for_status(resp)
+    return resp.json()
+
+
+def research_stages(api_base: str) -> list:
+    """Deskripsi tahap pipeline penelitian (termasuk flag ``disabled`` tahap kebaruan)."""
+    resp = requests.get(f"{api_base}/api/research/stages", timeout=10)
+    _raise_for_status(resp)
+    return resp.json().get("stages", [])
 
 
 def stage_records(api_base: str, job_id: str, phase: str) -> list:

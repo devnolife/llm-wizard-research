@@ -6,7 +6,7 @@ keluaran tahap ``neuro_symbolic``: fakta SPO → graf pengetahuan → indikator
 Cooper/Booth (fragmentasi, inkonsistensi, ketidaklengkapan kolektif, ditambah
 ketiadaan dukungan bukti) → vonis Rule Engine → kalibrasi & abstain.
 Hasil tampil begitu tahap itu selesai, meski job masih menyusun ringkasan,
-usulan, dan roadmap (bahan langkah berikutnya). Polling oleh ``app.py``.
+usulan, dan roadmap (bahan langkah berikutnya). Polling oleh ``page_wizard.py``.
 """
 
 from __future__ import annotations

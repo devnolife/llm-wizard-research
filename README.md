@@ -112,21 +112,23 @@ cd tools/process_monitor && .venv/bin/streamlit run app.py
 - **UI:** http://localhost:8501 — see [tools/process_monitor/README.md](tools/process_monitor/README.md)
 - **API Docs:** http://localhost:8001/docs
 
-**Wizard Lite** (`tools/wizard_lite/`) is a deliberately small, step-by-step UI being built
-alongside the full dashboard and scoped to the **uploaded journals only** (no external
-literature lookup — that is outside the thesis proposal). Step 1 uploads PDFs and shows the
-resulting chunks via `POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector
-store); step 2 runs a research job with `until=gap_mining` and shows every candidate chunk, the
-LLM's answer, and the gaps that survived verbatim verification; step 3 sends the same PDFs
-through the 8-stage neuro-symbolic pipeline (`POST /api/upload-and-analyze`) and shows the
+The UI opens on **🧭 Wizard** (`tools/process_monitor/page_wizard.py`), a step-by-step flow
+scoped to the **uploaded journals only** (no external literature lookup — that is outside the
+thesis proposal). Step 1 uploads PDFs and shows the resulting chunks via
+`POST /api/research/chunk-preview` (stage 1 only — no job, LLM, or vector store); step 2 runs a
+research job with `until=gap_mining` (1 or 3 LLM runs for k/n stability) and shows every candidate
+chunk, the LLM's answer, and the gaps that survived verbatim verification; step 3 sends the same
+PDFs through the 8-stage neuro-symbolic pipeline (`POST /api/upload-and-analyze`) and shows the
 Cooper/Booth synthesis-gap indicators *between* the uploaded journals (fragmentation,
-inconsistency, collective incompleteness, evidence support) with their Rule Engine verdict,
-calibrated confidence, verbatim quotes highlighted in the step-1 chunks, the SPO fact table,
-and the reasoning trace:
-
-```bash
-bash tools/wizard_lite/run.sh        # http://localhost:8502 (reuses the process_monitor venv)
-```
+inconsistency, collective incompleteness, evidence support; author corroboration, workflow-stage
+matrix, bibliographic coupling, evidence gap map) with their Rule Engine verdict, calibrated
+confidence, verbatim quotes highlighted in the step-1 chunks, the SPO fact table, and the
+reasoning trace; step 4 continues the step-2 job to the `recommendation` stage
+(`POST /api/research/{job}/continue`, gap mining is not repeated) and shows the project-formula
+ranking, cross-journal themes, and **ready-to-use titles** (title, background, rationale, method
+— written by the LLM from the verbatim gap quotes; the LLM never changes the ranking). The other
+menu groups expose each pipeline stage in technical detail. *Wizard Lite* used to be a separate app
+(`tools/wizard_lite`, :8502); it was merged into this one on 9 Sep 2026.
 
 > The full pipeline's novelty stage queries OpenAlex, whose free tier is credit-based (≈100
 > searches/day per IP or `mailto`). When it answers 429 with a long `Retry-After`, the host is put

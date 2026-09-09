@@ -1,11 +1,21 @@
-# Monitor Analisis Jurnal (Full Streamlit)
+# Wizard Research — Aplikasi Web Tunggal (Full Streamlit)
 
-Dashboard mandiri untuk menjalankan dan memahami pipeline analisis —
-**tidak perlu frontend React**: unggah PDF, pantau proses per tahap, dan baca
-hasil akhirnya langsung di Streamlit.
+Satu aplikasi untuk seluruh alur — **tidak perlu frontend React**: unggah PDF,
+pantau proses per tahap, dan baca hasil akhirnya langsung di Streamlit.
+Sejak 9 Sep 2026, *Wizard Lite* (dulu aplikasi terpisah di `tools/wizard_lite`, :8502)
+menjadi **halaman pembuka** aplikasi ini.
 
 ## Halaman
 
+0. **🧭 Wizard — PDF ke judul** (`page_wizard.py`, halaman pembuka) — empat langkah di
+   satu halaman, seluruh bukti dari jurnal yang diunggah: **1** chunk (`chunk-preview`,
+   tanpa job/LLM) → **2** research gap per jurnal dengan LLM (job `until=gap_mining`,
+   pilihan 1/3 run untuk k/n, jejak tiap kandidat) → **3** indikator synthesis gap
+   neuro-symbolic antar jurnal (pipeline 8 tahap; korroborasi penulis, workflow stage,
+   kopling bibliografis, peta bukti) → **4** rekomendasi topik & **judul siap-pakai**
+   (job langkah 2 dilanjutkan ke tahap `recommendation`; peringkat rumus project, tema
+   lintas-jurnal, judul + latar belakang + alasan + metode tulisan LLM). Unggahan
+   disimpan di sesi sehingga tetap ada saat berpindah halaman.
 1. **📊 Dashboard** — ringkasan (total analisis, selesai, berjalan, file),
    pemakaian server (CPU/RAM/GPU) dalam expander *collapsed*, dan **riwayat
    analisis** berupa kartu (status, waktu, file, jumlah topik/gap/usulan)
@@ -118,6 +128,9 @@ python -m venv .venv && .venv/bin/pip install streamlit requests pyvis
 | Berkas | Isi |
 | --- | --- |
 | `app.py` | Entry `st.navigation` + sidebar pengaturan |
+| `page_wizard.py` | Halaman pembuka 🧭 Wizard: langkah 1 (chunk) + wiring langkah 2–4 + polling |
+| `step2_gaps.py`, `step3_neuro.py`, `step4_titles.py` | Langkah 2 (gap per jurnal), 3 (indikator neuro-symbolic), 4 (rekomendasi & judul) |
+| `wl_common.py` | Klien backend & komponen baca untuk halaman Wizard (`api_base` tanpa `/api`) |
 | `common.py` | Helper API, interpretasi event, semua renderer |
 | `page_dashboard.py` | Halaman dashboard & riwayat |
 | `page_papers.py` | Halaman cari paper multi-sumber + unduh OA + analisis |

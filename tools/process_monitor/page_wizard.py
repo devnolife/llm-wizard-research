@@ -1,14 +1,17 @@
-"""Wizard Lite — UI bertahap di atas pipeline penelitian, fokus pada jurnal yang diunggah.
+"""🧭 Wizard — alur bertahap di atas pipeline penelitian, fokus pada jurnal yang diunggah.
 
 Langkah 1: unggah PDF → lihat chunk (``POST /api/research/chunk-preview``; tanpa job/LLM).
 Langkah 2: cari research gap dengan LLM (job pipeline ``until=gap_mining``).
 Langkah 3: indikator synthesis gap neuro-symbolic antar jurnal yang diunggah
            (job pipeline 8 tahap ``POST /api/upload-and-analyze``).
+Langkah 4: rekomendasi topik & judul siap-pakai — job langkah 2 dilanjutkan ke tahap
+           ``recommendation`` (``POST /api/research/{job}/continue``; gap mining tidak diulang).
 
-Pencarian ke literatur luar (OpenAlex) sengaja TIDAK ada di sini — bukan bagian
-proposal; analisis dibatasi pada jurnal yang diunggah pengguna.
+Pencarian ke literatur luar (OpenAlex) bukan bagian proposal; bila tahap kebaruan
+aktif di server, langkah 4 memberi tahu dan membolehkan membatasi jumlah gap yang dicek.
 
-Jalankan:  bash tools/wizard_lite/run.sh   (backend harus hidup di :8001)
+Halaman ini dulunya aplikasi terpisah ``tools/wizard_lite`` (:8502); sejak 9 Sep 2026
+menjadi halaman pembuka aplikasi tunggal ``tools/process_monitor`` (:8501).
 """
 
 from __future__ import annotations
@@ -22,8 +25,9 @@ import streamlit as st
 
 import step2_gaps
 import step3_neuro
+import step4_titles
+from common import api_base
 from wl_common import (
-    DEFAULT_API,
     METHOD_LABELS,
     OCR_CHOICES,
     QUALITY_BADGES,
@@ -38,10 +42,29 @@ from wl_common import (
 
 POLL_SECONDS = 2
 
-st.set_page_config(page_title="Wizard Lite", page_icon="📄", layout="wide")
-st.session_state.setdefault("api_base", DEFAULT_API)
+# Sidebar utama menyimpan "…/api"; klien wizard membangun path /api/… sendiri.
+API = api_base().removesuffix("/api")
 st.session_state.setdefault("preview", None)
 st.session_state.setdefault("ocr_mode", "auto")
+
+
+class _StoredUpload:
+    """Salinan berkas unggahan yang bertahan saat pindah halaman (widget uploader
+    kosong lagi setiap kembali ke halaman ini)."""
+
+    def __init__(self, name: str, data: bytes):
+        self.name, self._data = name, data
+
+    def getvalue(self) -> bytes:
+        return self._data
+
+
+def _remember_uploads(files) -> list:
+    """Pakai berkas dari widget bila ada (dan simpan); kalau tidak, berkas tersimpan."""
+    if files:
+        st.session_state["wizard_uploads"] = [_StoredUpload(f.name, f.getvalue()) for f in files]
+        return list(files)
+    return list(st.session_state.get("wizard_uploads") or [])
 
 
 # ── Langkah 1: tampilan ────────────────────────────────────────────────────
@@ -136,10 +159,7 @@ def render_chunks(item: dict, key: str) -> None:
 # ── Halaman ────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.title("📄 Wizard Lite")
-    st.caption("1 chunk → 2 research gap → 3 indikator synthesis gap · fokus jurnal yang diunggah")
-    st.text_input("Alamat backend", key="api_base")
-    alive = backend_alive(st.session_state["api_base"])
+    alive = backend_alive(API)
     st.markdown("Backend: " + ("🟢 hidup" if alive else "🔴 tidak terjangkau"))
     if not alive:
         st.code("./run_backend.sh", language="bash")
@@ -147,25 +167,33 @@ with st.sidebar:
              format_func=OCR_CHOICES.get,
              help="Metode yang benar-benar terpakai tampil di ringkasan tiap jurnal.")
 
-st.title("Langkah 1 — unggah jurnal, lihat hasil chunk")
+st.title("🧭 Wizard — dari PDF ke judul penelitian")
+st.caption("1 chunk → 2 research gap → 3 indikator synthesis gap → 4 rekomendasi & judul · "
+           "seluruh bukti berasal dari jurnal yang Anda unggah. Detail teknis tiap tahap ada di "
+           "menu **Detail teknis** (kiri).")
+
+st.header("Langkah 1 — unggah jurnal, lihat hasil chunk")
 st.write(
     "PDF dibaca, dibersihkan, dideteksi bagiannya (Pendahuluan, Metode, …), lalu "
     "dipotong menjadi chunk berukuran token yang seragam. Inilah teks yang akan "
     "dipakai tahap analisis berikutnya."
 )
 
-uploads = st.file_uploader("PDF jurnal (boleh lebih dari satu)", type=["pdf"],
-                           accept_multiple_files=True)
+widget_uploads = st.file_uploader("PDF jurnal (boleh lebih dari satu)", type=["pdf"],
+                                  accept_multiple_files=True)
+uploads = _remember_uploads(widget_uploads)
+if uploads and not widget_uploads:
+    st.caption(f"Memakai {len(uploads)} berkas yang diunggah sebelumnya: "
+               + ", ".join(u.name for u in uploads))
 run = st.button("🔪 Proses chunk", type="primary", disabled=not uploads or not alive)
 
 if run:
     with st.spinner(f"Memproses {len(uploads)} PDF…"):
         try:
-            st.session_state["preview"] = request_chunks(
-                st.session_state["api_base"], uploads, st.session_state["ocr_mode"]
-            )
+            st.session_state["preview"] = request_chunks(API, uploads, st.session_state["ocr_mode"])
             step2_gaps.reset()  # chunk baru → hasil gap lama tidak lagi relevan
             step3_neuro.reset()
+            step4_titles.reset()
         except Exception as exc:
             st.session_state["preview"] = None
             st.error(f"Gagal memproses: {exc}")
@@ -221,12 +249,12 @@ if len(ok_items) > 1:
     st.download_button("⬇️ Unduh chunk semua berkas (.jsonl)", data=buf.getvalue().encode("utf-8"),
                        file_name="chunks.jsonl", mime="application/x-ndjson")
 
-# ── Langkah 2 & 3 ────────────────────────────────────────────────────────────────────
+# ── Langkah 2, 3 & 4 ─────────────────────────────────────────────────────────────────
 
 st.divider()
 chunks_by_id = {c["chunk_id"]: c for i in ok_items for c in i["chunks"]}
 job_id, job_state, gaps = step2_gaps.render(
-    api_base=st.session_state["api_base"],
+    api_base=API,
     uploads=uploads,
     ocr_mode=st.session_state["ocr_mode"],
     backend_ok=alive,
@@ -235,13 +263,17 @@ job_id, job_state, gaps = step2_gaps.render(
 
 st.divider()
 ns_job_id, ns_state = step3_neuro.render(
-    api_base=st.session_state["api_base"],
+    api_base=API,
     uploads=uploads,
     backend_ok=alive,
     chunks_by_id=chunks_by_id,
 )
 
-# Satu polling untuk semua langkah: rerun selama ada job yang belum berakhir.
+st.divider()
+step4_titles.render(api_base=API, gap_job_id=job_id, gap_status=job_state, backend_ok=alive)
+
+# Satu polling untuk semua langkah: rerun selama ada job yang belum berakhir
+# (langkah 4 melanjutkan job langkah 2, jadi statusnya sudah tercakup job_state).
 if any(s and s.get("status") not in TERMINAL_STATUSES for s in (job_state, ns_state)):
     time.sleep(POLL_SECONDS)
     st.rerun()

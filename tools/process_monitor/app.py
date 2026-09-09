@@ -1,10 +1,11 @@
-"""Monitor Analisis Jurnal — entry multi-halaman (full Streamlit).
+"""Wizard Research — satu aplikasi web untuk seluruh alur (full Streamlit).
 
-Jalankan:  .venv/bin/streamlit run app.py
+Jalankan:  .venv/bin/streamlit run app.py        (port 8501; backend di :8001)
 
-Navigasi mengikuti alur penelitian: mulai analisis, lalu satu halaman per tahap
-pipeline. Pipeline lama 8 tahap tetap tersedia di grup terpisah agar job lama
-masih bisa dibuka.
+Halaman pembuka adalah 🧭 Wizard: 4 langkah dari PDF sampai judul penelitian.
+Grup *Detail teknis* membuka tiap tahap pipeline penelitian (corong angka, jejak
+LLM, data lengkap, kode & rumus); grup *Arsip* melayani job pipeline lama 8 tahap.
+Dulu Wizard adalah aplikasi terpisah ``tools/wizard_lite`` (:8502) — digabung 9 Sep 2026.
 """
 
 import streamlit as st
@@ -12,8 +13,8 @@ import streamlit as st
 from common import DEFAULT_API
 
 st.set_page_config(
-    page_title="Wizard Research — Alur Penelitian",
-    page_icon="🔬",
+    page_title="Wizard Research",
+    page_icon="🧭",
     layout="wide",
 )
 
@@ -22,9 +23,11 @@ st.session_state.setdefault("auto_refresh", True)
 st.session_state.setdefault("mode_teknis", False)
 
 pages = {
-    "Penelitian": [
-        st.Page("page_research_wizard.py", title="Analisis Penelitian", icon="🔬",
-                default=True),
+    "Mulai di sini": [
+        st.Page("page_wizard.py", title="Wizard — PDF ke judul", icon="🧭", default=True),
+    ],
+    "Detail teknis — pipeline penelitian": [
+        st.Page("page_research_wizard.py", title="Analisis Penelitian", icon="🔬"),
         st.Page("page_research_compare.py", title="Bandingkan Dua Analisis", icon="⚖️"),
         st.Page("page_research_source.py", title="Teks Sumber Jurnal", icon="📖"),
         st.Page("page_research_raw.py", title="Log & Artefak", icon="🧾"),
@@ -44,11 +47,12 @@ pages = {
 }
 
 with st.sidebar:
-    st.title("🔬 Wizard Research")
+    st.title("🧭 Wizard Research")
     st.caption("Analisis jurnal · LLM + Neuro-Symbolic")
     if job_id := st.session_state.get("research_job_id"):
         st.caption(f"Analisis aktif: `{job_id[:8]}…`")
-    st.info("Mulai dari **🔬 Analisis Penelitian**. Menu lain hanya pelengkap.")
+    st.info("Mulai dari **🧭 Wizard** (4 langkah). Menu *Detail teknis* membuka isi tiap tahap; "
+            "menu lain pelengkap.")
     st.toggle("🔬 Mode teknis", key="mode_teknis",
               help="Tampilkan nama kunci asli (gap_type, priority_score, …) seperti di "
                    "kode dan BAB III, bukan bahasa awam.")
