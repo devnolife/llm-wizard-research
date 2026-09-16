@@ -512,6 +512,17 @@ ELSEVIER_INSTTOKEN=your_token    # optional, for off-campus full-text
 
 ---
 
+## Related Tools & Resources
+
+A verified survey of GitHub repositories, Hugging Face models/datasets, and
+arXiv papers that can support each module of this project (gap mining, NLI,
+PDF parsing, knowledge graphs, rule engines, calibration, meta-analysis,
+evaluation) lives in [`docs/SUMBER_GITHUB.md`](docs/SUMBER_GITHUB.md). Each
+entry is mapped to a target module and tagged *Adopsi* / *Baseline* /
+*Dataset evaluasi* / *Rujukan*, with a Top-10 integration shortlist.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
