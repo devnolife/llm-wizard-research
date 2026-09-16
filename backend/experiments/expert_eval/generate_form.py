@@ -19,6 +19,11 @@ Usage:
     python experiments/expert_eval/generate_form.py \
         --results experiments/results/experiment_full_llama3.2_latest.json \
         --output experiments/expert_eval/expert_form.xlsx
+
+    # Hasil job korpus 35 jurnal (format job store / /api/analysis-status):
+    python experiments/expert_eval/generate_form.py \
+        --results experiments/expert_eval/job_forensik_5b2017ea.json \
+        --output experiments/expert_eval/expert_form_forensik.xlsx
 """
 
 import argparse
@@ -61,9 +66,71 @@ EXPERT_COLUMNS = [
 ]
 
 
+def _rows_from_job_result(data: dict) -> list:
+    """Indicator rows from a persisted analysis job (``results.gap_indicators``).
+
+    The job store (``data/processed/analysis_jobs.sqlite3`` → ``data_json``)
+    and the ``/api/analysis-status/{job_id}`` response both carry the 35-journal
+    corpus results in this shape; ``sub_indicators`` may hold author
+    corroboration quotes, which are surfaced so the expert can weigh them.
+    """
+    results = data.get("results") if isinstance(data.get("results"), dict) else data
+    indicators = results.get("gap_indicators") or []
+    model = ((results.get("llm_info") or {}).get("model")) or "unknown"
+    topics = results.get("topics") or []
+    ranked = sorted(
+        enumerate(indicators),
+        key=lambda x: x[1].get("confidence", 0),
+        reverse=True,
+    )
+    rank_of = {idx: rank + 1 for rank, (idx, _) in enumerate(ranked)}
+
+    rows = []
+    for idx, ind in enumerate(indicators):
+        quotes = ind.get("supporting_quotes") or []
+        quote_text = " | ".join(
+            f"[{q.get('source_paper', '')}] {q.get('quote', '')}" for q in quotes[:3]
+        )[:400]
+        corroborations = [
+            hit
+            for sub in (ind.get("sub_indicators") or [])
+            for hit in (sub.get("author_corroboration") or [])
+        ]
+        directions = "; ".join(ind.get("suggested_directions") or [])[:300]
+        if corroborations:
+            directions = (
+                f"Korroborasi penulis ({len(corroborations)}): "
+                + " | ".join((c.get("quote") or c.get("text") or "")[:120] for c in corroborations[:2])
+                + ((" || " + directions) if directions else "")
+            )[:400]
+        topic = ind.get("topic") or ""
+        if not topic:
+            desc = ind.get("description", "")
+            topic = next((t for t in topics if isinstance(t, str) and t and t in desc), "")
+            if not topic and len(topics) == 1 and isinstance(topics[0], str):
+                topic = topics[0]
+        rows.append({
+            "indicator_id": f"J-{idx + 1:02d}",
+            "topic_key": "J",
+            "topic": topic if isinstance(topic, str) else str(topic),
+            "type": ind.get("indicator_type") or ind.get("type", ""),
+            "description": (ind.get("description", "") + (f"\nKutipan: {quote_text}" if quote_text else ""))[:900],
+            "confidence": ind.get("confidence", 0),
+            "adjusted_confidence": ind.get("calibrated_confidence", ind.get("adjusted_confidence", 0)),
+            "system_verdict": ind.get("rule_engine_verdict") or "NONE",
+            "system_rank": rank_of[idx],
+            "suggested_directions": directions,
+            "mode": "job",
+            "model": model,
+        })
+    return rows
+
+
 def collect_indicators(results_path: Path) -> list:
     """Extract indicator rows from an experiment result JSON."""
     data = json.loads(results_path.read_text())
+    if "gap_indicators" in data or "gap_indicators" in (data.get("results") or {}):
+        return _rows_from_job_result(data)
     mode = data.get("experiment_info", {}).get("mode", "full")
     model = data.get("experiment_info", {}).get("model", "unknown")
 

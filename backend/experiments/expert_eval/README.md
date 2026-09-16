@@ -21,7 +21,24 @@ python experiments/expert_eval/generate_form.py \
     --output experiments/expert_eval/expert_form.xlsx
 ```
 
-Berikan `expert_form.xlsx` kepada pakar. Sheet **Petunjuk** berisi panduan
+Formulir juga dapat dibangkitkan dari hasil **job korpus 35 jurnal** (format
+job store / `/api/analysis-status/{job_id}`, kunci `results.gap_indicators`);
+kolom `suggested_directions` ikut memuat kutipan korroborasi penulis bila ada:
+
+```bash
+python experiments/expert_eval/generate_form.py \
+    --results experiments/expert_eval/job_forensik_5b2017ea.json \
+    --output experiments/expert_eval/expert_form_forensik.xlsx
+```
+
+Dua formulir siap pakai untuk sesi pakar (dibangkitkan 16 Sep 2026):
+
+| Berkas | Sumber | Indikator |
+|---|---|---|
+| `expert_form_forensik.xlsx` | job `5b2017ea` — korpus 35 jurnal forensika digital, versi akhir sistem (BAB IV Subbab 4.3.11) | 4 (J-01…J-04) |
+| `expert_form_benchmark.xlsx` | `experiment_full_llama3.2_latest.json` — korpus benchmark 23 paper, mode `full`, seed 43 | 18 (T1–T4) |
+
+Berikan formulir kepada pakar. Sheet **Petunjuk** berisi panduan
 pengisian; sheet **Penilaian** berisi indikator yang dinilai. Kolom hijau
 diisi pakar, kolom biru (data sistem) jangan diubah.
 

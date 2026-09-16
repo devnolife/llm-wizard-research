@@ -150,6 +150,8 @@ class CoordinatorAgent:
         
         self.max_iterations = max_iterations
         self.task_history: List[AgentResponse] = []
+        # Lazily loaded post-hoc calibrator (see _refresh_calibration).
+        self._calibrator = None
         
         # Build LangGraph if available
         self._graph = None
@@ -428,6 +430,7 @@ class CoordinatorAgent:
                     indicator["rule_engine_verdict"] = verdict
                     indicator["adjusted_confidence"] = report.adjusted_confidence
                     indicator["requires_human_validation"] = verdict != "PASS"
+                    self._refresh_calibration(indicator, verdict, report)
                     
                     if verdict == "PASS":
                         pass_count += 1
@@ -570,6 +573,68 @@ class CoordinatorAgent:
     
     # ── Routing ─────────────────────────────────────────────────
     
+    def _refresh_calibration(
+        self, indicator: Dict[str, Any], verdict: str, report: Any
+    ) -> None:
+        """Re-fuse the *final* Rule Engine verdict into calibration and provenance.
+
+        The analyzer already calibrated each indicator against its own
+        validation pass; the coordinator's pass above is the verdict that gets
+        reported, so calibrated confidence, abstention and the provenance
+        chain must follow it — otherwise a record can say ``PASS`` while its
+        calibration still carries the FLAG discount. Provenance-based
+        abstention reasons (missing quotes) are kept as they are.
+        """
+        calibration = indicator.get("calibration") or {}
+        if not calibration and indicator.get("calibrated_confidence") is None:
+            return
+        try:
+            from ..gap_detection.calibration import load_calibrator
+
+            if self._calibrator is None:
+                self._calibrator = load_calibrator()
+            raw = calibration.get("raw_confidence", indicator.get("confidence", 0.0))
+            result = self._calibrator.calibrate(float(raw or 0.0), verdict)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"Calibration refresh skipped: {e}")
+            return
+
+        provenance_reasons = [
+            r for r in (indicator.get("abstention_reasons") or [])
+            if str(r).startswith("provenans")
+        ]
+        result["abstention_reasons"] = list(result["abstention_reasons"]) + provenance_reasons
+        result["needs_review"] = bool(result["needs_review"] or provenance_reasons)
+        indicator["calibrated_confidence"] = result["calibrated_confidence"]
+        indicator["needs_review"] = result["needs_review"]
+        indicator["abstention_reasons"] = result["abstention_reasons"]
+        indicator["calibration"] = result
+        indicator["requires_human_validation"] = (
+            verdict != "PASS" or result["needs_review"]
+        )
+
+        provenance = indicator.get("provenance")
+        if isinstance(provenance, dict):
+            provenance["validation_outcome"] = verdict
+            provenance["validation_detail"] = self._summarize_rule_report(report)
+
+    @staticmethod
+    def _summarize_rule_report(report: Any) -> str:
+        """One-line summary of the rules that did not pass."""
+        results = getattr(report, "results", None) or []
+        fired = []
+        for r in results:
+            rule = getattr(r, "rule", None)
+            rule_id = getattr(rule, "rule_id", "") if rule is not None else ""
+            verdict = getattr(r, "verdict", "")
+            verdict = getattr(verdict, "value", verdict)
+            if rule_id and str(verdict) != "PASS":
+                fired.append(f"{rule_id}:{verdict}")
+        if not fired:
+            checked = getattr(report, "rules_checked", len(results))
+            return f"{checked} aturan diuji, tidak ada pelanggaran"
+        return ", ".join(fired[:9])
+
     def _enrich_claim_for_validation(self, indicator: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enrich a gap indicator with method/domain/findings from FactTable
